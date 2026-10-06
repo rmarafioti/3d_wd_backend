@@ -37,7 +37,7 @@ Set:
 | ----------------------- | ----------------------------------- | ------------------------ |
 | `PORT`                  | `4000`                              | set by Railway           |
 | `NODE_ENV`              | `development`                       | `production`             |
-| `DATABASE_URL`          | the docker-compose Postgres URL     | Railway Postgres URL     |
+| `DATABASE_URL`          | docker-compose Postgres, port 5433  | Railway Postgres URL     |
 | `GOOGLE_CLIENT_ID`      | same as the frontend's              | same                     |
 | `JWT_SECRET`            | any long random string              | long random string       |
 | `SECRET_ENCRYPTION_KEY` | 32 random bytes, base64 (see below) | its own key — back it up |
