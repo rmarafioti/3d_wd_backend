@@ -46,6 +46,7 @@ root
 ├── services/
 │   └── revalidate.js         *fire-and-forget webhook call to a client website
 ├── validation/               *zod schemas, one per resource
+│   ├── auth.js               *login body ({ credential })
 │   ├── account.js
 │   ├── website.js
 │   └── post.js
@@ -71,6 +72,7 @@ root
 │   ├── endpoints.md          *API contract (source of truth) + per-endpoint behavior
 │   └── setup.md              *schema, Prisma conventions, crypto, seeding
 ├── docker-compose.yml        *local Postgres
+├── prisma.config.js          *Prisma 7 CLI config: datasource URL, migrations path, seed command
 ├── .env.example
 ├── .prettierrc
 ├── CLAUDE.md                 *project context, loaded automatically every session
@@ -139,6 +141,12 @@ The allowed origin lives in `CORS_ORIGIN`, so it can differ between local dev an
 **In-line comments:**
 Keep all code readable and explicit. Comments should be used to inform other developers of the logic in more abstract code. Make sure all comments have been validated and are truthful. High level comments should be added at the top of each file to explain its purpose.
 
+**Placeholder folders:**
+An empty scaffold folder holds a `.gitkeep` so git tracks it. Delete the `.gitkeep` in the same change that adds the folder's first real file.
+
+**Saving notes:**
+When Rich asks to save or remember something, write it into the most fitting project md file (`CLAUDE.md`, `docs/setup.md`, `docs/endpoints.md` or `README.md`), not only into private memory, so it survives a context clear and is visible to everyone working on the repo.
+
 ## Out of Scope (do not build)
 
 - Key/secret rotation. `lib/crypto.js` is written so rotation can reuse it later, but there is no rotation endpoint in the MVP.
@@ -168,6 +176,13 @@ Formatting via `.prettierrc`, run before commit.
   - Test in Postman (logic only — send the `X-CSRF-Protection: 1` header)
   - Test via a real frontend request (validates CORS/cookie behavior)
 - Only commit once code is reviewed, approved and all validation and tests are green
+
+Step rhythm:
+
+- Each Build Order step is its own task: branch from an up-to-date `main`, write a fresh plan (replacing any earlier plan), get Rich's approval, build, verify, commit and push. Rich merges the PR on GitHub.
+- The docs are the spec. When a plan only touches code already in the repo, reading the docs and the files involved is enough — no broad exploration needed. Library APIs are checked against the installed packages in `node_modules`.
+- When a step needs the frontend and backend to work in tandem, finish by writing a handoff message for Claude in the other repo, which Rich pastes there. Write it for a reader with no context: what was completed (and on which branch), anything the other side must follow (contract details, headers, local wiring), what's next for them, and a "done when" checklist. Check it against the other repo's docs where they overlap (for example, sign-out routes to `/`, the landing page).
+- After a step is merged, Rich runs `/clear`. The next step starts from `CLAUDE.md` and the docs alone, so anything worth keeping must be written into them before the clear.
 
 ## Plan Authoring
 

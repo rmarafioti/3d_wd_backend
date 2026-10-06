@@ -116,6 +116,15 @@ Ref: link.post_id > post.id         // a post can have many links
 - No `onDelete: Cascade` anywhere — nothing in this app is ever hard-deleted.
 - Prisma client is a single shared instance exported from `prisma/index.js`.
 
+### Prisma 7 notes
+
+- Generator is `prisma-client-js`. The newer `prisma-client` generator only outputs TypeScript, which Node 20 can't `require`; `prisma-client-js` outputs plain CommonJS imported with `require('@prisma/client')`.
+- `prisma.config.js` (repo root) holds the datasource URL, migrations path and seed command — not the schema's `datasource` block. It loads `.env` itself with `require('dotenv/config')`.
+- `prisma/index.js` builds the client with the `PrismaPg` driver adapter (`@prisma/adapter-pg` + `pg`). It does not load `.env`; each entry point (`index.js`, `prisma/seed.js`) requires `dotenv/config` first.
+- `prisma migrate dev` does **not** regenerate the client in v7. Run `npx prisma generate` after every schema change. The `postinstall` script covers fresh installs.
+- Local Postgres (docker-compose) runs on host port **5433**, because a native Postgres already uses 5432.
+- If a Prisma command fails with missing engines/binaries, run `npm install-scripts approve prisma @prisma/engines` (npm blocked those install scripts during setup).
+
 ## Crypto Module — `lib/crypto.js`
 
 The only place keys and secrets are generated, hashed, encrypted or decrypted. Used by Create an Account, Link a Website, `requireApiKey` and `services/revalidate.js`. Never duplicated inline.
