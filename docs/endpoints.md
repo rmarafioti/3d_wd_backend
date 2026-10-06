@@ -96,7 +96,7 @@ Notes:
 - `name` (account): required, max 100.
 - `email`: required, valid email format, stored lowercase.
 - `websiteName`: required, max 100.
-- `websiteUrl`, link `url`, image `src`: valid URL starting with `https://`. Website URLs are normalized by the backend (lowercase host, no trailing slash) before the uniqueness check and before saving.
+- `websiteUrl`, link `url`, image `src`: valid URL starting with `https://`. Website URLs are normalized by the backend (lowercase host, no trailing slash) before the uniqueness check and before saving. The uniqueness check treats `www.example.com` and `example.com` as the same website; the URL is stored as entered (it is also the revalidation target).
 - `postName`: required, max 100. `body`: required, max 5000. `header`: optional, max 150. `subHeader`: optional, max 200.
 - `postDate`: optional, valid date `YYYY-MM-DD`.
 - `images`: max 5 per post. Each image: `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
@@ -179,7 +179,7 @@ Body: `{ name, email, websiteId }` (link an existing website) **or** `{ name, em
 1. Validate with `validation/account.js` + `validation/website.js` (zod). Exactly one of `websiteId` or (`websiteName` + `websiteUrl`) → otherwise `400`.
 2. Lowercase the email. If an account with that email exists → `409` "An account with this email already exists."
 3. **Existing website path** (`websiteId`): the website must exist and be active → otherwise `404` "Website not found." In one transaction: insert `account` (role `site_owner`), insert the `account_website` row. No key or secret is generated.
-4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists → `409` "A website with this URL already exists — select it from the dropdown." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
+4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
 5. Return `201 { data: { account, website, credentials? } }`. `credentials: { apiKey, webhookSecret }` (plaintext) is included **only** on the new-website path, and only in this one response.
 
 ### Link a Website — `POST /api/admin/accounts/:id/websites`
