@@ -14,7 +14,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 - All request and response fields are camelCase. snake_case exists only inside the database (Prisma `@map`).
 - Dates and times are ISO 8601 strings. `postDate` is a date only: `YYYY-MM-DD`.
 - Success response: `{ "data": ... }`
-- Error response: `{ "error": { "message": "...", "fields": { "fieldName": "message" } } }` — `fields` is only present on validation errors (400) so the form can show a message next to each field.
+- Error response: `{ "error": { "message": "...", "fields": { "fieldName": "message" } } }` — `fields` is only present on validation errors (400) so the form can show a message next to each field. Each key is the full path to the input, joined with dots: top-level fields use their own name (`email`, `postName`), items in a list use their index (`images.0.src`, `links.2.url`), and a list-level error such as too many items uses the list name (`images`, `links`).
 - Every `POST`, `PATCH` and `DELETE` must carry the header `X-CSRF-Protection: 1`, or the backend returns `403`. `GET` requests do not need it.
 - Every request from the app frontend is sent with `credentials: 'include'` (the session cookie). This is handled once, in the frontend's `apiFetch()`.
 - `api_key_hash` and `webhook_secret_encrypted` never appear in any response.
@@ -210,7 +210,7 @@ The site owner's active websites (via `account_website`), sorted by `websiteName
 2. Ownership check on `websiteId` → `404` "Website not found." if it fails.
 3. One transaction: insert the post (`active` defaults to `true` if not sent), then insert each image, then each link. If any insert fails the whole create rolls back — no orphaned post.
 4. Return `201 { data: Post }`.
-5. After the transaction has committed, call `revalidate(website)` (see Revalidation). Do not await it before responding.
+5. After the transaction has committed, call `revalidate(website.id, post.id)` (see Revalidation). Do not await it before responding.
 
 ### Get a Post by ID — `GET /api/siteOwner/posts/:id`
 
@@ -229,11 +229,11 @@ Body: the full edit form — `{ postName, body, header, subHeader, postDate, ima
    - Links: same three-way reconcile.
    - `updated_at` refreshes automatically (`@updatedAt`).
    - If any part fails, nothing is changed.
-5. Return `200 { data: Post }`, then call `revalidate(website)` after commit.
+5. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
 
 ### Archive / Make Active — `PATCH /api/siteOwner/posts/:id/status`
 
-Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This is the soft delete — a post is never removed from the database, so it can be reactivated and its history kept. Return `200 { data: Post }`, then call `revalidate(website)` after commit.
+Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This is the soft delete — a post is never removed from the database, so it can be reactivated and its history kept. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
 
 ---
 
@@ -255,10 +255,10 @@ Returns `200 { data: { ok: true } }`. No auth. Used by Railway to check the serv
 
 ## Revalidation
 
-`services/revalidate.js` exports `revalidate(website)`. It tells a client's website to regenerate its page after a post changes, so the change appears live within moments.
+`services/revalidate.js` exports `revalidate(websiteId, postId)`. It takes ids, not a website object, so the webhook secret is only ever selected inside the service. It tells a client's website to regenerate its page after a post changes, so the change appears live within moments.
 
 - Called after a **successful, committed** create, edit, archive or make-active. Never inside the transaction.
-- Fire-and-forget: the route responds to the site owner without waiting for it. Wrap the call so a failure can never throw into the request (`revalidate(website).catch(logError)`).
+- Fire-and-forget: the route responds to the site owner without waiting for it. The service catches and logs every error itself and never rejects, so a failure can never throw into the request; routes call it after `res.json(...)` without `await`.
 - Skip entirely if `website.active === false`.
 - Decrypt `webhook_secret_encrypted` with `lib/crypto.js`, then:
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }`, timeout 5 seconds (`AbortSignal.timeout(5000)`).
