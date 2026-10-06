@@ -2,7 +2,13 @@
 // stack in the order defined in docs/endpoints.md (Middleware Stack).
 require('dotenv/config');
 
-const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET', 'GOOGLE_CLIENT_ID', 'CORS_ORIGIN'];
+const REQUIRED_ENV = [
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'GOOGLE_CLIENT_ID',
+  'CORS_ORIGIN',
+  'SECRET_ENCRYPTION_KEY',
+];
 const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
 if (missing.length) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);

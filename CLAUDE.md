@@ -165,7 +165,7 @@ Formatting via `.prettierrc`, run before commit.
 ## Workflow Checklist
 
 - Check relevant spec
-- Create a plan
+- Create a plan — always in plan mode (switch with EnterPlanMode, present with ExitPlanMode), never as a plain chat message
 - On approved, build
 - Checks after building:
   - Role-gating and ownership check on every route
@@ -179,7 +179,7 @@ Formatting via `.prettierrc`, run before commit.
 
 Step rhythm:
 
-- Each Build Order step is its own task: branch from an up-to-date `main`, write a fresh plan (replacing any earlier plan), get Rich's approval, build, verify, commit and push. Rich merges the PR on GitHub.
+- Each Build Order step is its own task: branch from an up-to-date `main`, write a fresh plan in plan mode (replacing any earlier plan), get Rich's approval, build, verify, commit and push. Rich merges the PR on GitHub.
 - The docs are the spec. When a plan only touches code already in the repo, reading the docs and the files involved is enough — no broad exploration needed. Library APIs are checked against the installed packages in `node_modules`.
 - When a step needs the frontend and backend to work in tandem, finish by writing a handoff message for Claude in the other repo, which Rich pastes there. Write it for a reader with no context: what was completed (and on which branch), anything the other side must follow (contract details, headers, local wiring), what's next for them, and a "done when" checklist. Check it against the other repo's docs where they overlap (for example, sign-out routes to `/`, the landing page).
 - After a step is merged, Rich runs `/clear`. The next step starts from `CLAUDE.md` and the docs alone, so anything worth keeping must be written into them before the clear.
