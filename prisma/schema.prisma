@@ -1,0 +1,114 @@
+// Database schema for the Headless CMS backend (see docs/setup.md).
+// Models are PascalCase singular, mapped to snake_case tables with @@map; every snake_case
+// column is a camelCase field with @map, so nothing snake_case ever reaches an API response.
+// The database URL lives in prisma.config.js (Prisma 7), not here.
+
+// prisma-client-js outputs plain CommonJS JavaScript, imported with require('@prisma/client').
+// (The newer "prisma-client" generator only outputs TypeScript.)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  admin
+  site_owner
+
+  @@map("role")
+}
+
+model Account {
+  id        String   @id @default(uuid(7))
+  name      String
+  email     String   @unique // always stored lowercase
+  role      Role
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  accountWebsites AccountWebsite[]
+
+  @@map("account")
+}
+
+model Website {
+  id                     String   @id @default(uuid(7))
+  websiteName            String   @map("website_name")
+  url                    String   @unique // normalized: https, lowercase host, no trailing slash
+  apiKeyHash             String   @unique @map("api_key_hash") // SHA-256 hex of the API key
+  webhookSecretEncrypted String   @map("webhook_secret_encrypted") // "iv:tag:ciphertext", AES-256-GCM, base64 parts
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  accountWebsites AccountWebsite[]
+  posts           Post[]
+
+  @@map("website")
+}
+
+// Join table: an account can have many websites, a website can be overseen by many accounts.
+model AccountWebsite {
+  id        String   @id @default(uuid(7))
+  accountId String   @map("account_id")
+  websiteId String   @map("website_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+  website Website @relation(fields: [websiteId], references: [id])
+
+  @@unique([accountId, websiteId]) // an account is never linked to the same website twice
+  @@index([websiteId])
+  @@map("account_website")
+}
+
+model Post {
+  id        String    @id @default(uuid(7))
+  websiteId String    @map("website_id")
+  postName  String    @map("post_name") // internal label, shown on the dashboard only, never public
+  postDate  DateTime? @map("post_date") @db.Date // optional date shown on the website
+  header    String? // optional public headline
+  subHeader String?   @map("sub_header")
+  body      String    @db.Text
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  website Website @relation(fields: [websiteId], references: [id])
+  images  Image[]
+  links   Link[]
+
+  @@index([websiteId])
+  @@map("post")
+}
+
+// Images and links have no position column: UUIDv7 ids are time-ordered,
+// so orderBy { id: 'asc' } returns them in the order they were added.
+model Image {
+  id      String @id @default(uuid(7))
+  postId  String @map("post_id")
+  src     String // Cloudinary URL from the site owner's Cloudinary account
+  width   Int // required by next/image on the client website
+  height  Int
+  altText String @map("alt_text")
+
+  post Post @relation(fields: [postId], references: [id])
+
+  @@index([postId])
+  @@map("image")
+}
+
+model Link {
+  id     String @id @default(uuid(7))
+  postId String @map("post_id")
+  name   String
+  url    String
+
+  post Post @relation(fields: [postId], references: [id])
+
+  @@index([postId])
+  @@map("link")
+}
