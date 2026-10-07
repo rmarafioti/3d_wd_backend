@@ -113,7 +113,7 @@ Ref: link.post_id > post.id         // a post can have many links
 - `createdAt DateTime @default(now()) @map("created_at")`, `updatedAt DateTime @updatedAt @map("updated_at")`.
 - `postDate DateTime? @db.Date @map("post_date")`.
 - `Post.body` is `@db.Text`.
-- No `onDelete: Cascade` anywhere — nothing in this app is ever hard-deleted.
+- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted. The only deletes are images and links removed in Edit a Post.
 - Prisma client is a single shared instance exported from `prisma/index.js`.
 
 ### Prisma 7 notes

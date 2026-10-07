@@ -85,7 +85,7 @@ Notes:
 | Validation failed                                                       | 400  | Please fix the highlighted fields. (+ `fields`)                                                                    |
 | Create account: email already exists                                    | 409  | An account with this email already exists.                                                                         |
 | New website: URL already exists                                         | 409  | A website with this URL already exists — select it from the dropdown.                                              |
-| New website: URL belongs to an inactive website                         | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate it, then try again. |
+| New website: URL belongs to an inactive website                         | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again. |
 | Link: account already linked to that website                            | 409  | This account is already linked to [Website Name].                                                                  |
 | Website / account / post not found or not yours                         | 404  | [Website / Account / Post] not found.                                                                              |
 | Edit: an image or link id that isn't on this post                       | 400  | Invalid image or link.                                                                                             |
@@ -115,7 +115,8 @@ Applied in `index.js` / `api/index.js`, in this order:
 3. `express.json()` and `cookie-parser`.
 4. `requireCsrfHeader` — every `POST` / `PATCH` / `DELETE` without `X-CSRF-Protection: 1` returns `403`. `GET` passes through.
 5. Routers mounted at `/api/auth`, `/api/admin`, `/api/siteOwner`, `/api/public`, plus `GET /api/health`.
-6. The single error handler from `errors/` — every error leaves the server as the `{ error: { message, fields? } }` envelope. Unexpected errors are logged and returned as a generic 500.
+6. A catch-all for unknown routes — `404` "Not found.", so they get the JSON envelope instead of Express's HTML page.
+7. The single error handler from `errors/` — every error leaves the server as the `{ error: { message, fields? } }` envelope. A malformed JSON body (rejected by `express.json()`) is `400` "Invalid request body." Unexpected errors are logged and returned as a generic 500.
 
 Per-router guards:
 
@@ -180,7 +181,7 @@ Body: `{ name, email, websiteId }` (link an existing website) **or** `{ name, em
 1. Validate with `validation/account.js` + `validation/website.js` (zod). Exactly one of `websiteId` or (`websiteName` + `websiteUrl`) → otherwise `400`.
 2. Lowercase the email. If an account with that email exists → `409` "An account with this email already exists."
 3. **Existing website path** (`websiteId`): the website must exist and be active → otherwise `404` "Website not found." In one transaction: insert `account` (role `site_owner`), insert the `account_website` row. No key or secret is generated.
-4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." If that website is inactive (so it is not in the dropdown), the `409` names it instead: "A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate it, then try again." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
+4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." If that website is inactive (so it is not in the dropdown), the `409` names it instead: "A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
 5. Return `201 { data: { account, website, credentials? } }`. `credentials: { apiKey, webhookSecret }` (plaintext) is included **only** on the new-website path, and only in this one response.
 
 ### Link a Website — `POST /api/admin/accounts/:id/websites`

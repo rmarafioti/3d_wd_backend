@@ -20,18 +20,6 @@ router.use(requireAuth, requireRole('site_owner'));
 
 const POST_NOT_FOUND = 'Post not found.';
 
-// The Prisma `where` for "an active website linked to this account".
-function ownedWebsiteWhere(accountId) {
-  return { active: true, accountWebsites: { some: { accountId } } };
-}
-
-function findOwnedPost(accountId, postId, select) {
-  return prisma.post.findFirst({
-    where: { id: postId, website: ownedWebsiteWhere(accountId) },
-    select,
-  });
-}
-
 // Images and links are ordered by id: UUIDv7 is time-ordered, so this is the order they were added.
 const POST_SELECT = {
   id: true,
@@ -51,6 +39,18 @@ const POST_SELECT = {
   },
   links: { orderBy: { id: 'asc' }, select: { id: true, name: true, url: true } },
 };
+
+// The Prisma `where` for "an active website linked to this account".
+function ownedWebsiteWhere(accountId) {
+  return { active: true, accountWebsites: { some: { accountId } } };
+}
+
+function findOwnedPost(accountId, postId, select) {
+  return prisma.post.findFirst({
+    where: { id: postId, website: ownedWebsiteWhere(accountId) },
+    select,
+  });
+}
 
 // Prisma row (selected with POST_SELECT) → the contract's Post shape.
 function toPost(post) {

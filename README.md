@@ -26,6 +26,8 @@ Installs:
 - jsonwebtoken
 - zod
 - Prisma / @prisma/client
+- Prisma driver adapter (`@prisma/adapter-pg`, `pg`)
+- Dev: Prettier, ESLint
 
 ```
 cp .env.example .env
@@ -59,6 +61,13 @@ npx prisma migrate dev     # creates the tables
 npm run seed               # seeds the administrator only
 npm run dev                # starts the API on http://localhost:4000
 npx prisma studio          # optional - browser GUI to inspect the database; handy right after seeding to confirm the admin row landed
+```
+
+Before committing:
+
+```
+npm run format             # Prettier
+npm run lint               # ESLint
 ```
 
 Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true } }`.

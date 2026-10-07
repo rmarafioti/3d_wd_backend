@@ -26,4 +26,4 @@ const createAccountSchema = z
   .object({ ...accountShape, ...websiteChoiceShape })
   .superRefine(refineWebsiteChoice);
 
-module.exports = { accountShape, createAccountSchema };
+module.exports = { createAccountSchema };
