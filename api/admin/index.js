@@ -198,7 +198,7 @@ async function assertUrlAvailable(websiteUrl) {
   if (duplicate && !duplicate.active) {
     throw new ServerError(
       409,
-      `A website with this URL already exists but is inactive — it's named ${duplicate.websiteName}. Reactivate it in Prisma Studio, then try again.`,
+      `A website with this URL already exists but is inactive — it's named ${duplicate.websiteName}. Reactivate it, then try again.`,
     );
   }
   if (duplicate) throw new ServerError(409, URL_TAKEN);
