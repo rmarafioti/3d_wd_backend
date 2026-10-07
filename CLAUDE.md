@@ -87,7 +87,7 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review. The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Local database: the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post. Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
+**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -235,6 +235,7 @@ A full review covers `index.js`, `eslint.config.js`, `prisma.config.js`, `api/`,
   - No secrets selected, returned or logged
   - Test in Postman (logic only — send the `X-CSRF-Protection: 1` header)
   - Test via a real frontend request (validates CORS/cookie behavior)
+  - After testing, delete every row the tests added (accounts, websites, `account_website` links, posts and their images and links), so the local database is back to the baseline in the Current progress line. List the rows first and delete them by id in one transaction.
 - Only commit once code is reviewed, approved and all validation and tests are green
 
 Step rhythm:
