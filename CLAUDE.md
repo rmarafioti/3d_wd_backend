@@ -2,6 +2,7 @@
 
 @docs/endpoints.md
 @docs/setup.md
+@docs/scaling.md
 
 ## Project Overview
 
@@ -76,7 +77,8 @@ root
 │   └── helpers.js            *row builders, session cookie, assertNoSecrets, Google/fetch mocks
 ├── docs/                     *reference docs, imported from CLAUDE.md
 │   ├── endpoints.md          *API contract (source of truth) + per-endpoint behavior
-│   └── setup.md              *schema, Prisma conventions, crypto, seeding
+│   ├── setup.md              *schema, Prisma conventions, crypto, seeding
+│   └── scaling.md            *rules for changing the schema, API and flows after launch
 ├── docker-compose.yml        *local Postgres
 ├── prisma.config.js          *Prisma 7 CLI config: datasource URL, migrations path, seed command
 ├── .env.example
@@ -92,7 +94,7 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Branch `test/unit-tests` added the Unit Tests section and the backend test suite: `node:test` + Supertest, 152 tests against a separate `headless_cms_test` database (`TEST_DATABASE_URL`), run with `npm test`, which is now part of Code Review and the Workflow Checklist. It also split the Express app into `app.js` (`index.js` only starts it). No bugs were found and the contract did not change. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
+**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Branch `test/unit-tests` added the Unit Tests section and the backend test suite: `node:test` + Supertest, 152 tests against a separate `headless_cms_test` database (`TEST_DATABASE_URL`), run with `npm test`, which is now part of Code Review and the Workflow Checklist. It also split the Express app into `app.js` (`index.js` only starts it). No bugs were found and the contract did not change. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Branch `docs/scaling-rules` added `docs/scaling.md`, the rules for changing the schema, API and flows after launch (imported above). Its rule that migrations run as a Railway pre-deploy step is unconfirmed until the Railway deploy is set up. The frontend was sent a handoff to write its own short version that points back to this one. Anything further is new work beyond this Build Order, tracked as numbered features (add that section with the first one); update this line when it starts.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -155,7 +157,7 @@ Keep all code readable and explicit. Comments should be used to inform other dev
 An empty scaffold folder holds a `.gitkeep` so git tracks it. Delete the `.gitkeep` in the same change that adds the folder's first real file.
 
 **Saving notes:**
-When Rich asks to save or remember something, write it into the most fitting project md file (`CLAUDE.md`, `docs/setup.md`, `docs/endpoints.md` or `README.md`), not only into private memory, so it survives a context clear and is visible to everyone working on the repo.
+When Rich asks to save or remember something, write it into the most fitting project md file (`CLAUDE.md`, `docs/setup.md`, `docs/endpoints.md`, `docs/scaling.md` or `README.md`), not only into private memory, so it survives a context clear and is visible to everyone working on the repo.
 
 ## Out of Scope (do not build)
 
@@ -201,7 +203,7 @@ A review is read-only. It produces findings; it never edits code. Fixes are thei
 3. **Explicit, then DRY.** Readability wins over cleverness. But when the same logic appears a **third** time, or twice with a real risk of the copies drifting (the ownership check, the error envelope, URL normalization, the zod helpers), extract it into `lib/`, `middleware/`, `validation/`, `services/` or `errors/`. Don't abstract for a case that doesn't exist yet. A shared piece must be simpler to read than the copies it replaces.
 4. **Reads top to bottom as a story.** Each block builds on what came before it: no forward references to helpers defined far below without reason, and no constant declared far from where it's used. A reader new to the file should be able to follow it in one pass. Names carry the meaning, so comments don't have to.
 5. **Comments are necessary and true.** A misleading comment costs more than a missing one: it sends the next developer, or agent, chasing behaviour that isn't there. For every comment: is it still true of the code next to it? Does it explain _why_ rather than restate _what_? Delete it if not. Every file keeps its header comment, and the header must match what the file does now.
-6. **Docs match code.** CLAUDE.md (architecture tree, Build Order progress line), `docs/endpoints.md` (including the Middleware Stack), `docs/setup.md`, `README.md` and `.env.example` describe what is actually in the repo. Fix whichever side is wrong; if the spec is right and the code differs, that's a bug finding. The API Contract section of `docs/endpoints.md` must still be identical to the frontend's `docs/api.md`.
+6. **Docs match code.** CLAUDE.md (architecture tree, Build Order progress line), `docs/endpoints.md` (including the Middleware Stack), `docs/setup.md`, `docs/scaling.md`, `README.md` and `.env.example` describe what is actually in the repo. Fix whichever side is wrong; if the spec is right and the code differs, that's a bug finding. The API Contract section of `docs/endpoints.md` must still be identical to the frontend's `docs/api.md`.
 7. **Architecture rules still hold.** Re-run the Role Ownership Check Rule, the Anti-Patterns list and the Workflow Checklist "Checks after building" against the code:
    - the account always comes from `req.user`, never from client input
    - "not yours" is the same `404` as "not found"
@@ -261,7 +263,7 @@ Don't write a test for: a constant, the Prisma client setup (`prisma/index.js`),
 
 ## Workflow Checklist
 
-- Check relevant spec
+- Check relevant spec — including `docs/scaling.md` for any schema, contract or flow change
 - Create a plan — always in plan mode (switch with EnterPlanMode, present with ExitPlanMode), never as a plain chat message
 - On approved, build
 - Checks after building:
