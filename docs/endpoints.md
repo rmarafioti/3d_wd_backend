@@ -76,19 +76,20 @@ Notes:
 
 ### Error messages the frontend displays
 
-| Situation                                                               | Code | `error.message`                                                       |
-| ----------------------------------------------------------------------- | ---- | --------------------------------------------------------------------- |
-| Login: no account, inactive account, unverified or invalid Google token | 401  | You are not authorized to log in.                                     |
-| Any session route with no / expired / invalid cookie                    | 401  | Your session expired, please sign in again.                           |
-| Wrong role                                                              | 403  | You do not have access to this page.                                  |
-| Missing CSRF header                                                     | 403  | Request blocked.                                                      |
-| Validation failed                                                       | 400  | Please fix the highlighted fields. (+ `fields`)                       |
-| Create account: email already exists                                    | 409  | An account with this email already exists.                            |
-| New website: URL already exists                                         | 409  | A website with this URL already exists — select it from the dropdown. |
-| Link: account already linked to that website                            | 409  | This account is already linked to [Website Name].                     |
-| Website / account / post not found or not yours                         | 404  | [Website / Account / Post] not found.                                 |
-| Edit: an image or link id that isn't on this post                       | 400  | Invalid image or link.                                                |
-| Public: missing / unknown key, or inactive website                      | 401  | Invalid API key.                                                      |
+| Situation                                                               | Code | `error.message`                                                                                                                     |
+| ----------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Login: no account, inactive account, unverified or invalid Google token | 401  | You are not authorized to log in.                                                                                                   |
+| Any session route with no / expired / invalid cookie                    | 401  | Your session expired, please sign in again.                                                                                         |
+| Wrong role                                                              | 403  | You do not have access to this page.                                                                                                |
+| Missing CSRF header                                                     | 403  | Request blocked.                                                                                                                    |
+| Validation failed                                                       | 400  | Please fix the highlighted fields. (+ `fields`)                                                                                     |
+| Create account: email already exists                                    | 409  | An account with this email already exists.                                                                                          |
+| New website: URL already exists                                         | 409  | A website with this URL already exists — select it from the dropdown.                                                               |
+| New website: URL belongs to an inactive website                         | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate it in Prisma Studio, then try again. |
+| Link: account already linked to that website                            | 409  | This account is already linked to [Website Name].                                                                                   |
+| Website / account / post not found or not yours                         | 404  | [Website / Account / Post] not found.                                                                                               |
+| Edit: an image or link id that isn't on this post                       | 400  | Invalid image or link.                                                                                                              |
+| Public: missing / unknown key, or inactive website                      | 401  | Invalid API key.                                                                                                                    |
 
 ### Validation rules (identical on frontend and backend)
 
@@ -179,7 +180,7 @@ Body: `{ name, email, websiteId }` (link an existing website) **or** `{ name, em
 1. Validate with `validation/account.js` + `validation/website.js` (zod). Exactly one of `websiteId` or (`websiteName` + `websiteUrl`) → otherwise `400`.
 2. Lowercase the email. If an account with that email exists → `409` "An account with this email already exists."
 3. **Existing website path** (`websiteId`): the website must exist and be active → otherwise `404` "Website not found." In one transaction: insert `account` (role `site_owner`), insert the `account_website` row. No key or secret is generated.
-4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
+4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." If that website is inactive (so it is not in the dropdown), the `409` names it instead: "A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate it in Prisma Studio, then try again." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
 5. Return `201 { data: { account, website, credentials? } }`. `credentials: { apiKey, webhookSecret }` (plaintext) is included **only** on the new-website path, and only in this one response.
 
 ### Link a Website — `POST /api/admin/accounts/:id/websites`
