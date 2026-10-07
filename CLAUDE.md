@@ -84,6 +84,8 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
+**Current progress (as of 2026-10-06):** Steps 1–5 done in both repos (step 5 frontend tested end to end, no backend fixes needed). Step 6's backend half (`POST /api/admin/accounts/:id/websites`) is built on `feat/step-6-link-website`; its frontend half comes next in the `3d_wd` repo from the backend's handoff. Local database: the admin, the test site owner `steviethedogchi@gmail.com`, the Stevie The Dog website and the posts created while testing step 5. Rich has recorded Stevie's API key. After step 6 merges in both repos, the MVP Build Order is complete. Update this line as steps finish.
+
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
 3. **Create an Account** — both. Admin list of accounts, website picker, create account, one-time reveal. Test by creating the test site owner and the Stevie The Dog website through the UI (`docs/setup.md`, Seed Users). Confirm rows in Prisma Studio.
