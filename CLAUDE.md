@@ -49,7 +49,8 @@ root
 │   ├── auth.js               *login body ({ credential })
 │   ├── account.js
 │   ├── website.js
-│   └── post.js
+│   ├── post.js
+│   └── validate.js           *validate() → 400 envelope, blankToUndefined
 ├── middleware/
 │   ├── requireAuth.js        *verifies the session cookie, loads req.user
 │   ├── requireRole.js        *role gate: admin / site_owner
@@ -57,6 +58,7 @@ root
 │   └── requireApiKey.js      *public endpoint: hashes Bearer key, loads req.website
 ├── lib/                      *shared utilities
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt
+│   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
 │   ├── jwt.js                *sign/verify session JWT, cookie options
 │   └── normalizeUrl.js       *https, lowercase host, no trailing slash
 ├── errors/                   *custom error classes + the single error handler (error envelope)
@@ -75,6 +77,7 @@ root
 ├── prisma.config.js          *Prisma 7 CLI config: datasource URL, migrations path, seed command
 ├── .env.example
 ├── .prettierrc
+├── eslint.config.js          *ESLint flat config (recommended rules)
 ├── CLAUDE.md                 *project context, loaded automatically every session
 ├── README.md                 *human-facing overview and local setup
 └── index.js                  *Express app entry point
@@ -84,7 +87,7 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-06):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). Local database: the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post. Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
+**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review. The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Local database: the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post. Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -153,16 +156,70 @@ When Rich asks to save or remember something, write it into the most fitting pro
 
 - Key/secret rotation. `lib/crypto.js` is written so rotation can reuse it later, but there is no rotation endpoint in the MVP.
 - Endpoints to deactivate/reactivate accounts or websites.
-- Hard deletes of any kind.
+- Hard deletes of accounts, websites or posts.
 
 ## Ask Rich at Build Time
 
 - `SEED_ADMIN_EMAIL` (the admin's Google account email).
 - The second Google account email used for the test site owner in Build Order step 3.
 
-## Style Guidelines
+## Code Style
 
-Formatting via `.prettierrc`, run before commit.
+Formatting is Prettier (`.prettierrc`: `singleQuote`, `semi`, `trailingComma: all`, `printWidth: 100`, `tabWidth: 2`), run before every commit (`npm run format`), plus `npm run lint` clean (ESLint recommended rules, `eslint.config.js`). Prettier settles formatting; the rules below settle what Prettier can't.
+
+- **File shape, top to bottom:** header comment (what the file is for) → `require`s (packages such as `express`, `zod`, `google-auth-library` first, then local modules) → module setup (`const router = express.Router()` and its `router.use(...)` guards) → module constants (`UPPER_SNAKE`) → private helpers → routes (or the file's main function) → `module.exports`. Entry points (`index.js`, `prisma/seed.js`) require `dotenv/config` before anything else.
+- **Route handler shape:** validate the input (`validate(schema, req.body ?? {})`) → existence / ownership check (`if (!post) throw new ServerError(404, ...)`) → the Prisma call (`prisma.$transaction` for a multi-row write) → `res.json({ data })` or `res.status(201).json({ data })` → `revalidate(...)`, not awaited, where a post changed. Where `docs/endpoints.md` orders the steps differently (Link a Website checks the account before validating), follow the spec. Each route has a one-line comment above it: `// METHOD /api/path — what it does.`
+- **Exports:** CommonJS only. A router file exports its `router`. A middleware or service file exports its single function (`module.exports = requireAuth`). `lib/` and `validation/` files export an object of named functions and schemas (`module.exports = { normalizeUrl, urlVariants }`), required with destructuring.
+- **Functions:** function declarations for middleware, helpers and lib functions. Arrows only inline: route handlers passed to `router.get` / `post` / `patch`, callbacks (`.map`, `.filter`) and `$transaction` bodies.
+- **Naming:**
+  - Middleware is `requireX` (`requireAuth`, `requireRole`, `requireCsrfHeader`, `requireApiKey`).
+  - Zod schemas are `xSchema` (`createPostSchema`). Shared field groups are `xShape` (`accountShape`, `websiteChoiceShape`).
+  - A helper that throws on failure is `assertX` (`assertOwnItems`, `assertUrlAvailable`). Converters are `toX` / `fromX` (`toPost`, `toDateOnly`, `fromDateOnly`). Lookups are `findX` (`findOwnedPost`).
+  - Shared Prisma selects and messages used more than once are `UPPER_SNAKE` constants (`POST_SELECT`, `POST_NOT_FOUND`).
+  - The validated body is `input`. A transaction client is `tx`.
+  - Booleans read as questions (`hasId`, `hasNewWebsite`).
+  - Use the vocabulary of `docs/endpoints.md` and `docs/setup.md` (account, site owner, administrator, website, post, credentials), not synonyms.
+- **Input:** all request input goes through a zod schema in `validation/` and `validate()`. Text fields are trimmed by `blankToUndefined` (`validation/validate.js`). Never trim, lowercase or check a field by hand in a route. Login is the one exception: it uses `loginSchema.safeParse` directly, because every login failure is the same 401, not a 400.
+- **Errors:** routes and middleware `throw new ServerError(status, message)`. They never send an error response themselves; the handler in `errors/` builds the envelope.
+- **Queries:** any read whose result reaches a response or `req.*` uses an explicit `select`. `apiKeyHash` and `webhookSecretEncrypted` are selected only in `requireApiKey` and `services/revalidate.js`.
+- **Control flow:** early returns and early throws over nested `if`/`else`. No nested ternaries.
+- **User-facing strings:** every message `docs/endpoints.md` states (Error messages the frontend displays, Status codes) is copied word for word. Never paraphrase it: the frontend shows `error.message` exactly as it arrives.
+
+## Code Review
+
+A review is read-only. It produces findings; it never edits code. Fixes are their own task: plan in plan mode, Rich approves, build, verify (Postman or curl against the local server, plus a real frontend request wherever the frontend uses the endpoint), PR. Every fix must preserve behaviour unless the finding is a bug.
+
+### Checklist
+
+1. **Style is consistent.** The code matches Code Style above. If two files do the same thing two ways, pick the documented way. If no way is documented, raise it so the rule gets written down before anything is changed.
+2. **No dead code.** Unused requires, variables, exports, files, middleware, routes, Prisma fields selected but never returned or read, env vars nothing reads, unreachable branches and commented-out code. For each one, decide: delete it, or find out why it isn't used. Unused code is sometimes a sign of a missing wire-up, not junk. The best code is code that was never written.
+3. **Explicit, then DRY.** Readability wins over cleverness. But when the same logic appears a **third** time, or twice with a real risk of the copies drifting (the ownership check, the error envelope, URL normalization, the zod helpers), extract it into `lib/`, `middleware/`, `validation/`, `services/` or `errors/`. Don't abstract for a case that doesn't exist yet. A shared piece must be simpler to read than the copies it replaces.
+4. **Reads top to bottom as a story.** Each block builds on what came before it: no forward references to helpers defined far below without reason, and no constant declared far from where it's used. A reader new to the file should be able to follow it in one pass. Names carry the meaning, so comments don't have to.
+5. **Comments are necessary and true.** A misleading comment costs more than a missing one: it sends the next developer, or agent, chasing behaviour that isn't there. For every comment: is it still true of the code next to it? Does it explain _why_ rather than restate _what_? Delete it if not. Every file keeps its header comment, and the header must match what the file does now.
+6. **Docs match code.** CLAUDE.md (architecture tree, Build Order progress line), `docs/endpoints.md` (including the Middleware Stack), `docs/setup.md`, `README.md` and `.env.example` describe what is actually in the repo. Fix whichever side is wrong; if the spec is right and the code differs, that's a bug finding. The API Contract section of `docs/endpoints.md` must still be identical to the frontend's `docs/api.md`.
+7. **Architecture rules still hold.** Re-run the Role Ownership Check Rule, the Anti-Patterns list and the Workflow Checklist "Checks after building" against the code:
+   - the account always comes from `req.user`, never from client input
+   - "not yours" is the same `404` as "not found"
+   - `apiKeyHash` / `webhookSecretEncrypted` are never selected outside their two places and never returned
+   - the plaintext key and secret appear only in the creation response
+   - nothing logs a key, secret, token or request headers
+   - the JWT appears only in `Set-Cookie`
+   - the CSRF header is required on POST/PATCH/DELETE
+   - multi-row writes happen in one `$transaction`
+   - `revalidate` runs after commit and is not awaited
+   - no hard deletes of accounts, websites or posts, and inactive accounts and websites are honoured
+   - emails are lowercased and URLs go through `normalizeUrl`
+   - the CORS origin comes from `CORS_ORIGIN`
+8. **Every endpoint handles every outcome.** Success, validation `400` with `fields`, `401`, `403`, `404`, `409` where it applies, and the generic `500`. Each uses the status code and message `docs/endpoints.md` documents for it.
+9. **Tooling is clean.** `npm run lint` and `npm run format:check` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
+
+### Output
+
+Return the findings as a list, most important first. Each finding has: the file and line, which checklist item it breaks, what's wrong, the proposed fix, and its type: **bug** (behaviour is wrong), **cleanup** (behaviour-neutral), or **doc** (docs or comments only). When a finding needs Rich to make a style or spec decision, mark it **decision** and don't propose a fix until he does.
+
+### Scope
+
+A full review covers `index.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), plus CLAUDE.md, `docs/`, `README.md` and `.env.example`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
 
 ## Workflow Checklist
 
@@ -170,6 +227,7 @@ Formatting via `.prettierrc`, run before commit.
 - Create a plan — always in plan mode (switch with EnterPlanMode, present with ExitPlanMode), never as a plain chat message
 - On approved, build
 - Checks after building:
+  - Self-review the diff against Code Review → Checklist
   - Role-gating and ownership check on every route
   - Transaction wrapped (if multi-row write)
   - CSRF header required on every POST/PATCH/DELETE

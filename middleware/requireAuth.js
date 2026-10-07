@@ -20,7 +20,6 @@ async function requireAuth(req, res, next) {
       });
     } catch {
       // Invalid, tampered or expired token: handled below as "no account".
-      account = null;
     }
   }
 
