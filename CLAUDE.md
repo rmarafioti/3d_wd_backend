@@ -84,7 +84,7 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-06):** Steps 1–6 done in both repos. Step 6's backend half (`POST /api/admin/accounts/:id/websites`) merged as PR #5, plus PR #6 (a distinct 409 message when a new URL matches an inactive website), reworded on `fix/inactive-message-wording` to drop the Prisma Studio mention. The frontend half of step 6 is pushed on `feat/step-6-link-website` in `3d_wd`. Local database: the admin, the test site owner `steviethedogchi@gmail.com`, the Stevie The Dog website and one post (step 6 test rows were deleted). Rich has recorded Stevie's API key. Once these PRs merge, the MVP Build Order is complete. Update this line as steps finish.
+**Current progress (as of 2026-10-06):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). Local database: the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post. Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -184,6 +184,7 @@ Step rhythm:
 - Each Build Order step is its own task: branch from an up-to-date `main`, write a fresh plan in plan mode (replacing any earlier plan), get Rich's approval, build, verify, commit and push. Rich merges the PR on GitHub.
 - The docs are the spec. When a plan only touches code already in the repo, reading the docs and the files involved is enough — no broad exploration needed. Library APIs are checked against the installed packages in `node_modules`.
 - When a step needs the frontend and backend to work in tandem, finish by writing a handoff message for Claude in the other repo, which Rich pastes there. Write it for a reader with no context: what was completed (and on which branch), anything the other side must follow (contract details, headers, local wiring), what's next for them, and a "done when" checklist. Check it against the other repo's docs where they overlap (for example, sign-out routes to `/`, the landing page).
+- When Rich says to commit, first update the "Current progress" line under Build Order to describe the state after the PR merges, and commit it on the same branch. Never leave it as a loose edit on `main` after a merge, which would need its own PR.
 - After a step is merged, Rich runs `/clear`. The next step starts from `CLAUDE.md` and the docs alone, so anything worth keeping must be written into them before the clear.
 
 ## Plan Authoring
