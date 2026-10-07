@@ -186,13 +186,21 @@ router.post('/accounts/:id/websites', async (req, res) => {
 
 // Normalizes a new website's URL and throws the 409 if a website with that URL already exists.
 // www.example.com and example.com count as the same website for this check, but the URL is
-// stored as entered (see lib/normalizeUrl.js). Returns the normalized URL to save.
+// stored as entered (see lib/normalizeUrl.js). Inactive websites are matched too: they are not
+// in the admin's dropdown, so their message names the website and says to reactivate it instead.
+// Returns the normalized URL to save.
 async function assertUrlAvailable(websiteUrl) {
   const url = normalizeUrl(websiteUrl);
   const duplicate = await prisma.website.findFirst({
     where: { url: { in: urlVariants(url) } },
-    select: { id: true },
+    select: { websiteName: true, active: true },
   });
+  if (duplicate && !duplicate.active) {
+    throw new ServerError(
+      409,
+      `A website with this URL already exists but is inactive — it's named ${duplicate.websiteName}. Reactivate it in Prisma Studio, then try again.`,
+    );
+  }
   if (duplicate) throw new ServerError(409, URL_TAKEN);
   return url;
 }
