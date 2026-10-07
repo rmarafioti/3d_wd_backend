@@ -1,4 +1,4 @@
-// Zod schemas for choosing a website on Create an Account (and, in step 6, Link a Website):
+// Zod schemas for choosing a website on Create an Account and Link a Website:
 // the body carries either { websiteId } (link an existing website) or { websiteName, websiteUrl }
 // (create a new one) — exactly one of the two, never both, never neither.
 const { z } = require('zod');
@@ -26,7 +26,9 @@ function refineWebsiteChoice(data, ctx) {
     ctx.addIssue({
       code: 'custom',
       path: ['websiteId'],
-      message: 'Select an existing website or enter a new one, not both.',
+      message: hasId
+        ? 'Select an existing website or enter a new one, not both.'
+        : 'Select a website or enter a new one.',
     });
     return;
   }
