@@ -108,7 +108,7 @@ Notes:
 
 ## Middleware Stack
 
-Applied in `index.js` / `api/index.js`, in this order:
+Applied in `app.js` / `api/index.js`, in this order:
 
 1. `helmet()` — standard security headers.
 2. `cors({ origin: process.env.CORS_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Protection', 'Authorization'] })` — exact origin, never a wildcard.

@@ -70,6 +70,10 @@ root
 │   ├── seed.js
 │   ├── seedData.js
 │   └── migrations/
+├── testing/                  *test-only support; the *.test.js files sit next to the code they test
+│   ├── setup.js              *test env: TEST_DATABASE_URL (name must end in _test), fixed secrets
+│   ├── migrate.js            *pretest: creates and migrates the test database
+│   └── helpers.js            *row builders, session cookie, assertNoSecrets, Google/fetch mocks
 ├── docs/                     *reference docs, imported from CLAUDE.md
 │   ├── endpoints.md          *API contract (source of truth) + per-endpoint behavior
 │   └── setup.md              *schema, Prisma conventions, crypto, seeding
@@ -80,14 +84,15 @@ root
 ├── eslint.config.js          *ESLint flat config (recommended rules)
 ├── CLAUDE.md                 *project context, loaded automatically every session
 ├── README.md                 *human-facing overview and local setup
-└── index.js                  *Express app entry point
+├── app.js                    *Express app: middleware stack, routers, error handler (no listen)
+└── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
 ## Build Order
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
+**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Branch `test/unit-tests` added the Unit Tests section and the backend test suite: `node:test` + Supertest, 152 tests against a separate `headless_cms_test` database (`TEST_DATABASE_URL`), run with `npm test`, which is now part of Code Review and the Workflow Checklist. It also split the Express app into `app.js` (`index.js` only starts it). No bugs were found and the contract did not change. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Anything further is new work beyond this Build Order; update this line when it starts.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -211,7 +216,7 @@ A review is read-only. It produces findings; it never edits code. Fixes are thei
    - emails are lowercased and URLs go through `normalizeUrl`
    - the CORS origin comes from `CORS_ORIGIN`
 8. **Every endpoint handles every outcome.** Success, validation `400` with `fields`, `401`, `403`, `404`, `409` where it applies, and the generic `500`. Each uses the status code and message `docs/endpoints.md` documents for it.
-9. **Tooling is clean.** `npm run lint` and `npm run format:check` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
+9. **Tooling is clean.** `npm run lint`, `npm run format:check` and `npm test` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
 
 ### Output
 
@@ -219,7 +224,40 @@ Return the findings as a list, most important first. Each finding has: the file 
 
 ### Scope
 
-A full review covers `index.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), plus CLAUDE.md, `docs/`, `README.md` and `.env.example`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
+A full review covers `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), the `*.test.js` files and `testing/`, plus CLAUDE.md, `docs/`, `README.md` and `.env.example`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
+
+## Unit Tests
+
+`node:test` + Supertest, against a real test Postgres. `npm test` runs the suite once (`pretest` creates and migrates the test database first); `npm run test:watch` while working. Tests are a gate, not decoration: a failing test blocks a commit the same as a failing lint.
+
+### When a test is justified
+
+Write a test when the code carries a rule that someone could break without noticing:
+
+- **A spec or contract rule:** anything `docs/endpoints.md` states — every status code and `error.message` in "Error messages the frontend displays", the `{ data }` / `{ error: { message, fields? } }` envelopes with `fields` keyed by full path (`images.0.src`), the CSRF header returning `403` "Request blocked.", blank optional fields stored and returned as `null`, validation limits.
+- **Branching logic:** a function, middleware or route handler that behaves differently by input or state (new vs existing website, active vs inactive account / website / post, at vs over the image limit).
+- **Shared code:** anything in `lib/`, `middleware/`, `validation/`, `services/` or `errors/` gets coverage, directly or through a request test — one bug there breaks every caller.
+- **A security or one-time rule:** the account always comes from the session, never from client input; another owner's post, website or account is `404`, not `403`; `apiKeyHash` / `webhookSecretEncrypted` never appear in a response; `credentials` appear only when a new website is created; the session cookie carries the documented flags and the JWT never appears in a body; the public API accepts only a valid Bearer key for an active website, returns only active posts and never `postName`.
+- **A bug that was fixed:** write the failing test first, then fix the code, so it can't come back.
+- **One layer is enough:** if a request test already proves a behaviour through the real middleware, validation and handler, don't repeat it in a unit test of the piece. Test a zod schema or a `lib/` function directly only for what a request test can't reach easily (every `normalizeUrl` case, every validation boundary, a revalidation failure path).
+
+Don't write a test for: a constant, the Prisma client setup (`prisma/index.js`), `prisma.config.js`, the seed and seed data, a one-line pass-through, or Express or Prisma behaviour itself. A route made only of tested pieces needs a test only for the wiring it adds (e.g. an edit reconciles images and links in one transaction, and nothing changes if any part fails).
+
+### The pattern every test follows
+
+- **Location and naming:** the test sits next to the file it tests, `name.test.js` (`validation/post.test.js`, `lib/normalizeUrl.test.js`); route tests sit next to their router (`api/siteOwner/index.test.js`). Shared support lives in `testing/` — not `test/`, because Node 20's runner treats every file in a `test/` folder as a test. A test file that touches the environment or the database requires `testing/setup` first, the way entry points require `dotenv/config` first. One `describe` per unit; each `it` reads as a behaviour sentence: `it("returns 404 for another site owner's post")`.
+- **Arrange → Act → Assert,** separated by a blank line. One behaviour per test.
+- **Test behaviour, not implementation:** send a real request with Supertest and assert on the HTTP response (status, body, `Set-Cookie`) and on database state — never on which of our functions were called.
+- **Mock only the edges:**
+  - The database is **not** mocked: tests run against `TEST_DATABASE_URL` (a database whose name must end in `_test`; `testing/setup.js` refuses anything else), so query, constraint and transaction bugs are caught. The dev database is never touched.
+  - Google ID-token verification: `mockGoogle` in `testing/helpers.js` replaces `OAuth2Client.prototype.verifyIdToken`, so login can succeed or fail without a real token.
+  - Outbound revalidation: `mockFetch` replaces the global `fetch`; assert the call `services/revalidate.js` sent (URL, `Authorization`, body) and that the site owner's request is unaffected when it fails. Any file whose requests change a post mocks `fetch` for every test, so no call ever leaves the machine.
+  - `console.error` where a test triggers a log, so the output stays clean and the log can be checked for secrets.
+  - Time only where logic depends on it (an expired session is a token signed with a past `exp`, not a faked clock). Nothing else in our own code is mocked.
+- **Responses come from the contract:** the backend is the source of truth, so request tests assert the response matches `docs/endpoints.md` word for word. If a test and the doc disagree, fix the code — or, if the doc is wrong, that is a contract change: update `docs/endpoints.md` and the frontend's `docs/api.md` together and write a cross-repo handoff.
+- **Independent:** each test builds its own rows with the helpers in `testing/helpers.js`, and the database is truncated before every test. Mocks are restored after every test (`t.mock`, or `mock.restoreAll()` in `afterEach` for a file-wide mock). Tests pass in any order and alone, and running the suite twice gives the same result.
+- **No snapshots.** They pass by default and nobody reads the diff.
+- **Same rules as the rest of the code:** Code Style and Code Review apply to test files too — header comment, CommonJS, no dead tests, true test names.
 
 ## Workflow Checklist
 
@@ -228,6 +266,7 @@ A full review covers `index.js`, `eslint.config.js`, `prisma.config.js`, `api/`,
 - On approved, build
 - Checks after building:
   - Self-review the diff against Code Review → Checklist
+  - `npm test` passes, with new tests wherever Unit Tests says one is justified
   - Role-gating and ownership check on every route
   - Transaction wrapped (if multi-row write)
   - CSRF header required on every POST/PATCH/DELETE
@@ -235,7 +274,7 @@ A full review covers `index.js`, `eslint.config.js`, `prisma.config.js`, `api/`,
   - No secrets selected, returned or logged
   - Test in Postman (logic only — send the `X-CSRF-Protection: 1` header)
   - Test via a real frontend request (validates CORS/cookie behavior)
-  - After testing, delete every row the tests added (accounts, websites, `account_website` links, posts and their images and links), so the local database is back to the baseline in the Current progress line. List the rows first and delete them by id in one transaction.
+  - After manual testing (Postman, frontend), delete every row the tests added (accounts, websites, `account_website` links, posts and their images and links), so the local database is back to the baseline in the Current progress line. List the rows first and delete them by id in one transaction. (`npm test` uses its own test database and never touches these rows.)
 - Only commit once code is reviewed, approved and all validation and tests are green
 
 Step rhythm:

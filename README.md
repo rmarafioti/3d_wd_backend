@@ -27,7 +27,7 @@ Installs:
 - zod
 - Prisma / @prisma/client
 - Prisma driver adapter (`@prisma/adapter-pg`, `pg`)
-- Dev: Prettier, ESLint
+- Dev: Prettier, ESLint, Supertest (tests run on Node's built-in `node:test`)
 
 ```
 cp .env.example .env
@@ -40,6 +40,7 @@ Set:
 | `PORT`                  | `4000`                              | set by Railway           |
 | `NODE_ENV`              | `development`                       | `production`             |
 | `DATABASE_URL`          | docker-compose Postgres, port 5433  | Railway Postgres URL     |
+| `TEST_DATABASE_URL`     | `.../headless_cms_test`, port 5433  | not used                 |
 | `GOOGLE_CLIENT_ID`      | same as the frontend's              | same                     |
 | `JWT_SECRET`            | any long random string              | long random string       |
 | `SECRET_ENCRYPTION_KEY` | 32 random bytes, base64 (see below) | its own key — back it up |
@@ -63,11 +64,21 @@ npm run dev                # starts the API on http://localhost:4000
 npx prisma studio          # optional - browser GUI to inspect the database; handy right after seeding to confirm the admin row landed
 ```
 
+Tests:
+
+```
+npm test                   # creates/migrates the test database, then runs the whole suite once
+npm run test:watch         # re-runs tests as files change
+```
+
+The suite needs the docker-compose Postgres running. It uses its own database (`TEST_DATABASE_URL`, whose name must end in `_test`) and empties it before every test, so your dev data is never touched. Test files sit next to the code they test (`*.test.js`); shared test support is in `testing/`.
+
 Before committing:
 
 ```
 npm run format             # Prettier
 npm run lint               # ESLint
+npm test                   # test suite
 ```
 
 Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true } }`.
