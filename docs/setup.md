@@ -1,6 +1,6 @@
 # Setup
 
-Instructions for the setup and behavior of database functionality: schema, Prisma conventions, the crypto module and seeding. Imported from `CLAUDE.md` via `@docs/setup.md`.
+Instructions for the setup and behavior of database functionality: schema, Prisma conventions, the test database, the crypto module and seeding. Imported from `CLAUDE.md` via `@docs/setup.md`.
 
 ## Proposed MVP Functionality
 
@@ -120,10 +120,17 @@ Ref: link.post_id > post.id         // a post can have many links
 
 - Generator is `prisma-client-js`. The newer `prisma-client` generator only outputs TypeScript, which Node 20 can't `require`; `prisma-client-js` outputs plain CommonJS imported with `require('@prisma/client')`.
 - `prisma.config.js` (repo root) holds the datasource URL, migrations path and seed command — not the schema's `datasource` block. It loads `.env` itself with `require('dotenv/config')`.
-- `prisma/index.js` builds the client with the `PrismaPg` driver adapter (`@prisma/adapter-pg` + `pg`). It does not load `.env`; each entry point (`index.js`, `prisma/seed.js`) requires `dotenv/config` first.
+- `prisma/index.js` builds the client with the `PrismaPg` driver adapter (`@prisma/adapter-pg` + `pg`). It does not load `.env`; each entry point (`index.js`, `prisma/seed.js`) requires `dotenv/config` first, and every test file that touches the environment or the database requires `testing/setup.js` first.
 - `prisma migrate dev` does **not** regenerate the client in v7. Run `npx prisma generate` after every schema change. The `postinstall` script covers fresh installs.
 - Local Postgres (docker-compose) runs on host port **5433**, because a native Postgres already uses 5432.
 - If a Prisma command fails with missing engines/binaries, run `npm install-scripts approve prisma @prisma/engines` (npm blocked those install scripts during setup).
+
+### Test database
+
+- `npm test` runs against a separate database on the same docker-compose Postgres: `TEST_DATABASE_URL` (`headless_cms_test` locally). The dev database is never used by the suite.
+- `testing/setup.js` points `DATABASE_URL` at `TEST_DATABASE_URL` and refuses to run unless the database name ends in `_test`, because the suite truncates every table.
+- The `pretest` script (`testing/migrate.js`) creates the test database if it doesn't exist, then runs `prisma migrate deploy` against it, so a new migration reaches the test database on the next `npm test`.
+- Every test starts from empty tables (`TRUNCATE` in `beforeEach`) and builds its own rows with `testing/helpers.js`. Nothing is seeded.
 
 ## Crypto Module — `lib/crypto.js`
 
