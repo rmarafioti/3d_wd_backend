@@ -21,7 +21,9 @@ app.use(
     allowedHeaders: ['Content-Type', 'X-CSRF-Protection', 'Authorization'],
   }),
 );
-app.use(express.json());
+// Set explicitly instead of Express's 100kb default: a post at its limits (5 paragraphs of 10,000
+// characters, which can be multibyte, plus images and links) must always fit.
+app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 app.use(requireCsrfHeader);
 

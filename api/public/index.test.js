@@ -1,12 +1,20 @@
 // Request tests for the public route (api/public/index.js): a client website fetching its posts
 // with its API key. Covers every 401, that only this website's active posts come back, newest
-// first, and that the PublicPost shape never carries postName, item ids or secrets.
+// first, each body in order, and that the PublicPost shape never carries postName, item ids or
+// secrets.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../../app');
-const { resetDatabase, disconnect, createWebsite, createPost } = require('../../testing/helpers');
+const {
+  resetDatabase,
+  disconnect,
+  createWebsite,
+  paragraph,
+  imageElement,
+  createPost,
+} = require('../../testing/helpers');
 
 const INVALID_KEY = { error: { message: 'Invalid API key.' } };
 
@@ -26,7 +34,12 @@ describe('GET /api/public/posts', () => {
     const older = await createPost(website, {
       header: 'Older',
       postDate: new Date('2026-10-01T00:00:00.000Z'),
-      images: [IMAGE, { ...IMAGE, altText: 'Second' }],
+      body: [
+        imageElement(IMAGE),
+        paragraph('Intro'),
+        imageElement({ ...IMAGE, altText: 'Second' }),
+        paragraph('Outro'),
+      ],
       links: [LINK],
     });
     const newer = await createPost(website, { header: 'Newer' });
@@ -43,22 +56,25 @@ describe('GET /api/public/posts', () => {
           id: newer.id,
           header: 'Newer',
           subHeader: null,
-          body: 'Body',
           postDate: null,
           createdAt: newer.createdAt.toISOString(),
           updatedAt: newer.updatedAt.toISOString(),
-          images: [],
+          body: [{ type: 'paragraph', text: 'Body' }],
           links: [],
         },
         {
           id: older.id,
           header: 'Older',
           subHeader: null,
-          body: 'Body',
           postDate: '2026-10-01',
           createdAt: older.createdAt.toISOString(),
           updatedAt: older.updatedAt.toISOString(),
-          images: [IMAGE, { ...IMAGE, altText: 'Second' }],
+          body: [
+            { type: 'image', image: IMAGE },
+            { type: 'paragraph', text: 'Intro' },
+            { type: 'image', image: { ...IMAGE, altText: 'Second' } },
+            { type: 'paragraph', text: 'Outro' },
+          ],
           links: [LINK],
         },
       ],

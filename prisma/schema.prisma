@@ -20,6 +20,13 @@ enum Role {
   @@map("role")
 }
 
+enum ElementType {
+  paragraph
+  image
+
+  @@map("element_type")
+}
+
 model Account {
   id        String   @id @default(uuid(7))
   name      String
@@ -72,21 +79,38 @@ model Post {
   postDate  DateTime? @map("post_date") @db.Date // optional date shown on the website
   header    String? // optional public headline
   subHeader String?   @map("sub_header")
-  body      String    @db.Text
   active    Boolean   @default(true)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  website Website @relation(fields: [websiteId], references: [id])
-  images  Image[]
-  links   Link[]
+  website  Website   @relation(fields: [websiteId], references: [id])
+  elements Element[]
+  images   Image[]
+  links    Link[]
 
   @@index([websiteId])
   @@map("post")
 }
 
-// Images and links have no position column: UUIDv7 ids are time-ordered,
-// so orderBy { id: 'asc' } returns them in the order they were added.
+// A post's body: paragraphs and images in reading order. Unlike links, elements are reordered on
+// edit, so they carry an explicit position (0, 1, 2…) instead of relying on id order.
+model Element {
+  id       String      @id @default(uuid(7))
+  postId   String      @map("post_id")
+  position Int
+  type     ElementType
+  text     String?     @db.Text // paragraph elements only
+  imageId  String?     @unique @map("image_id") // image elements only; each image is placed once
+
+  post  Post   @relation(fields: [postId], references: [id])
+  image Image? @relation(fields: [imageId], references: [id], onDelete: Restrict)
+
+  @@index([postId, position])
+  @@map("element")
+}
+
+// An image is shown where its element sits in the post's body. Links have no position column:
+// UUIDv7 ids are time-ordered, so orderBy { id: 'asc' } returns them in the order they were added.
 model Image {
   id      String @id @default(uuid(7))
   postId  String @map("post_id")
@@ -95,7 +119,8 @@ model Image {
   height  Int
   altText String @map("alt_text")
 
-  post Post @relation(fields: [postId], references: [id])
+  post    Post     @relation(fields: [postId], references: [id])
+  element Element?
 
   @@index([postId])
   @@map("image")

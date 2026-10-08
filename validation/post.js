@@ -1,4 +1,5 @@
 // Zod schemas for posts: create, edit (full form submission) and status (archive / make active).
+// A post's body is an ordered list of elements, each a paragraph or an image.
 // Optional text fields and postDate come out as null when blank, null or missing, so they are
 // stored and returned as null. Limits match the Validation rules in docs/endpoints.md.
 const { z } = require('zod');
@@ -56,10 +57,27 @@ const linkShape = {
   url: httpsUrl('Link URL'),
 };
 
-function imageList(itemSchema) {
-  return z
-    .array(itemSchema, { error: 'Images must be a list.' })
-    .max(5, 'A post can have at most 5 images.');
+// The body: paragraph and image elements in reading order. The limits count each type across the
+// whole list, so their messages sit under the list name ("body").
+function bodyList(imageSchema) {
+  const element = z.discriminatedUnion(
+    'type',
+    [
+      z.object({ type: z.literal('paragraph'), text: requiredText('Paragraph', 10000) }),
+      z.object({ type: z.literal('image'), image: imageSchema }),
+    ],
+    { error: 'Element type must be paragraph or image.' },
+  );
+
+  return z.array(element, { error: 'Body must be a list.' }).superRefine((elements, ctx) => {
+    const paragraphs = elements.filter((item) => item.type === 'paragraph').length;
+    const images = elements.length - paragraphs;
+    if (paragraphs === 0) ctx.addIssue({ code: 'custom', message: 'Add at least one paragraph.' });
+    if (paragraphs > 5) {
+      ctx.addIssue({ code: 'custom', message: 'A post can have at most 5 paragraphs.' });
+    }
+    if (images > 5) ctx.addIssue({ code: 'custom', message: 'A post can have at most 5 images.' });
+  });
 }
 
 function linkList(itemSchema) {
@@ -70,7 +88,6 @@ function linkList(itemSchema) {
 
 const postFields = {
   postName: requiredText('Post name', 100),
-  body: requiredText('Body', 5000),
   header: optionalText('Header', 150),
   subHeader: optionalText('Sub header', 200),
   postDate: z
@@ -85,14 +102,14 @@ const createPostSchema = z.object({
   websiteId: z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' })),
   ...postFields,
   active: z.boolean({ error: 'Active must be true or false.' }).default(true),
-  images: imageList(z.object(imageShape)),
+  body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
   links: linkList(z.object(linkShape)),
 });
 
 // websiteId and active are not part of the edit form; zod strips them if sent.
 const updatePostSchema = z.object({
   ...postFields,
-  images: imageList(z.object({ id: itemId, ...imageShape })),
+  body: bodyList(z.object({ id: itemId, ...imageShape }, { error: 'Image is required.' })),
   links: linkList(z.object({ id: itemId, ...linkShape })),
 });
 

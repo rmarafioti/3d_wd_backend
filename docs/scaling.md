@@ -78,7 +78,7 @@ The MVP is fine at its current size. These rules stop it degrading as accounts, 
 - **Indexes match queries.** Any new `where` / `orderBy` on a growing table gets an index in the same migration. Use a composite index when filtering and sorting together (e.g. `@@index([websiteId, active, createdAt])` for the public posts query).
 - **No N+1 queries.** Load related rows with a nested `select` in one Prisma call, never a query inside a `.map`.
 - **Explicit `select` everywhere** (already a Code Style rule). It also keeps payloads small as models gain columns.
-- **Bounded child lists.** Every list a client can grow has a maximum in validation, as images (5) and links (10) do now.
+- **Bounded child lists.** Every list a client can grow has a maximum in validation, as paragraphs (5), images (5) and links (10) do now.
 - **Connection pool:** each backend instance opens its own `pg` pool through `PrismaPg` (`prisma/index.js`; `pg` defaults to 10 connections). Pool size × number of instances must stay under the Postgres connection limit on Railway. Check this before adding instances.
 
 ## 7. Running more than one instance
