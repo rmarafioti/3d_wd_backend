@@ -94,7 +94,7 @@ The backend is stateless today (the session is a signed JWT cookie, nothing is h
 
 - **New env vars** are added to `.env.example` (with a comment), to `REQUIRED_ENV` in `index.js` if the server can't run without them, to `testing/setup.js` if tests need a fixed value, and to Railway before the code that reads them is deployed.
 - **Back up before destructive migrations:** take a Railway Postgres backup before any migration that drops or rewrites data. `SECRET_ENCRYPTION_KEY` is backed up separately (`docs/setup.md`).
-- **Staging before the first breaking change:** a staging environment (Railway service + Vercel preview, with its own database) where migrations and contract changes are deployed and checked before production.
+- **Staging before the first breaking change after the production launch:** a staging environment (Railway service + Vercel preview, with its own database) where migrations and contract changes are deployed and checked before production.
 - **Rollback:** a code deploy can be rolled back; a migration cannot. That is why schema changes are additive and removals happen in a later release.
 - **Production data changes** only through the API, a reviewed migration or a reviewed one-off script — never by hand in Prisma Studio, except the documented `active` flips for accounts and websites until endpoints exist for them.
 
@@ -103,3 +103,4 @@ The backend is stateless today (the session is a signed JWT cookie, nothing is h
 - Every rule in `CLAUDE.md` (Role Ownership Check, Anti-Patterns, Code Style, Code Review, Unit Tests, Workflow Checklist) applies to new work unchanged.
 - New work after the MVP is tracked as numbered features in `CLAUDE.md`, each one its own branch → plan → approval → build → verify → PR, the same rhythm as the Build Order.
 - A feature that changes these rules updates this file in the same PR.
+- After a change to the contract, the schema or a flow, run the Documentation Sync audit (`CLAUDE.md`) once both repos have merged it.

@@ -10,7 +10,7 @@ module.exports = [
     files: ['**/*.js'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
     rules: {
-      // `const { id, ...data } = item` is how a field is dropped before a write (reconcileItems).
+      // `const { id, ...data } = item` is how a field is dropped before a write (writeBody, reconcileLinks).
       // Express identifies the error handler by its four arguments, so its unused `next` stays.
       'no-unused-vars': ['error', { ignoreRestSiblings: true, argsIgnorePattern: '^next$' }],
     },

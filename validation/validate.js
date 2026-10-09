@@ -2,7 +2,7 @@
 // check always leaves the server as the same 400 envelope:
 // { error: { message: 'Please fix the highlighted fields.', fields: { fieldName: 'message' } } }
 // Field keys are the full path to the input, joined with dots: top-level fields keep their own
-// name ("email"), nested ones point at the exact input ("images.0.src", "links.2.url").
+// name ("email"), nested ones point at the exact input ("body.1.image.src", "links.2.url").
 const { ServerError } = require('../errors');
 
 // Returns the parsed (trimmed, transformed) data, or throws the 400 with one message per field.

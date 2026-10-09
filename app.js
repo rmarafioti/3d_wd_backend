@@ -1,7 +1,7 @@
 // The Express app: the middleware stack in the order defined in docs/endpoints.md (Middleware
 // Stack), the API routers, the 404 catch-all and the error handler. Exported without listening,
 // so index.js starts the server and the tests send requests to it through Supertest.
-// It does not load .env: whoever requires it (index.js, test/setup.js) sets the environment first.
+// It does not load .env: whoever requires it (index.js, testing/setup.js) sets the environment first.
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
