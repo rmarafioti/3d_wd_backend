@@ -61,7 +61,8 @@ root
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt
 │   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
 │   ├── jwt.js                *sign/verify session JWT, cookie options
-│   └── normalizeUrl.js       *https, lowercase host, no trailing slash
+│   ├── normalizeUrl.js       *https, lowercase host, no trailing slash
+│   └── postBody.js           *element rows → the post body list in API responses
 ├── errors/                   *custom error classes + the single error handler (error envelope)
 │   ├── serverError.js
 │   └── index.js
@@ -94,7 +95,7 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-**Current progress (as of 2026-10-07):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Branch `test/unit-tests` added the Unit Tests section and the backend test suite: `node:test` + Supertest, 152 tests against a separate `headless_cms_test` database (`TEST_DATABASE_URL`), run with `npm test`, which is now part of Code Review and the Workflow Checklist. It also split the Express app into `app.js` (`index.js` only starts it). No bugs were found and the contract did not change. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Branch `docs/scaling-rules` added `docs/scaling.md`, the rules for changing the schema, API and flows after launch (imported above). Its rule that migrations run as a Railway pre-deploy step is unconfirmed until the Railway deploy is set up. The frontend was sent a handoff to write its own short version that points back to this one. Anything further is new work beyond this Build Order, tracked as numbered features (add that section with the first one); update this line when it starts.
+**Current progress (as of 2026-10-08):** The MVP Build Order is complete: steps 1–6 are merged in both repos (step 6 was PR #5, with follow-ups PR #6 and #7 adding the inactive-website 409 message). After that, branch `chore/code-review` added the Code Style and Code Review sections, ESLint (`npm run lint`), and the fixes from the first full review (PR #9). The inactive-website 409 now reads "…Reactivate and then try again.", matching the frontend. Branch `docs/test-data-cleanup` added the rule to delete test rows after every test. Branch `test/unit-tests` added the Unit Tests section and the backend test suite: `node:test` + Supertest, 152 tests against a separate `headless_cms_test` database (`TEST_DATABASE_URL`), run with `npm test`, which is now part of Code Review and the Workflow Checklist. It also split the Express app into `app.js` (`index.js` only starts it). No bugs were found and the contract did not change. Local database baseline (test rows cleared on 2026-10-07): the admin, the test site owner `steviethedogchi@gmail.com` linked to the active Stevie The Dog website, and one post ("First Post!"). Rich has recorded Stevie's API key. Branch `docs/scaling-rules` added `docs/scaling.md`, the rules for changing the schema, API and flows after launch (imported above). Its rule that migrations run as a Railway pre-deploy step is unconfirmed until the Railway deploy is set up. The frontend was sent a handoff to write its own short version that points back to this one. New work after the Build Order is tracked under Features below. Feature 1 (branch `feat/post-elements`) made `post.body` an ordered list of paragraph and image elements (new `element` table, two migrations that backfilled existing posts and dropped `post.body`), set the JSON body limit to 256kb with a 413, and brought the suite to 163 tests. The contract changed (`body` is now `Element[]`, `images` left `Post` / `PublicPost`); the frontend was sent a handoff to build the element editor and copy the contract. Local database baseline after this feature: the same rows, with "First Post!" now holding one paragraph element.
 
 1. **Seed the administrator** — backend. Schema, migration, admin-only seed (`docs/setup.md`). Confirm the row in Prisma Studio.
 2. **Login** — both. Backend: login, logout, me, session cookie, CSRF and auth middleware. Frontend: sign-in page, `apiFetch`, AuthContext, layouts, proxy. Test by signing in as the admin and landing on `/admin`.
@@ -102,6 +103,12 @@ The app is built in this order across both repos. Each step is built, tested and
 4. **Site owner login** — both (no new code expected). Sign in as the test site owner with the second Google account and confirm routing to `/dashboard`.
 5. **Post CRUD** — both. Websites with post summaries, create, get by id, edit, archive / make active, revalidation service, public posts endpoint.
 6. **Link a Website** — both. Link a new and an existing website to an account.
+
+## Features
+
+New work after the MVP Build Order, one branch → plan → approval → build → verify → PR each (`docs/scaling.md` §9).
+
+1. **Post body as elements** — both. Branch `feat/post-elements`. `post.body` changes from one text field to an ordered list of elements, each a paragraph or an image, so a client website can interleave text and photos. A new `element` table (with `position`) references the unchanged `image` table, and `images` leaves `Post` / `PublicPost`. Limits: at least 1 paragraph, at most 5 paragraphs of 10,000 characters and 5 images. Also sets `express.json({ limit: '256kb' })` with a `413` "Request body is too large." This is a breaking + data-changing contract change, shipped in one swap because nothing consumed `/api/public/posts` yet. Backend merged; the frontend was sent a handoff to build the element editor and copy the new contract.
 
 ## Role Ownership Check Rule
 
@@ -136,7 +143,7 @@ Revalidation runs after the transaction commits, is not awaited before respondin
 `lib/crypto.js` is reused by Create an Account, Link a Website, `requireApiKey` and the revalidation service. Never duplicated inline.
 
 **Multi-row writes:**
-Account + website + account_website, website + account_website, and post + images + links always happen inside a single `prisma.$transaction`.
+Account + website + account_website, website + account_website, and post + elements + images + links always happen inside a single `prisma.$transaction`.
 
 **Never a hard delete:**
 Soft delete via an `active` boolean is the standard for every client-facing resource (account, website, post). Posts are archived / reactivated through the API. Accounts and websites have no API for this in the MVP — they are flipped in Prisma Studio — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
@@ -276,7 +283,7 @@ Don't write a test for: a constant, the Prisma client setup (`prisma/index.js`),
   - No secrets selected, returned or logged
   - Test in Postman (logic only — send the `X-CSRF-Protection: 1` header)
   - Test via a real frontend request (validates CORS/cookie behavior)
-  - After manual testing (Postman, frontend), delete every row the tests added (accounts, websites, `account_website` links, posts and their images and links), so the local database is back to the baseline in the Current progress line. List the rows first and delete them by id in one transaction. (`npm test` uses its own test database and never touches these rows.)
+  - After manual testing (Postman, frontend), delete every row the tests added (accounts, websites, `account_website` links, posts and their elements, images and links), so the local database is back to the baseline in the Current progress line. List the rows first and delete them by id in one transaction. (`npm test` uses its own test database and never touches these rows.)
 - Only commit once code is reviewed, approved and all validation and tests are green
 
 Step rhythm:

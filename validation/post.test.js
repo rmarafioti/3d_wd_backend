@@ -10,16 +10,26 @@ const { ServerError } = require('../errors');
 
 const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
 const LINK = { name: 'Shop', url: 'https://shop.example.com' };
+const PARAGRAPH = { type: 'paragraph', text: 'Body' };
+
+function imageElement(image = IMAGE) {
+  return { type: 'image', image };
+}
 
 function createBody(overrides = {}) {
   return {
     websiteId: 'website-id',
     postName: 'Post',
-    body: 'Body',
-    images: [],
+    body: [PARAGRAPH],
     links: [],
     ...overrides,
   };
+}
+
+// A body of one paragraph followed by the given image elements, so image field keys start at
+// body.1.
+function bodyWithImages(...images) {
+  return createBody({ body: [PARAGRAPH, ...images.map(imageElement)] });
 }
 
 // The `fields` of the 400 that validate() throws, or null when the input is valid.
@@ -38,7 +48,6 @@ function fieldErrors(schema, data) {
 describe('createPostSchema', () => {
   const textLimits = [
     ['postName', 100, 'Post name must be 100 characters or fewer.'],
-    ['body', 5000, 'Body must be 5000 characters or fewer.'],
     ['header', 150, 'Header must be 150 characters or fewer.'],
     ['subHeader', 200, 'Sub header must be 200 characters or fewer.'],
   ];
@@ -62,8 +71,78 @@ describe('createPostSchema', () => {
     assert.deepEqual(fields, {
       websiteId: 'Website is required.',
       postName: 'Post name is required.',
-      body: 'Body is required.',
+      body: 'Body must be a list.',
     });
+  });
+
+  it('accepts a paragraph at 10000 characters and rejects 10001', () => {
+    const atLimit = { type: 'paragraph', text: 'a'.repeat(10000) };
+    const overLimit = { type: 'paragraph', text: 'a'.repeat(10001) };
+
+    assert.equal(fieldErrors(createPostSchema, createBody({ body: [atLimit] })), null);
+    assert.deepEqual(fieldErrors(createPostSchema, createBody({ body: [PARAGRAPH, overLimit] })), {
+      'body.1.text': 'Paragraph must be 10000 characters or fewer.',
+    });
+  });
+
+  it('trims a paragraph at the ends but keeps its line breaks', () => {
+    const text = '  First line.\nSecond line.\n\nNew thought.  ';
+
+    const input = validate(createPostSchema, createBody({ body: [{ type: 'paragraph', text }] }));
+
+    assert.equal(input.body[0].text, 'First line.\nSecond line.\n\nNew thought.');
+  });
+
+  it('requires paragraph text, treating a blank paragraph as empty', () => {
+    const fields = fieldErrors(
+      createPostSchema,
+      createBody({ body: [PARAGRAPH, { type: 'paragraph', text: '   ' }] }),
+    );
+
+    assert.deepEqual(fields, { 'body.1.text': 'Paragraph is required.' });
+  });
+
+  it('requires at least one paragraph, even when the body has images', () => {
+    assert.deepEqual(fieldErrors(createPostSchema, createBody({ body: [] })), {
+      body: 'Add at least one paragraph.',
+    });
+    assert.deepEqual(fieldErrors(createPostSchema, createBody({ body: [imageElement()] })), {
+      body: 'Add at least one paragraph.',
+    });
+  });
+
+  it('accepts 5 paragraphs and rejects 6 under the list name', () => {
+    assert.equal(
+      fieldErrors(createPostSchema, createBody({ body: Array(5).fill(PARAGRAPH) })),
+      null,
+    );
+    assert.deepEqual(
+      fieldErrors(createPostSchema, createBody({ body: Array(6).fill(PARAGRAPH) })),
+      {
+        body: 'A post can have at most 5 paragraphs.',
+      },
+    );
+  });
+
+  it('rejects an element whose type is not paragraph or image', () => {
+    const fields = fieldErrors(
+      createPostSchema,
+      createBody({ body: [PARAGRAPH, { type: 'video', text: 'Body' }, { text: 'Body' }] }),
+    );
+
+    assert.deepEqual(fields, {
+      'body.1.type': 'Element type must be paragraph or image.',
+      'body.2.type': 'Element type must be paragraph or image.',
+    });
+  });
+
+  it('requires an image element to carry an image', () => {
+    const fields = fieldErrors(
+      createPostSchema,
+      createBody({ body: [PARAGRAPH, { type: 'image' }] }),
+    );
+
+    assert.deepEqual(fields, { 'body.1.image': 'Image is required.' });
   });
 
   it('trims text fields and turns blank optional fields into null', () => {
@@ -101,9 +180,9 @@ describe('createPostSchema', () => {
   });
 
   it('accepts 5 images and rejects 6 under the list name', () => {
-    assert.equal(fieldErrors(createPostSchema, createBody({ images: Array(5).fill(IMAGE) })), null);
-    assert.deepEqual(fieldErrors(createPostSchema, createBody({ images: Array(6).fill(IMAGE) })), {
-      images: 'A post can have at most 5 images.',
+    assert.equal(fieldErrors(createPostSchema, bodyWithImages(...Array(5).fill(IMAGE))), null);
+    assert.deepEqual(fieldErrors(createPostSchema, bodyWithImages(...Array(6).fill(IMAGE))), {
+      body: 'A post can have at most 5 images.',
     });
   });
 
@@ -114,17 +193,17 @@ describe('createPostSchema', () => {
     });
   });
 
-  it('requires images and links to be lists', () => {
-    const fields = fieldErrors(createPostSchema, createBody({ images: undefined, links: 'none' }));
+  it('requires body and links to be lists', () => {
+    const fields = fieldErrors(createPostSchema, createBody({ body: 'Body', links: 'none' }));
 
-    assert.deepEqual(fields, { images: 'Images must be a list.', links: 'Links must be a list.' });
+    assert.deepEqual(fields, { body: 'Body must be a list.', links: 'Links must be a list.' });
   });
 
   for (const value of [1, 10000]) {
     it(`accepts an image width and height of ${value}`, () => {
       const image = { ...IMAGE, width: value, height: value };
 
-      assert.equal(fieldErrors(createPostSchema, createBody({ images: [image] })), null);
+      assert.equal(fieldErrors(createPostSchema, bodyWithImages(image)), null);
     });
   }
 
@@ -132,9 +211,9 @@ describe('createPostSchema', () => {
     it(`rejects an image width and height of ${JSON.stringify(value)}`, () => {
       const image = { ...IMAGE, width: value, height: value };
 
-      assert.deepEqual(fieldErrors(createPostSchema, createBody({ images: [image] })), {
-        'images.0.width': 'Width must be a whole number between 1 and 10000.',
-        'images.0.height': 'Height must be a whole number between 1 and 10000.',
+      assert.deepEqual(fieldErrors(createPostSchema, bodyWithImages(image)), {
+        'body.1.image.width': 'Width must be a whole number between 1 and 10000.',
+        'body.1.image.height': 'Height must be a whole number between 1 and 10000.',
       });
     });
   }
@@ -143,20 +222,20 @@ describe('createPostSchema', () => {
     const atLimit = { ...IMAGE, altText: 'a'.repeat(200) };
     const overLimit = { ...IMAGE, altText: 'a'.repeat(201) };
 
-    assert.equal(fieldErrors(createPostSchema, createBody({ images: [atLimit] })), null);
-    assert.deepEqual(fieldErrors(createPostSchema, createBody({ images: [IMAGE, overLimit] })), {
-      'images.1.altText': 'Alt text must be 200 characters or fewer.',
+    assert.equal(fieldErrors(createPostSchema, bodyWithImages(atLimit)), null);
+    assert.deepEqual(fieldErrors(createPostSchema, bodyWithImages(IMAGE, overLimit)), {
+      'body.2.image.altText': 'Alt text must be 200 characters or fewer.',
     });
   });
 
   it('requires every image field', () => {
-    const fields = fieldErrors(createPostSchema, createBody({ images: [{}] }));
+    const fields = fieldErrors(createPostSchema, bodyWithImages({}));
 
     assert.deepEqual(fields, {
-      'images.0.src': 'Image URL is required.',
-      'images.0.width': 'Width must be a whole number between 1 and 10000.',
-      'images.0.height': 'Height must be a whole number between 1 and 10000.',
-      'images.0.altText': 'Alt text is required.',
+      'body.1.image.src': 'Image URL is required.',
+      'body.1.image.width': 'Width must be a whole number between 1 and 10000.',
+      'body.1.image.height': 'Height must be a whole number between 1 and 10000.',
+      'body.1.image.altText': 'Alt text is required.',
     });
   });
 
@@ -174,13 +253,13 @@ describe('createPostSchema', () => {
     const fields = fieldErrors(
       createPostSchema,
       createBody({
-        images: [{ ...IMAGE, src: 'http://res.cloudinary.com/a.jpg' }],
+        body: [PARAGRAPH, imageElement({ ...IMAGE, src: 'http://res.cloudinary.com/a.jpg' })],
         links: [{ name: 'Shop', url: 'ftp://shop.example.com' }, { name: 'Shop' }],
       }),
     );
 
     assert.deepEqual(fields, {
-      'images.0.src': 'Must be a valid URL starting with https://',
+      'body.1.image.src': 'Must be a valid URL starting with https://',
       'links.0.url': 'Must be a valid URL starting with https://',
       'links.1.url': 'Link URL is required.',
     });

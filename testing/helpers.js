@@ -32,7 +32,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database.
 async function resetDatabase() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE image, link, post, account_website, website, account CASCADE',
+    'TRUNCATE TABLE element, image, link, post, account_website, website, account CASCADE',
   );
 }
 
@@ -79,18 +79,38 @@ function linkWebsite(account, website) {
   return prisma.accountWebsite.create({ data: { accountId: account.id, websiteId: website.id } });
 }
 
-// Creates a post with its images and links, inserted in list order. Returns the post with them.
-function createPost(website, { images = [], links = [], ...overrides } = {}) {
-  return prisma.post.create({
-    data: {
-      websiteId: website.id,
-      postName: 'Post',
-      body: 'Body',
-      ...overrides,
-      images: { create: images },
-      links: { create: links },
-    },
-    include: { images: { orderBy: { id: 'asc' } }, links: { orderBy: { id: 'asc' } } },
+// A paragraph element for createPost's body.
+function paragraph(text = 'Body') {
+  return { type: 'paragraph', text };
+}
+
+// An image element for createPost's body; `image` is { src, width, height, altText }.
+function imageElement(image) {
+  return { type: 'image', image };
+}
+
+// Creates a post with its body and links, inserted in list order, in one transaction. `body` is a
+// list of paragraph() / imageElement() items. Returns the post with its images (in body order)
+// and links.
+function createPost(website, { body = [paragraph()], links = [], ...overrides } = {}) {
+  return prisma.$transaction(async (tx) => {
+    const post = await tx.post.create({
+      data: { websiteId: website.id, postName: 'Post', ...overrides, links: { create: links } },
+      include: { links: { orderBy: { id: 'asc' } } },
+    });
+    const images = [];
+    for (const [position, element] of body.entries()) {
+      if (element.type === 'paragraph') {
+        await tx.element.create({ data: { postId: post.id, position, ...element } });
+        continue;
+      }
+      const image = await tx.image.create({ data: { ...element.image, postId: post.id } });
+      await tx.element.create({
+        data: { postId: post.id, position, type: 'image', imageId: image.id },
+      });
+      images.push(image);
+    }
+    return { ...post, images };
   });
 }
 
@@ -162,6 +182,8 @@ module.exports = {
   createSiteOwner,
   createWebsite,
   linkWebsite,
+  paragraph,
+  imageElement,
   createPost,
   createOwnerWithWebsite,
   sessionCookie,

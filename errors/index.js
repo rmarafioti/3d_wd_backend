@@ -17,6 +17,11 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: { message: 'Invalid request body.' } });
   }
 
+  // JSON body over the express.json() limit set in app.js.
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: { message: 'Request body is too large.' } });
+  }
+
   // Unexpected: log the error itself (never request headers or cookies) and hide the details.
   console.error(err);
   return res.status(500).json({ error: { message: GENERIC_MESSAGE } });
