@@ -252,7 +252,7 @@ Called **server-side** by a client's website (at build/regeneration time) with `
 
 `requireApiKey` resolves `req.website`. Return that website's **active** posts, newest `createdAt` first, each with its body in order and links (ordered by `id`): `[{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }], links: [{ name, url }] }]`. `postName` and image/link ids are never included. No cookie, no CSRF header, no CORS needed (server-to-server).
 
-How the client website uses this is specced later in the master doc's "Data Fetch From Website" section.
+How the client website uses this is specced in the master doc's "Client to Website" tab (each client website keeps it as its `docs/client-website.md`). The end-to-end test against a client website is `docs/client-website-test.md`.
 
 ### Health — `GET /api/health`
 
@@ -270,4 +270,4 @@ Returns `200 { data: { ok: true } }`. No auth. Used by Railway to check the serv
 - Decrypt `webhook_secret_encrypted` with `lib/crypto.js`, then:
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }`, timeout 5 seconds (`AbortSignal.timeout(5000)`).
 - Non-2xx response, timeout or network error → log the website id and status. **Never** log the secret, the Authorization header or the request headers.
-- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the master doc's "Data Fetch From Website" section.
+- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the master doc's "Client to Website" tab.
