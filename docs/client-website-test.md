@@ -32,7 +32,7 @@ The client website fetches from the local backend. Nothing leaves the machine.
    - empty optional fields don't render
    - the archived post does not appear
 5. Change `HEADLESS_CMS_API_KEY` to a wrong value and restart. The backend returns `401` "Invalid API key." and the website must handle it without crashing. Restore the key.
-6. Run `next build && next start -p 3001` and confirm the posts page builds as static and still shows the posts.
+6. Run `next build && next start -p 3001` and confirm every page that renders posts builds as static and still shows the posts.
 
 ## Test B — the webhook arrives (deployed site, no tunnel)
 
@@ -68,7 +68,7 @@ A tunnel gives the local backend a public https URL for the length of the test, 
 
 ## Done when
 
-- [ ] Test A: every post case renders correctly locally, a wrong key is handled, and the page builds as static
+- [ ] Test A: every post case renders correctly locally, a wrong key is handled, and every page that renders posts builds as static
 - [ ] Test B: a wrong secret gets `401`, and a post edit produces `POST /api/revalidate 200` on Vercel with no failure in the backend log
 - [ ] Test C: create, edit, archive and make active each show on the live site after one refresh
 - [ ] Vercel's `HEADLESS_CMS_API_URL` restored, the tunnel stopped, and the test rows deleted
