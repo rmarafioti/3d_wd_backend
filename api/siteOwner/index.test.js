@@ -31,7 +31,6 @@ const WEBSITE_NOT_FOUND = { error: { message: 'Website not found.' } };
 const UNKNOWN_ID = '019a0000-0000-7000-8000-000000000000';
 
 const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
-const LINK = { name: 'Shop', url: 'https://shop.example.com' };
 
 let fetchMock;
 
@@ -54,7 +53,6 @@ function newPost(website, overrides = {}) {
     websiteId: website.id,
     postName: 'Post',
     body: [paragraph()],
-    links: [],
     ...overrides,
   };
 }
@@ -67,7 +65,6 @@ function editPost(overrides = {}) {
     header: null,
     subHeader: null,
     postDate: null,
-    links: [],
     ...overrides,
   };
 }
@@ -160,7 +157,7 @@ describe('GET /api/siteOwner/websites', () => {
 });
 
 describe('POST /api/siteOwner/posts', () => {
-  it('creates a post with its body in order and its links, and returns the Post shape', async () => {
+  it('creates a post with its body in order, markup kept as typed, and returns the Post shape', async () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
     const second = { ...IMAGE, src: 'https://res.cloudinary.com/b.jpg', altText: 'B' };
 
@@ -174,9 +171,8 @@ describe('POST /api/siteOwner/posts', () => {
           imageElement(IMAGE),
           paragraph(' First paragraph.\nSecond line. '),
           imageElement(second),
-          paragraph('Last paragraph.'),
+          paragraph('**Bold** and *italic* and [a link](https://example.com).'),
         ],
-        links: [LINK],
       }),
     );
 
@@ -188,7 +184,6 @@ describe('POST /api/siteOwner/posts', () => {
       'createdAt',
       'header',
       'id',
-      'links',
       'postDate',
       'postName',
       'subHeader',
@@ -209,12 +204,8 @@ describe('POST /api/siteOwner/posts', () => {
       { type: 'image', image: { id: imageId(IMAGE.src), ...IMAGE } },
       { type: 'paragraph', text: 'First paragraph.\nSecond line.' },
       { type: 'image', image: { id: imageId(second.src), ...second } },
-      { type: 'paragraph', text: 'Last paragraph.' },
+      { type: 'paragraph', text: '**Bold** and *italic* and [a link](https://example.com).' },
     ]);
-    assert.deepEqual(
-      post.links.map(({ id, ...link }) => link),
-      [LINK],
-    );
     await assertNoSecrets(res.body);
     await revalidationCall();
   });
@@ -317,8 +308,10 @@ describe('POST /api/siteOwner/posts', () => {
     const res = await as(owner, 'post', '/api/siteOwner/posts').send(
       newPost(website, {
         postName: '',
-        body: [paragraph(), imageElement({ ...IMAGE, src: 'http://insecure.example.com/a.jpg' })],
-        links: [LINK, LINK, { name: 'Bad', url: 'not a url' }],
+        body: [
+          paragraph('[menu](http://example.com)'),
+          imageElement({ ...IMAGE, src: 'http://insecure.example.com/a.jpg' }),
+        ],
       }),
     );
 
@@ -328,8 +321,8 @@ describe('POST /api/siteOwner/posts', () => {
         message: 'Please fix the highlighted fields.',
         fields: {
           postName: 'Post name is required.',
+          'body.0.text': 'Each link must be a valid URL starting with https://',
           'body.1.image.src': 'Must be a valid URL starting with https://',
-          'links.2.url': 'Must be a valid URL starting with https://',
         },
       },
     });
@@ -351,12 +344,11 @@ describe('POST /api/siteOwner/posts', () => {
 });
 
 describe('GET /api/siteOwner/posts/:id', () => {
-  it('returns the post with its website name, body in order and links', async () => {
+  it('returns the post with its website name and body in order', async () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
     const post = await createPost(website, {
       header: 'Hello',
       body: [paragraph('Intro'), imageElement(IMAGE), paragraph('Outro')],
-      links: [LINK],
     });
     const { postId, ...image } = post.images[0];
 
@@ -380,7 +372,6 @@ describe('GET /api/siteOwner/posts/:id', () => {
           { type: 'image', image },
           { type: 'paragraph', text: 'Outro' },
         ],
-        links: post.links.map(({ postId, ...link }) => link),
       },
     });
   });
@@ -417,14 +408,12 @@ describe('GET /api/siteOwner/posts/:id', () => {
 });
 
 describe('PATCH /api/siteOwner/posts/:id', () => {
-  it('updates kept items, inserts new ones and deletes the missing ones', async () => {
+  it('updates kept images, inserts new ones and deletes the missing ones', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, {
       body: [paragraph(), imageElement(IMAGE), imageElement({ ...IMAGE, altText: 'Removed' })],
-      links: [LINK, { ...LINK, name: 'Removed' }],
     });
     const [keptImage, removedImage] = post.images;
-    const [keptLink, removedLink] = post.links;
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
       editPost({
@@ -434,10 +423,6 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
           paragraph('Edited body'),
           imageElement({ id: keptImage.id, ...IMAGE, altText: 'Updated' }),
           imageElement({ ...IMAGE, altText: 'Added' }),
-        ],
-        links: [
-          { id: keptLink.id, ...LINK, name: 'Updated' },
-          { ...LINK, name: 'Added' },
         ],
       }),
     );
@@ -455,15 +440,7 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
       ),
       ['Edited body', [true, 'Updated'], [false, 'Added']],
     );
-    assert.deepEqual(
-      edited.links.map((link) => [link.id === keptLink.id, link.name]),
-      [
-        [true, 'Updated'],
-        [false, 'Added'],
-      ],
-    );
     assert.equal(await prisma.image.findUnique({ where: { id: removedImage.id } }), null);
-    assert.equal(await prisma.link.findUnique({ where: { id: removedLink.id } }), null);
     assert.ok(new Date(edited.updatedAt) > post.updatedAt);
     await revalidationCall();
   });
@@ -555,7 +532,7 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
     );
 
     assert.equal(res.status, 400);
-    assert.deepEqual(res.body, { error: { message: 'Invalid image or link.' } });
+    assert.deepEqual(res.body, { error: { message: 'Invalid image.' } });
     const stored = await prisma.post.findUnique({ where: { id: post.id } });
     assert.equal(stored.postName, 'Original');
     assert.equal(await prisma.image.count({ where: { postId: otherPost.id } }), 1);
@@ -572,25 +549,7 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
     );
 
     assert.equal(res.status, 400);
-    assert.deepEqual(res.body, { error: { message: 'Invalid image or link.' } });
-  });
-
-  it('returns 400 for a link id sent twice', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const post = await createPost(website, { links: [LINK] });
-    const linkId = post.links[0].id;
-
-    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
-      editPost({
-        links: [
-          { id: linkId, ...LINK },
-          { id: linkId, ...LINK },
-        ],
-      }),
-    );
-
-    assert.equal(res.status, 400);
-    assert.deepEqual(res.body, { error: { message: 'Invalid image or link.' } });
+    assert.deepEqual(res.body, { error: { message: 'Invalid image.' } });
   });
 
   it('returns 400 with fields for an invalid edit', async () => {

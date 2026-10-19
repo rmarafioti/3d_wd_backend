@@ -19,7 +19,6 @@ const {
 const INVALID_KEY = { error: { message: 'Invalid API key.' } };
 
 const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
-const LINK = { name: 'Shop', url: 'https://shop.example.com' };
 
 beforeEach(resetDatabase);
 after(disconnect);
@@ -40,7 +39,6 @@ describe('GET /api/public/posts', () => {
         imageElement({ ...IMAGE, altText: 'Second' }),
         paragraph('Outro'),
       ],
-      links: [LINK],
     });
     const newer = await createPost(website, { header: 'Newer' });
     await createPost(website, { header: 'Archived', active: false });
@@ -60,7 +58,6 @@ describe('GET /api/public/posts', () => {
           createdAt: newer.createdAt.toISOString(),
           updatedAt: newer.updatedAt.toISOString(),
           body: [{ type: 'paragraph', text: 'Body' }],
-          links: [],
         },
         {
           id: older.id,
@@ -75,7 +72,6 @@ describe('GET /api/public/posts', () => {
             { type: 'image', image: { ...IMAGE, altText: 'Second' } },
             { type: 'paragraph', text: 'Outro' },
           ],
-          links: [LINK],
         },
       ],
     });

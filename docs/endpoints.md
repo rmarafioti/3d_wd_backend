@@ -105,26 +105,27 @@ Notes:
 - `postName`: required, max 100. `header`: optional, max 150. `subHeader`: optional, max 200.
 - `postDate`: optional, valid date `YYYY-MM-DD`.
 - `body`: a list of elements, each with `type` `paragraph` or `image`. At least 1 paragraph, max 5 paragraphs and max 5 images per post. Paragraph `text`: required, max 10000 (trimmed at the ends; line breaks inside are kept). Image element: `image` required, with `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
-- Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text.
+- Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text (a link's text is checked before its URL).
 - `active` (create / status): boolean.
 
 ### Paragraph formatting
 
-A paragraph's `text` is stored exactly as the site owner typed it. Three patterns in it are shown formatted; everything else is plain text.
+A paragraph's `text` is stored exactly as the site owner typed it. Four patterns in it are shown formatted; everything else is plain text.
 
 - `**text**` is bold.
 - `*text*` is italic.
+- `***text***` is bold and italic.
 - `[link text](https://…)` is a link.
 
 Rules:
 
-1. Read the text left to right. At each `[`, try a link; at `**`, try bold; at a single `*`, try italic. If the pattern doesn't complete, the characters show as typed and reading continues with the next character.
+1. Read the text left to right. At each `[`, try a link; at `***`, try bold-italic; at `**`, try bold; at a single `*`, try italic. If the pattern doesn't complete, only its first character shows as typed, and reading continues with the next character (so `**a*` is a `*` followed by italic `a`).
 2. A link is `[`, the link text (no `]` and no line break), `](`, the URL (no spaces, no line break and no `)`), then `)`. Because the URL ends at the first `)`, a URL that itself contains `)` can't be linked in v1.
-3. Bold ends at the next `**` on the same line, and italic at the next `*` on the same line. They apply only when the text between the markers isn't empty and doesn't start or end with a space. Formatting never crosses a line break.
-4. No nesting: markup inside bold, italic or link text shows as typed.
+3. Bold-italic ends at the next `***` on the same line, bold at the next `**`, and italic at the next `*`. While looking for the closing marker, a link (rule 2) is skipped whole, so markers inside its text or URL don't close the format. A format applies only when the text between the markers isn't empty and doesn't start or end with a space. Formatting never crosses a line break.
+4. Bold, italic and bold-italic may contain links, and nothing else: any other markup inside them shows as typed. Link text is plain: markup inside it shows as typed.
 5. `_text_` is not italic. There is one way to write each format.
 6. HTML is never stored or rendered. `<`, `>` and `&` in the text show as typed. A renderer builds elements from the text and never sets raw HTML.
-7. Bold renders as `<b>` and italic as `<i>`, so one CSS rule styles them the same everywhere. A link renders as `<a>` with its URL as `href`. Whether it opens in a new tab is up to the renderer.
+7. Bold renders as `<b>`, italic as `<i>`, and bold-italic as `<b><i>…</i></b>`, so one CSS rule styles them the same everywhere. A link renders as `<a>` with its URL as `href`, inside any format around it. A link is built only when its URL starts with `https://`; otherwise its characters show as typed (saving rejects such a link, but the preview shows unsaved text). Whether a link opens in a new tab is up to the renderer.
 
 Line breaks are kept as in any paragraph. The dashboard (post page and preview) and the client website template must render identically, and both test against the examples below. The output column is written as HTML to show the result; renderers build the equivalent elements.
 
@@ -146,6 +147,14 @@ Rendering examples:
 | `**a *b* c**`                                             | `<b>a *b* c</b>`                                                             |
 | `[**Menu**](https://example.com)`                         | `<a href="https://example.com">**Menu**</a>`                                 |
 | `<b>hi</b> & more`                                        | `&lt;b&gt;hi&lt;/b&gt; &amp; more` (shown as typed)                          |
+| `***both***`                                              | `<b><i>both</i></b>`                                                         |
+| `*** spaced ***`                                          | `*** spaced ***`                                                             |
+| `**a*`                                                    | `*<i>a</i>`                                                                  |
+| `**[our menu](https://example.com/menu)**`                | `<b><a href="https://example.com/menu">our menu</a></b>`                     |
+| `*see [the map](https://example.com/map)*`                | `<i>see <a href="https://example.com/map">the map</a></i>`                   |
+| `***[both](https://example.com)***`                       | `<b><i><a href="https://example.com">both</a></i></b>`                       |
+| `**[a](https://example.com/**x)**`                        | `<b><a href="https://example.com/**x">a</a></b>`                             |
+| `[menu](http://example.com)` (preview only)               | `[menu](http://example.com)`                                                 |
 
 Rejected examples (`400` on `body.N.text`):
 
@@ -153,6 +162,7 @@ Rejected examples (`400` on `body.N.text`):
 | ----------------------------------------------- | ---------------------------------------------------- |
 | `[menu](http://example.com)`                    | Each link must be a valid URL starting with https:// |
 | `[menu](javascript:alert(1))`                   | Each link must be a valid URL starting with https:// |
+| `**[menu](http://example.com)**`                | Each link must be a valid URL starting with https:// |
 | `[ ](https://example.com)`                      | Each link needs link text.                           |
 | `[` + 101 characters + `](https://example.com)` | Link text must be 100 characters or fewer.           |
 
