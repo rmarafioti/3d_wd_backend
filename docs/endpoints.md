@@ -14,7 +14,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 - All request and response fields are camelCase. snake_case exists only inside the database (Prisma `@map`).
 - Dates and times are ISO 8601 strings. `postDate` is a date only: `YYYY-MM-DD`.
 - Success response: `{ "data": ... }`
-- Error response: `{ "error": { "message": "...", "fields": { "fieldName": "message" } } }` — `fields` is only present on validation errors (400) so the form can show a message next to each field. Each key is the full path to the input, joined with dots: top-level fields use their own name (`email`, `postName`), items in a list use their index (`body.0.text`, `body.1.image.src`, `links.2.url`), and a list-level error such as too many items uses the list name (`body`, `links`).
+- Error response: `{ "error": { "message": "...", "fields": { "fieldName": "message" } } }` — `fields` is only present on validation errors (400) so the form can show a message next to each field. Each key is the full path to the input, joined with dots: top-level fields use their own name (`email`, `postName`), items in a list use their index (`body.0.text`, `body.1.image.src`), and a list-level error such as too many items uses the list name (`body`).
 - Every `POST`, `PATCH` and `DELETE` must carry the header `X-CSRF-Protection: 1`, or the backend returns `403`. `GET` requests do not need it.
 - Every request from the app frontend is sent with `credentials: 'include'` (the session cookie). This is handled once, in the frontend's `apiFetch()`.
 - `api_key_hash` and `webhook_secret_encrypted` never appear in any response.
@@ -26,7 +26,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 | 200  | OK                                                                                           |
 | 201  | Created                                                                                      |
 | 204  | OK, no body (logout)                                                                         |
-| 400  | Invalid input (validation failed, or an image/link id that doesn't belong to the post)       |
+| 400  | Invalid input (validation failed, or an image id that doesn't belong to the post)            |
 | 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key          |
 | 403  | Signed in but wrong role, or missing CSRF header                                             |
 | 404  | Not found **or not yours** — the same answer either way, so ids can't be probed              |
@@ -42,41 +42,40 @@ WebsiteSummary { id, websiteName, url, active }
 Credentials    { apiKey, webhookSecret }            // plaintext, one-time only
 Image          { id, src, width, height, altText }
 Element        { type: 'paragraph', text } | { type: 'image', image: Image }
-Link           { id, name, url }
 PostSummary    { id, postName, postDate, active, createdAt }
 Post           { id, websiteId, websiteName, postName, header, subHeader,
-                 postDate, active, createdAt, updatedAt, body: Element[], links: Link[] }
+                 postDate, active, createdAt, updatedAt, body: Element[] }
 ```
 
 Optional post fields (`header`, `subHeader`, `postDate`) are `null` when empty.
 
-A post's `body` is its content as an ordered list of elements: each element is a paragraph or an image, returned in the order the site owner arranged them, so a client website renders `body` in order to interleave text and photos. Elements have no `id`; they are identified by their position. A paragraph's `text` keeps the line breaks the site owner typed (render it with `white-space: pre-line`). Links are always returned ordered by `id` ascending (UUIDv7 is time-ordered, so this is the order they were added).
+A post's `body` is its content as an ordered list of elements: each element is a paragraph or an image, returned in the order the site owner arranged them, so a client website renders `body` in order to interleave text and photos. Elements have no `id`; they are identified by their position. A paragraph's `text` keeps the line breaks the site owner typed (render it with `white-space: pre-line`). A paragraph's `text` may also contain formatting markup, described in Paragraph formatting below.
 
 ### Endpoints
 
-| Method & path                           | Who                                               | Request body                                                                                                                                                                                 | Success                                             |
-| --------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `POST /api/auth/login`                  | anyone                                            | `{ credential }` (Google ID token)                                                                                                                                                           | `200 { role }` + sets session cookie                |
-| `POST /api/auth/logout`                 | anyone                                            | —                                                                                                                                                                                            | `204`, clears session cookie                        |
-| `GET /api/auth/me`                      | signed in                                         | —                                                                                                                                                                                            | `200 { id, name, email, role }`                     |
-| `GET /api/admin/accounts`               | admin                                             | —                                                                                                                                                                                            | `200 [ Account + { websites: WebsiteSummary[] } ]`  |
-| `GET /api/admin/websites`               | admin                                             | —                                                                                                                                                                                            | `200 WebsiteSummary[]` (active only)                |
-| `POST /api/admin/accounts`              | admin                                             | `{ name, email, websiteId }` **or** `{ name, email, websiteName, websiteUrl }`                                                                                                               | `201 { account, website, credentials? }`            |
-| `POST /api/admin/accounts/:id/websites` | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                                         | `201 { website, credentials? }`                     |
-| `GET /api/siteOwner/websites`           | site owner                                        | —                                                                                                                                                                                            | `200 [ WebsiteSummary + { posts: PostSummary[] } ]` |
-| `POST /api/siteOwner/posts`             | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, active?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }], links: [{ name, url }] }` | `201 Post`                                          |
-| `GET /api/siteOwner/posts/:id`          | site owner                                        | —                                                                                                                                                                                            | `200 Post`                                          |
-| `PATCH /api/siteOwner/posts/:id`        | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }], links: [{ id?, name, url }] }`              | `200 Post`                                          |
-| `PATCH /api/siteOwner/posts/:id/status` | site owner                                        | `{ active }`                                                                                                                                                                                 | `200 Post`                                          |
-| `GET /api/public/posts`                 | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                                            | `200 PublicPost[]`                                  |
-| `GET /api/health`                       | anyone                                            | —                                                                                                                                                                                            | `200 { ok: true }`                                  |
+| Method & path                           | Who                                               | Request body                                                                                                                                                         | Success                                             |
+| --------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `POST /api/auth/login`                  | anyone                                            | `{ credential }` (Google ID token)                                                                                                                                   | `200 { role }` + sets session cookie                |
+| `POST /api/auth/logout`                 | anyone                                            | —                                                                                                                                                                    | `204`, clears session cookie                        |
+| `GET /api/auth/me`                      | signed in                                         | —                                                                                                                                                                    | `200 { id, name, email, role }`                     |
+| `GET /api/admin/accounts`               | admin                                             | —                                                                                                                                                                    | `200 [ Account + { websites: WebsiteSummary[] } ]`  |
+| `GET /api/admin/websites`               | admin                                             | —                                                                                                                                                                    | `200 WebsiteSummary[]` (active only)                |
+| `POST /api/admin/accounts`              | admin                                             | `{ name, email, websiteId }` **or** `{ name, email, websiteName, websiteUrl }`                                                                                       | `201 { account, website, credentials? }`            |
+| `POST /api/admin/accounts/:id/websites` | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                 | `201 { website, credentials? }`                     |
+| `GET /api/siteOwner/websites`           | site owner                                        | —                                                                                                                                                                    | `200 [ WebsiteSummary + { posts: PostSummary[] } ]` |
+| `POST /api/siteOwner/posts`             | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, active?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }] }` | `201 Post`                                          |
+| `GET /api/siteOwner/posts/:id`          | site owner                                        | —                                                                                                                                                                    | `200 Post`                                          |
+| `PATCH /api/siteOwner/posts/:id`        | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }] }`                   | `200 Post`                                          |
+| `PATCH /api/siteOwner/posts/:id/status` | site owner                                        | `{ active }`                                                                                                                                                         | `200 Post`                                          |
+| `GET /api/public/posts`                 | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                    | `200 PublicPost[]`                                  |
+| `GET /api/health`                       | anyone                                            | —                                                                                                                                                                    | `200 { ok: true }`                                  |
 
 Notes:
 
 - `credentials` is only present when a **new** website was created. Its presence is what tells the frontend to open the one-time reveal dialog. When an existing website was linked, it is absent.
 - On `POST /api/admin/accounts` and `POST /api/admin/accounts/:id/websites` the body must contain **either** `websiteId` **or** both `websiteName` and `websiteUrl` — never both, never neither (400).
-- `PATCH /api/siteOwner/posts/:id` is a full submission of the edit form: all fields are sent every time. Send `null` to clear an optional field. `body` / `links` are the complete current lists, in order — an existing image carries its `image.id`, an existing link its `id`, new ones have none, and any image or link stored but missing from the list is deleted. Paragraphs carry no id. `websiteId` and `active` cannot be changed here.
-- `PublicPost` is `{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }], links: [{ name, url }] }` — `postName` is internal and is **never** returned publicly, and neither are image or link ids. Only active posts, newest `createdAt` first.
+- `PATCH /api/siteOwner/posts/:id` is a full submission of the edit form: all fields are sent every time. Send `null` to clear an optional field. `body` is the complete current list, in order. An existing image carries its `image.id`, a new one has none, and any image stored but missing from the body is deleted. Paragraphs carry no id. `websiteId` and `active` cannot be changed here.
+- `PublicPost` is `{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }] }` — `postName` is internal and is **never** returned publicly, and neither are image ids. Only active posts, newest `createdAt` first.
 
 ### Error messages the frontend displays
 
@@ -92,7 +91,7 @@ Notes:
 | New website: URL belongs to an inactive website                         | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again. |
 | Link: account already linked to that website                            | 409  | This account is already linked to [Website Name].                                                                  |
 | Website / account / post not found or not yours                         | 404  | [Website / Account / Post] not found.                                                                              |
-| Edit: an image or link id that isn't on this post                       | 400  | Invalid image or link.                                                                                             |
+| Edit: an image id that isn't on this post                               | 400  | Invalid image.                                                                                                     |
 | Public: missing / unknown key, or inactive website                      | 401  | Invalid API key.                                                                                                   |
 | Request body over the 256 KB limit                                      | 413  | Request body is too large.                                                                                         |
 
@@ -102,12 +101,60 @@ Notes:
 - `name` (account): required, max 100.
 - `email`: required, valid email format, stored lowercase.
 - `websiteName`: required, max 100.
-- `websiteUrl`, link `url`, image `src`: valid URL starting with `https://`. Website URLs are normalized by the backend (lowercase host, no trailing slash) before the uniqueness check and before saving. The uniqueness check treats `www.example.com` and `example.com` as the same website; the URL is stored as entered (it is also the revalidation target).
+- `websiteUrl`, image `src`: valid URL starting with `https://`. Website URLs are normalized by the backend (lowercase host, no trailing slash) before the uniqueness check and before saving. The uniqueness check treats `www.example.com` and `example.com` as the same website; the URL is stored as entered (it is also the revalidation target).
 - `postName`: required, max 100. `header`: optional, max 150. `subHeader`: optional, max 200.
 - `postDate`: optional, valid date `YYYY-MM-DD`.
 - `body`: a list of elements, each with `type` `paragraph` or `image`. At least 1 paragraph, max 5 paragraphs and max 5 images per post. Paragraph `text`: required, max 10000 (trimmed at the ends; line breaks inside are kept). Image element: `image` required, with `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
-- `links`: max 10 per post. Each link: `name` (max 100) and `url` both required.
+- Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text.
 - `active` (create / status): boolean.
+
+### Paragraph formatting
+
+A paragraph's `text` is stored exactly as the site owner typed it. Three patterns in it are shown formatted; everything else is plain text.
+
+- `**text**` is bold.
+- `*text*` is italic.
+- `[link text](https://…)` is a link.
+
+Rules:
+
+1. Read the text left to right. At each `[`, try a link; at `**`, try bold; at a single `*`, try italic. If the pattern doesn't complete, the characters show as typed and reading continues with the next character.
+2. A link is `[`, the link text (no `]` and no line break), `](`, the URL (no spaces, no line break and no `)`), then `)`. Because the URL ends at the first `)`, a URL that itself contains `)` can't be linked in v1.
+3. Bold ends at the next `**` on the same line, and italic at the next `*` on the same line. They apply only when the text between the markers isn't empty and doesn't start or end with a space. Formatting never crosses a line break.
+4. No nesting: markup inside bold, italic or link text shows as typed.
+5. `_text_` is not italic. There is one way to write each format.
+6. HTML is never stored or rendered. `<`, `>` and `&` in the text show as typed. A renderer builds elements from the text and never sets raw HTML.
+7. Bold renders as `<b>` and italic as `<i>`, so one CSS rule styles them the same everywhere. A link renders as `<a>` with its URL as `href`. Whether it opens in a new tab is up to the renderer.
+
+Line breaks are kept as in any paragraph. The dashboard (post page and preview) and the client website template must render identically, and both test against the examples below. The output column is written as HTML to show the result; renderers build the equivalent elements.
+
+Rendering examples:
+
+| Input                                                     | Output                                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `Hello **world**`                                         | `Hello <b>world</b>`                                                         |
+| `An *easy* walk`                                          | `An <i>easy</i> walk`                                                        |
+| `See [our menu](https://example.com/menu).`               | `See <a href="https://example.com/menu">our menu</a>.`                       |
+| `**Bold** and *italic* and [a link](https://example.com)` | `<b>Bold</b> and <i>italic</i> and <a href="https://example.com">a link</a>` |
+| `5 * 3 * 2`                                               | `5 * 3 * 2`                                                                  |
+| `** not bold **`                                          | `** not bold **`                                                             |
+| `*open`                                                   | `*open`                                                                      |
+| `[no url]`                                                | `[no url]`                                                                   |
+| `[menu] (https://example.com)`                            | `[menu] (https://example.com)`                                               |
+| `**across` + line break + `lines**`                       | `**across` + line break + `lines**`                                          |
+| `_not italic_`                                            | `_not italic_`                                                               |
+| `**a *b* c**`                                             | `<b>a *b* c</b>`                                                             |
+| `[**Menu**](https://example.com)`                         | `<a href="https://example.com">**Menu**</a>`                                 |
+| `<b>hi</b> & more`                                        | `&lt;b&gt;hi&lt;/b&gt; &amp; more` (shown as typed)                          |
+
+Rejected examples (`400` on `body.N.text`):
+
+| Input                                           | Field message                                        |
+| ----------------------------------------------- | ---------------------------------------------------- |
+| `[menu](http://example.com)`                    | Each link must be a valid URL starting with https:// |
+| `[menu](javascript:alert(1))`                   | Each link must be a valid URL starting with https:// |
+| `[ ](https://example.com)`                      | Each link needs link text.                           |
+| `[` + 101 characters + `](https://example.com)` | Link text must be 100 characters or fewer.           |
 
 ---
 
@@ -209,31 +256,30 @@ All site-owner routes: `requireAuth` + `requireRole('site_owner')`.
 
 ### Get All Websites Tied To the Account — `GET /api/siteOwner/websites`
 
-The site owner's active websites (via `account_website`), sorted by `websiteName`, each with **post summaries** (active and inactive), newest `createdAt` first: `[{ id, websiteName, url, active, posts: [{ id, postName, postDate, active, createdAt }] }]`. No post body or links — those load with the single post. Powers the `/dashboard` list and the website dropdown in Create a Post.
+The site owner's active websites (via `account_website`), sorted by `websiteName`, each with **post summaries** (active and inactive), newest `createdAt` first: `[{ id, websiteName, url, active, posts: [{ id, postName, postDate, active, createdAt }] }]`. No post body — it loads with the single post. Powers the `/dashboard` list and the website dropdown in Create a Post.
 
 ### Create a Post — `POST /api/siteOwner/posts`
 
 1. Validate with `validation/post.js` — the backend re-validates everything regardless of what the frontend checked.
 2. Ownership check on `websiteId` → `404` "Website not found." if it fails.
-3. One transaction: insert the post (`active` defaults to `true` if not sent), then its body in order (each image element's image, then every element with its position), then each link. If any insert fails the whole create rolls back — no orphaned post.
+3. One transaction: insert the post (`active` defaults to `true` if not sent), then its body in order (each image element's image, then every element with its position). If any insert fails the whole create rolls back — no orphaned post.
 4. Return `201 { data: Post }`.
 5. After the transaction has committed, call `revalidate(website.id, post.id)` (see Revalidation). Do not await it before responding.
 
 ### Get a Post by ID — `GET /api/siteOwner/posts/:id`
 
-Ownership check → `404` "Post not found." Returns `200 { data: Post }` including `websiteName`, the body in order and links (ordered by `id`). Powers `/dashboard/post/[id]` and pre-fills the Edit form.
+Ownership check → `404` "Post not found." Returns `200 { data: Post }` including `websiteName`, and the body in order. Powers `/dashboard/post/[id]` and pre-fills the Edit form.
 
 ### Edit a Post — `PATCH /api/siteOwner/posts/:id`
 
-Request body: the full edit form — `{ postName, header, subHeader, postDate, body, links }`. `websiteId` and `active` are not accepted here (a post never moves websites; status changes only through the status route).
+Request body: the full edit form — `{ postName, header, subHeader, postDate, body }`. `websiteId` and `active` are not accepted here (a post never moves websites; status changes only through the status route).
 
 1. Validate with `validation/post.js`.
 2. Ownership check → `404` "Post not found."
-3. Every image `id` (inside `body`) and link `id` must belong to this post and appear only once → otherwise `400` "Invalid image or link." (stops editing another post's items by guessing ids).
+3. Every image `id` (inside `body`) must belong to this post and appear only once → otherwise `400` "Invalid image." (stops editing another post's images by guessing ids).
 4. One transaction:
    - Update the post's own fields.
    - Body: the post's elements are deleted and rewritten in the new order. Stored images whose `id` is missing from the body → delete; images with an `id` → update; images without → insert. Image ids stay stable across edits; elements are re-created.
-   - Links: same three-way reconcile.
    - `updated_at` refreshes automatically (`@updatedAt`).
    - If any part fails, nothing is changed.
 5. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
@@ -250,7 +296,7 @@ Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This i
 
 Called **server-side** by a client's website (at build/regeneration time) with `Authorization: Bearer <apiKey>`. The key must never be exposed in the client website's browser code.
 
-`requireApiKey` resolves `req.website`. Return that website's **active** posts, newest `createdAt` first, each with its body in order and links (ordered by `id`): `[{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }], links: [{ name, url }] }]`. `postName` and image/link ids are never included. No cookie, no CSRF header, no CORS needed (server-to-server).
+`requireApiKey` resolves `req.website`. Return that website's **active** posts, newest `createdAt` first, each with its body in order: `[{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }] }]`. `postName` and image ids are never included. No cookie, no CSRF header, no CORS needed (server-to-server).
 
 How the client website uses this is specced in the master doc's "Client to Website" tab (each client website keeps it as its `docs/client-website.md`). The end-to-end test against a client website is `docs/client-website-test.md`.
 

@@ -92,17 +92,6 @@ Table image {
   }
 }
 
-Table link {
-  id      string [primary key, default: uuid v7]
-  post_id string [not null]
-  name    string [not null]
-  url     string [not null]
-
-  indexes {
-    post_id
-  }
-}
-
 Enum role {
   admin
   site_owner
@@ -121,19 +110,18 @@ Ref: post.website_id > website.id   // a website can have many posts
 Ref: element.post_id > post.id      // a post's body is many elements (paragraphs and images)
 Ref: element.image_id - image.id    // an image element shows exactly one image
 Ref: image.post_id > post.id        // a post can have many images
-Ref: link.post_id > post.id         // a post can have many links
 ```
 
 ### Prisma conventions
 
-- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Link`) mapped to the snake_case tables above with `@@map`.
+- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`) mapped to the snake_case tables above with `@@map`.
 - Every snake_case column has a camelCase field with `@map` (e.g. `apiKeyHash String @unique @map("api_key_hash")`), so nothing snake_case ever reaches an API response.
-- Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created. Links are always read this way — they have no position column.
+- Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created.
 - A post's body is its `element` rows, read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.
 - `createdAt DateTime @default(now()) @map("created_at")`, `updatedAt DateTime @updatedAt @map("updated_at")`.
 - `postDate DateTime? @db.Date @map("post_date")`.
 - `Element.text` is `@db.Text`.
-- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted. The only deletes are elements, images and links removed in Edit a Post. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
+- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted. The only deletes are elements and images removed in Edit a Post. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
 - Prisma client is a single shared instance exported from `prisma/index.js`.
 
 ### Prisma 7 notes

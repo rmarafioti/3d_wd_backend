@@ -23,12 +23,13 @@ The client website fetches from the local backend. Nothing leaves the machine.
 3. As the test site owner, create posts that cover each case:
    - paragraphs only, including one with line breaks
    - paragraphs and images interleaved
-   - links
+   - formatting: bold, italic and a link inside a paragraph, plus markup left as typed (`5 * 3 * 2`)
    - header, sub header and post date all left empty
    - an archived post (archive it after creating it)
 4. Check the page:
    - posts appear newest first, each body in the order it was arranged
    - line breaks show and images load at their stored size
+   - formatting renders as in the Paragraph formatting examples (`docs/endpoints.md`), and no raw HTML is rendered
    - empty optional fields don't render
    - the archived post does not appear
 5. Change `HEADLESS_CMS_API_KEY` to a wrong value and restart. The backend returns `401` "Invalid API key." and the website must handle it without crashing. Restore the key.
@@ -63,7 +64,7 @@ A tunnel gives the local backend a public https URL for the length of the test, 
 ## Restore and clean up
 
 1. On Vercel, set `HEADLESS_CMS_API_URL` back: unset it until this backend is deployed, then `https://api.3dwebdev.com`. Redeploy and stop the tunnel.
-2. Delete every row the tests added, as in the Workflow Checklist: list the test posts first, then delete them by id in one transaction, with their elements, images and links. The local database must be back to the baseline in the Current progress line in `CLAUDE.md`.
+2. Delete every row the tests added, as in the Workflow Checklist: list the test posts first, then delete them by id in one transaction, with their elements and images. The local database must be back to the baseline in the Current progress line in `CLAUDE.md`.
 3. Leave the website's API key and webhook secret on Vercel. They are the website's real credentials.
 
 ## Done when
