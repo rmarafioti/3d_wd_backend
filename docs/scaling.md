@@ -2,6 +2,10 @@
 
 Rules for changing the system after the MVP is deployed: how to add to the schema, the API and the flows without breaking production data, the frontend or client websites. Imported from `CLAUDE.md` via `@docs/scaling.md`. `docs/endpoints.md` and `docs/setup.md` say what the system is; this file says how it is allowed to change.
 
+## 0. Before the first production deploy
+
+Nothing is in production yet. Stevie The Dog is a test site that nobody reads publicly. Until the first production deploy, a breaking change is made in place: no versioned public path, no expand → migrate → contract, and existing test rows may be dropped. Everything else still applies: plan, classify the change (Section 1), update both repos' contract in the same piece of work, and test. The rest of this file applies from the first production deploy, once real clients use the API.
+
 ## Who depends on what
 
 Every change is judged against the three consumers of this backend. They deploy at different times, so at any moment one of them may be running older code than the backend.
@@ -31,7 +35,7 @@ Everything in `docs/setup.md` → Prisma conventions still applies to new models
 - **Read the generated SQL before committing.** Prisma writes `DROP COLUMN` + `ADD COLUMN` for a rename. If the SQL drops anything, stop and use the expand → migrate → contract steps in Section 3.
 - **New columns on existing tables are nullable or have a default.** A `NOT NULL` column with no default fails on a table that already has rows.
 - **Every foreign key gets an index** (`@@index([fooId])`), and so does every column a list endpoint filters or sorts on.
-- **New client-facing resources get `active Boolean @default(true)`** (soft delete) and are never hard-deleted. Child rows edited as a list (like images and links) may be deleted inside their parent's edit, as today.
+- **New client-facing resources get `active Boolean @default(true)`** (soft delete) and are never hard-deleted. Child rows edited as a list (like images) may be deleted inside their parent's edit, as today.
 - **Enums: adding a value is safe; removing or renaming one is breaking.** Add new values only, and handle the new value everywhere the enum is checked before deploying.
 - **New secrets follow the API key / webhook secret pattern:** generated, hashed or encrypted only in `lib/crypto.js`, never selected outside the one place that needs them, and added to the "Never select secrets" anti-pattern in `CLAUDE.md`.
 - **Run `npx prisma generate` after every schema change** (Prisma 7 does not do it on migrate).
@@ -78,7 +82,7 @@ The MVP is fine at its current size. These rules stop it degrading as accounts, 
 - **Indexes match queries.** Any new `where` / `orderBy` on a growing table gets an index in the same migration. Use a composite index when filtering and sorting together (e.g. `@@index([websiteId, active, createdAt])` for the public posts query).
 - **No N+1 queries.** Load related rows with a nested `select` in one Prisma call, never a query inside a `.map`.
 - **Explicit `select` everywhere** (already a Code Style rule). It also keeps payloads small as models gain columns.
-- **Bounded child lists.** Every list a client can grow has a maximum in validation, as paragraphs (5), images (5) and links (10) do now.
+- **Bounded child lists.** Every list a client can grow has a maximum in validation, as paragraphs (5) and images (5) do now.
 - **Connection pool:** each backend instance opens its own `pg` pool through `PrismaPg` (`prisma/index.js`; `pg` defaults to 10 connections). Pool size × number of instances must stay under the Postgres connection limit on Railway. Check this before adding instances.
 
 ## 7. Running more than one instance
