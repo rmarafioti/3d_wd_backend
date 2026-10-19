@@ -9,7 +9,6 @@ const { createPostSchema } = require('./post');
 const { ServerError } = require('../errors');
 
 const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
-const LINK = { name: 'Shop', url: 'https://shop.example.com' };
 const PARAGRAPH = { type: 'paragraph', text: 'Body' };
 
 function imageElement(image = IMAGE) {
@@ -21,7 +20,6 @@ function createBody(overrides = {}) {
     websiteId: 'website-id',
     postName: 'Post',
     body: [PARAGRAPH],
-    links: [],
     ...overrides,
   };
 }
@@ -186,17 +184,10 @@ describe('createPostSchema', () => {
     });
   });
 
-  it('accepts 10 links and rejects 11 under the list name', () => {
-    assert.equal(fieldErrors(createPostSchema, createBody({ links: Array(10).fill(LINK) })), null);
-    assert.deepEqual(fieldErrors(createPostSchema, createBody({ links: Array(11).fill(LINK) })), {
-      links: 'A post can have at most 10 links.',
-    });
-  });
+  it('requires body to be a list', () => {
+    const fields = fieldErrors(createPostSchema, createBody({ body: 'Body' }));
 
-  it('requires body and links to be lists', () => {
-    const fields = fieldErrors(createPostSchema, createBody({ body: 'Body', links: 'none' }));
-
-    assert.deepEqual(fields, { body: 'Body must be a list.', links: 'Links must be a list.' });
+    assert.deepEqual(fields, { body: 'Body must be a list.' });
   });
 
   for (const value of [1, 10000]) {
@@ -239,29 +230,77 @@ describe('createPostSchema', () => {
     });
   });
 
-  it('accepts a link name at 100 characters and rejects 101', () => {
-    const atLimit = { ...LINK, name: 'a'.repeat(100) };
-    const overLimit = { ...LINK, name: 'a'.repeat(101) };
+  it('requires https:// for image URLs', () => {
+    const image = { ...IMAGE, src: 'http://res.cloudinary.com/a.jpg' };
 
-    assert.equal(fieldErrors(createPostSchema, createBody({ links: [atLimit] })), null);
-    assert.deepEqual(fieldErrors(createPostSchema, createBody({ links: [overLimit] })), {
-      'links.0.name': 'Link name must be 100 characters or fewer.',
+    assert.deepEqual(fieldErrors(createPostSchema, bodyWithImages(image)), {
+      'body.1.image.src': 'Must be a valid URL starting with https://',
     });
   });
+});
 
-  it('requires https:// for image and link URLs', () => {
-    const fields = fieldErrors(
-      createPostSchema,
-      createBody({
-        body: [PARAGRAPH, imageElement({ ...IMAGE, src: 'http://res.cloudinary.com/a.jpg' })],
-        links: [{ name: 'Shop', url: 'ftp://shop.example.com' }, { name: 'Shop' }],
-      }),
-    );
+// Links inside paragraph text, checked against the examples in docs/endpoints.md → Paragraph
+// formatting. Rendering is not the backend's job; only which text is accepted.
+describe('createPostSchema paragraph links', () => {
+  function paragraphErrors(text) {
+    return fieldErrors(createPostSchema, createBody({ body: [{ type: 'paragraph', text }] }));
+  }
 
-    assert.deepEqual(fields, {
-      'body.1.image.src': 'Must be a valid URL starting with https://',
-      'links.0.url': 'Must be a valid URL starting with https://',
-      'links.1.url': 'Link URL is required.',
+  const URL_MESSAGE = 'Each link must be a valid URL starting with https://';
+
+  const rejected = [
+    ['[menu](http://example.com)', URL_MESSAGE],
+    ['[menu](javascript:alert(1))', URL_MESSAGE],
+    ['[ ](https://example.com)', 'Each link needs link text.'],
+    [`[${'a'.repeat(101)}](https://example.com)`, 'Link text must be 100 characters or fewer.'],
+  ];
+
+  for (const [text, message] of rejected) {
+    it(`rejects ${JSON.stringify(text.slice(0, 40))} on body.0.text`, () => {
+      assert.deepEqual(paragraphErrors(text), { 'body.0.text': message });
+    });
+  }
+
+  const accepted = [
+    'See [our menu](https://example.com/menu).',
+    '**Bold** and *italic* and [a link](https://example.com)',
+    `[${'a'.repeat(100)}](https://example.com)`,
+    '[no url]',
+    '[menu] (https://example.com)',
+    '[menu](https://example.com and more)',
+    '5 * 3 * 2',
+    '[**Menu**](https://example.com)',
+    '<b>hi</b> & more',
+  ];
+
+  for (const text of accepted) {
+    it(`accepts ${JSON.stringify(text.slice(0, 40))}`, () => {
+      assert.equal(paragraphErrors(text), null);
+    });
+  }
+
+  it('reports the first failing link in the text', () => {
+    const text = '[ok](https://example.com) [bad](http://example.com) [ ](https://example.com)';
+
+    assert.deepEqual(paragraphErrors(text), { 'body.0.text': URL_MESSAGE });
+  });
+
+  // A regex re-scanning from every unmatched [ took ~770ms here and blocked the server.
+  for (const unit of ['[', '[a](']) {
+    it(`checks five paragraphs of repeated ${JSON.stringify(unit)} in under 50ms`, () => {
+      const text = unit.repeat(10000 / unit.length);
+      const body = Array(5).fill({ type: 'paragraph', text });
+
+      const start = performance.now();
+      fieldErrors(createPostSchema, createBody({ body }));
+
+      assert.ok(performance.now() - start < 50);
+    });
+  }
+
+  it("checks a link's text before its URL", () => {
+    assert.deepEqual(paragraphErrors('[ ](http://example.com)'), {
+      'body.0.text': 'Each link needs link text.',
     });
   });
 });

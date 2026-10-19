@@ -21,8 +21,7 @@ router.use(requireAuth, requireRole('site_owner'));
 
 const POST_NOT_FOUND = 'Post not found.';
 
-// Body elements are ordered by position. Links are ordered by id: UUIDv7 is time-ordered, so this
-// is the order they were added.
+// Body elements are ordered by position.
 const POST_SELECT = {
   id: true,
   websiteId: true,
@@ -42,7 +41,6 @@ const POST_SELECT = {
       image: { select: { id: true, src: true, width: true, height: true, altText: true } },
     },
   },
-  links: { orderBy: { id: 'asc' }, select: { id: true, name: true, url: true } },
 };
 
 // The Prisma `where` for "an active website linked to this account".
@@ -71,19 +69,18 @@ function toPost(post) {
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
     body: toBody(post.elements),
-    links: post.links,
   };
 }
 
-// Every image/link id sent on an edit must already belong to this post, and appear only once.
-// Stops a site owner editing another post's items by guessing ids.
-function assertOwnItems(items, storedItems) {
-  const storedIds = new Set(storedItems.map((item) => item.id));
+// Every image id sent on an edit must already belong to this post, and appear only once.
+// Stops a site owner editing another post's images by guessing ids.
+function assertOwnImages(images, storedImages) {
+  const storedIds = new Set(storedImages.map((image) => image.id));
   const seen = new Set();
-  for (const { id } of items) {
+  for (const { id } of images) {
     if (id === undefined) continue;
     if (!storedIds.has(id) || seen.has(id)) {
-      throw new ServerError(400, 'Invalid image or link.');
+      throw new ServerError(400, 'Invalid image.');
     }
     seen.add(id);
   }
@@ -106,20 +103,6 @@ async function writeBody(tx, postId, body) {
     elements.push({ postId, position, type: 'image', imageId: saved.id });
   }
   await tx.element.createMany({ data: elements });
-}
-
-// Three-way reconcile of a post's links inside a transaction: stored items missing from the
-// list are deleted, items with an id are updated, items without one are inserted (in order).
-async function reconcileLinks(tx, postId, links) {
-  const keptIds = links.filter((link) => link.id).map((link) => link.id);
-  await tx.link.deleteMany({ where: { postId, id: { notIn: keptIds } } });
-
-  for (const { id, ...data } of links.filter((link) => link.id)) {
-    await tx.link.update({ where: { id }, data });
-  }
-
-  const added = links.filter((link) => !link.id).map(({ id, ...data }) => ({ ...data, postId }));
-  if (added.length) await tx.link.createMany({ data: added });
 }
 
 // GET /api/siteOwner/websites — the site owner's active websites, each with post summaries.
@@ -146,7 +129,7 @@ router.get('/websites', async (req, res) => {
   res.json({ data });
 });
 
-// POST /api/siteOwner/posts — create a post with its body (paragraphs and images) and links.
+// POST /api/siteOwner/posts — create a post with its body (paragraphs and images).
 router.post('/posts', async (req, res) => {
   const input = validate(createPostSchema, req.body ?? {});
 
@@ -156,7 +139,7 @@ router.post('/posts', async (req, res) => {
   });
   if (!website) throw new ServerError(404, 'Website not found.');
 
-  // Post, then body, then links: if any insert fails the whole create rolls back.
+  // Post, then body: if any insert fails the whole create rolls back.
   const post = await prisma.$transaction(async (tx) => {
     const created = await tx.post.create({
       data: {
@@ -170,11 +153,6 @@ router.post('/posts', async (req, res) => {
       select: { id: true },
     });
     await writeBody(tx, created.id, input.body);
-    if (input.links.length) {
-      await tx.link.createMany({
-        data: input.links.map((link) => ({ ...link, postId: created.id })),
-      });
-    }
     return tx.post.findUnique({ where: { id: created.id }, select: POST_SELECT });
   });
 
@@ -183,15 +161,15 @@ router.post('/posts', async (req, res) => {
   revalidate(website.id, post.id);
 });
 
-// GET /api/siteOwner/posts/:id — one post with its body and links.
+// GET /api/siteOwner/posts/:id — one post with its body.
 router.get('/posts/:id', async (req, res) => {
   const post = await findOwnedPost(req.user.id, req.params.id, POST_SELECT);
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
   res.json({ data: toPost(post) });
 });
 
-// PATCH /api/siteOwner/posts/:id — full edit form: the post's fields plus the complete body and
-// link list. websiteId and active can't be changed here.
+// PATCH /api/siteOwner/posts/:id — full edit form: the post's fields plus the complete body.
+// websiteId and active can't be changed here.
 router.patch('/posts/:id', async (req, res) => {
   const input = validate(updatePostSchema, req.body ?? {});
 
@@ -199,14 +177,12 @@ router.patch('/posts/:id', async (req, res) => {
     id: true,
     websiteId: true,
     images: { select: { id: true } },
-    links: { select: { id: true } },
   });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
   const images = input.body.filter((item) => item.type === 'image').map((item) => item.image);
   const keptImageIds = images.filter((image) => image.id).map((image) => image.id);
-  assertOwnItems(images, post.images);
-  assertOwnItems(input.links, post.links);
+  assertOwnImages(images, post.images);
 
   // The body is rewritten in its new order: elements are deleted first, so no element still points
   // at an image being removed, then stored images missing from the body are deleted, and
@@ -225,7 +201,6 @@ router.patch('/posts/:id', async (req, res) => {
     await tx.element.deleteMany({ where: { postId: post.id } });
     await tx.image.deleteMany({ where: { postId: post.id, id: { notIn: keptImageIds } } });
     await writeBody(tx, post.id, input.body);
-    await reconcileLinks(tx, post.id, input.links);
     return tx.post.findUnique({ where: { id: post.id }, select: POST_SELECT });
   });
 

@@ -105,7 +105,7 @@ Notes:
 - `postName`: required, max 100. `header`: optional, max 150. `subHeader`: optional, max 200.
 - `postDate`: optional, valid date `YYYY-MM-DD`.
 - `body`: a list of elements, each with `type` `paragraph` or `image`. At least 1 paragraph, max 5 paragraphs and max 5 images per post. Paragraph `text`: required, max 10000 (trimmed at the ends; line breaks inside are kept). Image element: `image` required, with `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
-- Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text.
+- Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text (a link's text is checked before its URL).
 - `active` (create / status): boolean.
 
 ### Paragraph formatting

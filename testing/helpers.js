@@ -32,7 +32,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database.
 async function resetDatabase() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE element, image, link, post, account_website, website, account CASCADE',
+    'TRUNCATE TABLE element, image, post, account_website, website, account CASCADE',
   );
 }
 
@@ -89,14 +89,12 @@ function imageElement(image) {
   return { type: 'image', image };
 }
 
-// Creates a post with its body and links, inserted in list order, in one transaction. `body` is a
-// list of paragraph() / imageElement() items. Returns the post with its images (in body order)
-// and links.
-function createPost(website, { body = [paragraph()], links = [], ...overrides } = {}) {
+// Creates a post with its body, inserted in list order, in one transaction. `body` is a list of
+// paragraph() / imageElement() items. Returns the post with its images (in body order).
+function createPost(website, { body = [paragraph()], ...overrides } = {}) {
   return prisma.$transaction(async (tx) => {
     const post = await tx.post.create({
-      data: { websiteId: website.id, postName: 'Post', ...overrides, links: { create: links } },
-      include: { links: { orderBy: { id: 'asc' } } },
+      data: { websiteId: website.id, postName: 'Post', ...overrides },
     });
     const images = [];
     for (const [position, element] of body.entries()) {

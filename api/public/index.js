@@ -10,7 +10,7 @@ const router = express.Router();
 router.use(requireApiKey);
 
 // GET /api/public/posts — the website's active posts, newest first, each body in reading order.
-// postName is internal and is never returned here; neither are image/link ids.
+// postName is internal and is never returned here; neither are image ids.
 router.get('/posts', async (req, res) => {
   const posts = await prisma.post.findMany({
     where: { websiteId: req.website.id, active: true },
@@ -30,7 +30,6 @@ router.get('/posts', async (req, res) => {
           image: { select: { src: true, width: true, height: true, altText: true } },
         },
       },
-      links: { orderBy: { id: 'asc' }, select: { name: true, url: true } },
     },
   });
 
