@@ -23,7 +23,7 @@ The client website fetches from the local backend. Nothing leaves the machine.
 3. As the test site owner, create posts that cover each case:
    - paragraphs only, including one with line breaks
    - paragraphs and images interleaved
-   - formatting: bold, italic and a link inside a paragraph, plus markup left as typed (`5 * 3 * 2`)
+   - formatting: bold, italic, bold-italic, a link, and a link inside bold, plus markup left as typed (`5 * 3 * 2`)
    - header, sub header and post date all left empty
    - an archived post (archive it after creating it)
 4. Check the page:

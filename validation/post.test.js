@@ -251,6 +251,7 @@ describe('createPostSchema paragraph links', () => {
   const rejected = [
     ['[menu](http://example.com)', URL_MESSAGE],
     ['[menu](javascript:alert(1))', URL_MESSAGE],
+    ['**[menu](http://example.com)**', URL_MESSAGE],
     ['[ ](https://example.com)', 'Each link needs link text.'],
     [`[${'a'.repeat(101)}](https://example.com)`, 'Link text must be 100 characters or fewer.'],
   ];
@@ -271,6 +272,9 @@ describe('createPostSchema paragraph links', () => {
     '5 * 3 * 2',
     '[**Menu**](https://example.com)',
     '<b>hi</b> & more',
+    '***both***',
+    '**[our menu](https://example.com/menu)**',
+    '**[a](https://example.com/**x)**',
   ];
 
   for (const text of accepted) {
