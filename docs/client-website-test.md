@@ -64,7 +64,7 @@ A tunnel gives the local backend a public https URL for the length of the test, 
 ## Restore and clean up
 
 1. On Vercel, set `HEADLESS_CMS_API_URL` back: unset it until this backend is deployed, then `https://api.3dwebdev.com`. Redeploy and stop the tunnel.
-2. Delete every row the tests added, as in the Workflow Checklist: list the test posts first, then delete them by id in one transaction, with their elements and images. The local database must be back to the baseline in the Current progress line in `CLAUDE.md`.
+2. Delete every row the tests added, as in the Workflow Checklist: list the test posts first, then delete them by id in one transaction, with their elements and images. The local database must be back to the baseline in Current progress in `CLAUDE.md`.
 3. Leave the website's API key and webhook secret on Vercel. They are the website's real credentials.
 
 ## Done when
