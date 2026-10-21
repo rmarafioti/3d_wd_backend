@@ -83,6 +83,7 @@ The MVP is fine at its current size. These rules stop it degrading as accounts, 
 - **No N+1 queries.** Load related rows with a nested `select` in one Prisma call, never a query inside a `.map`.
 - **Explicit `select` everywhere** (already a Code Style rule). It also keeps payloads small as models gain columns.
 - **Bounded child lists.** Every list a client can grow has a maximum in validation, as paragraphs (5) and images (5) do now.
+- **Image storage:** Cloudinary's free tier (25 credits a month) covers the 10–15 client websites expected in the first year. If it is outgrown, Cloudflare R2 is the fallback: new uploads switch to R2, old images stay where they are, and an optional one-off script in `prisma/scripts/` copies them and rewrites `image.src`.
 - **Connection pool:** each backend instance opens its own `pg` pool through `PrismaPg` (`prisma/index.js`; `pg` defaults to 10 connections). Pool size × number of instances must stay under the Postgres connection limit on Railway. Check this before adding instances.
 
 ## 7. Running more than one instance
@@ -92,6 +93,7 @@ The backend is stateless today (the session is a signed JWT cookie, nothing is h
 - **No shared in-memory state** — no in-process caches, counters or sessions that other instances would need. Anything shared goes in Postgres (or, later, Redis).
 - **Rate limiting** on `POST /api/auth/login` and `GET /api/public/posts` is added before more client websites are onboarded. Per-instance limits are acceptable while there is one instance; a shared store is needed once there are several.
 - **Revalidation is best-effort.** It runs fire-and-forget in the request's process (`services/revalidate.js`), so a call in flight is lost if the instance restarts. When missed revalidations start to matter, move it to an outbox: a `revalidation_job` row written in the same transaction as the post change, sent by a worker with retries. Until then, the client website's own time-based regeneration is the fallback.
+- **Upload cleanup runs on its own.** `npm run sweep:uploads` (`docs/setup.md` → Upload cleanup) is a separate Railway cron service, not part of the API instances, so the number of instances doesn't change it. It keeps no state between runs, and two overlapping runs only try to delete the same images.
 - **Migrations run once per deploy, not per instance:** production runs `npx prisma migrate deploy` as the Railway pre-deploy step. `prisma migrate dev` is never run against production. (The Railway deploy has not been set up yet; confirm or update this rule when it is.)
 
 ## 8. Environments and deployment

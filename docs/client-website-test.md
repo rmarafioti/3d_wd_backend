@@ -22,13 +22,13 @@ The client website fetches from the local backend. Nothing leaves the machine.
 2. Run it on port 3001 (`npm run dev -- -p 3001`).
 3. As the test site owner, create posts that cover each case:
    - paragraphs only, including one with line breaks
-   - paragraphs and images interleaved
+   - paragraphs and images interleaved, the images uploaded from the post form
    - formatting: bold, italic, bold-italic, a link, and a link inside bold, plus markup left as typed (`5 * 3 * 2`)
    - header, sub header and post date all left empty
    - an archived post (archive it after creating it)
 4. Check the page:
    - posts appear newest first, each body in the order it was arranged
-   - line breaks show and images load at their stored size
+   - line breaks show, and images load from `res.cloudinary.com` under the website's folder (`3dwd-dev/steviethedog/` locally) at their stored size
    - formatting renders as in the Paragraph formatting examples (`docs/endpoints.md`), and no raw HTML is rendered
    - empty optional fields don't render
    - the archived post does not appear

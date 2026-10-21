@@ -11,7 +11,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 ### Conventions
 
 - Every route lives under `/api`.
-- All request and response fields are camelCase. snake_case exists only inside the database (Prisma `@map`).
+- All request and response fields are camelCase. snake_case exists only inside the database (Prisma `@map`). One exception: `fields` in `UploadSignature` keeps Cloudinary's own form-field names (`api_key`, `timestamp`, …), because the frontend sends it to Cloudinary unchanged.
 - Dates and times are ISO 8601 strings. `postDate` is a date only: `YYYY-MM-DD`.
 - Success response: `{ "data": ... }`
 - Error response: `{ "error": { "message": "...", "fields": { "fieldName": "message" } } }` — `fields` is only present on validation errors (400) so the form can show a message next to each field. Each key is the full path to the input, joined with dots: top-level fields use their own name (`email`, `postName`), items in a list use their index (`body.0.text`, `body.1.image.src`), and a list-level error such as too many items uses the list name (`body`).
@@ -21,18 +21,18 @@ The single agreement between the frontend and backend repos. The backend copy (`
 
 ### Status codes
 
-| Code | Meaning                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------- |
-| 200  | OK                                                                                           |
-| 201  | Created                                                                                      |
-| 204  | OK, no body (logout)                                                                         |
-| 400  | Invalid input (validation failed, or an image id that doesn't belong to the post)            |
-| 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key          |
-| 403  | Signed in but wrong role, or missing CSRF header                                             |
-| 404  | Not found **or not yours** — the same answer either way, so ids can't be probed              |
-| 409  | Conflict — duplicate email, duplicate website URL, or account already linked to that website |
-| 413  | Request body over the 256 KB limit                                                           |
-| 500  | Server error — message is always the generic "Something went wrong, please try again."       |
+| Code | Meaning                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 200  | OK                                                                                                                              |
+| 201  | Created                                                                                                                         |
+| 204  | OK, no body (logout)                                                                                                            |
+| 400  | Invalid input (validation failed, an image id that doesn't belong to the post, or an image not uploaded for the post's website) |
+| 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key                                             |
+| 403  | Signed in but wrong role, or missing CSRF header                                                                                |
+| 404  | Not found **or not yours** — the same answer either way, so ids can't be probed                                                 |
+| 409  | Conflict — duplicate email, duplicate website URL, or account already linked to that website                                    |
+| 413  | Request body over the 256 KB limit                                                                                              |
+| 500  | Server error — message is always the generic "Something went wrong, please try again."                                          |
 
 ### Shapes
 
@@ -40,6 +40,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 Account        { id, name, email, role, active, createdAt }
 WebsiteSummary { id, websiteName, url, active }
 Credentials    { apiKey, webhookSecret }            // plaintext, one-time only
+UploadSignature { uploadUrl, fields }               // fields: Cloudinary form fields, posted as-is
 Image          { id, src, width, height, altText }
 Element        { type: 'paragraph', text } | { type: 'image', image: Image }
 PostSummary    { id, postName, postDate, active, createdAt }
@@ -67,6 +68,7 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `GET /api/siteOwner/posts/:id`          | site owner                                        | —                                                                                                                                                                    | `200 Post`                                          |
 | `PATCH /api/siteOwner/posts/:id`        | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }] }`                   | `200 Post`                                          |
 | `PATCH /api/siteOwner/posts/:id/status` | site owner                                        | `{ active }`                                                                                                                                                         | `200 Post`                                          |
+| `POST /api/siteOwner/uploads/sign`      | site owner                                        | `{ websiteId }`                                                                                                                                                      | `200 UploadSignature`                               |
 | `GET /api/public/posts`                 | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                    | `200 PublicPost[]`                                  |
 | `GET /api/health`                       | anyone                                            | —                                                                                                                                                                    | `200 { ok: true }`                                  |
 
@@ -76,24 +78,30 @@ Notes:
 - On `POST /api/admin/accounts` and `POST /api/admin/accounts/:id/websites` the body must contain **either** `websiteId` **or** both `websiteName` and `websiteUrl` — never both, never neither (400).
 - `PATCH /api/siteOwner/posts/:id` is a full submission of the edit form: all fields are sent every time. Send `null` to clear an optional field. `body` is the complete current list, in order. An existing image carries its `image.id`, a new one has none, and any image stored but missing from the body is deleted. Paragraphs carry no id. `websiteId` and `active` cannot be changed here.
 - `PublicPost` is `{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }] }` — `postName` is internal and is **never** returned publicly, and neither are image ids. Only active posts, newest `createdAt` first.
+- Images are uploaded to 3DWD's Cloudinary account from the post form; nobody types or pastes an image URL. A picked image stays in the browser until Publish. On Publish, when the body has new images, the frontend:
+  1. requests one `UploadSignature` for the post's website (`POST /api/siteOwner/uploads/sign`);
+  2. uploads each new image to `uploadUrl` as `multipart/form-data`: every entry of `fields`, plus the image as `file`. One signature covers every upload in that Publish. It expires after one hour, so it is requested at Publish, never when the form opens;
+  3. saves the post with each new image's `src` set to Cloudinary's `secure_url`, and its `width` and `height` from Cloudinary's response.
+
+  If any upload fails, the post is not saved. Before uploading, the frontend checks that each file is jpg, png or webp and at most 10 MB; Cloudinary also refuses any other format. Cloudinary scales a larger image down to fit 2500 × 2500 as it stores it, so the `width` and `height` it returns are the stored size.
 
 ### Error messages the frontend displays
 
-| Situation                                                               | Code | `error.message`                                                                                                    |
-| ----------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
-| Login: no account, inactive account, unverified or invalid Google token | 401  | You are not authorized to log in.                                                                                  |
-| Any session route with no / expired / invalid cookie                    | 401  | Your session expired, please sign in again.                                                                        |
-| Wrong role                                                              | 403  | You do not have access to this page.                                                                               |
-| Missing CSRF header                                                     | 403  | Request blocked.                                                                                                   |
-| Validation failed                                                       | 400  | Please fix the highlighted fields. (+ `fields`)                                                                    |
-| Create account: email already exists                                    | 409  | An account with this email already exists.                                                                         |
-| New website: URL already exists                                         | 409  | A website with this URL already exists — select it from the dropdown.                                              |
-| New website: URL belongs to an inactive website                         | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again. |
-| Link: account already linked to that website                            | 409  | This account is already linked to [Website Name].                                                                  |
-| Website / account / post not found or not yours                         | 404  | [Website / Account / Post] not found.                                                                              |
-| Edit: an image id that isn't on this post                               | 400  | Invalid image.                                                                                                     |
-| Public: missing / unknown key, or inactive website                      | 401  | Invalid API key.                                                                                                   |
-| Request body over the 256 KB limit                                      | 413  | Request body is too large.                                                                                         |
+| Situation                                                                                                  | Code | `error.message`                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| Login: no account, inactive account, unverified or invalid Google token                                    | 401  | You are not authorized to log in.                                                                                  |
+| Any session route with no / expired / invalid cookie                                                       | 401  | Your session expired, please sign in again.                                                                        |
+| Wrong role                                                                                                 | 403  | You do not have access to this page.                                                                               |
+| Missing CSRF header                                                                                        | 403  | Request blocked.                                                                                                   |
+| Validation failed                                                                                          | 400  | Please fix the highlighted fields. (+ `fields`)                                                                    |
+| Create account: email already exists                                                                       | 409  | An account with this email already exists.                                                                         |
+| New website: URL already exists                                                                            | 409  | A website with this URL already exists — select it from the dropdown.                                              |
+| New website: URL belongs to an inactive website                                                            | 409  | A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again. |
+| Link: account already linked to that website                                                               | 409  | This account is already linked to [Website Name].                                                                  |
+| Website / account / post not found or not yours                                                            | 404  | [Website / Account / Post] not found.                                                                              |
+| Create / edit: an image id that isn't on this post, or an image `src` outside this website's upload folder | 400  | Invalid image.                                                                                                     |
+| Public: missing / unknown key, or inactive website                                                         | 401  | Invalid API key.                                                                                                   |
+| Request body over the 256 KB limit                                                                         | 413  | Request body is too large.                                                                                         |
 
 ### Validation rules (identical on frontend and backend)
 
@@ -102,6 +110,7 @@ Notes:
 - `email`: required, valid email format, stored lowercase.
 - `websiteName`: required, max 100.
 - `websiteUrl`, image `src`: valid URL starting with `https://`. Website URLs are normalized by the backend (lowercase host, no trailing slash) before the uniqueness check and before saving. The uniqueness check treats `www.example.com` and `example.com` as the same website; the URL is stored as entered (it is also the revalidation target).
+- Image `src` must also be a Cloudinary `secure_url` in the post's website's upload folder: `https://res.cloudinary.com/<cloud name>/image/upload/v<version>/<folder>/<file name>`, where `<folder>` is the `folder` in that website's `UploadSignature`. Checked on create and edit, for every image, new and existing. A `src` outside the folder is `400` "Invalid image." without `fields`, since the site owner can't fix it in the form.
 - `postName`: required, max 100. `header`: optional, max 150. `subHeader`: optional, max 200.
 - `postDate`: optional, valid date `YYYY-MM-DD`.
 - `body`: a list of elements, each with `type` `paragraph` or `image`. At least 1 paragraph, max 5 paragraphs and max 5 images per post. Paragraph `text`: required, max 10000 (trimmed at the ends; line breaks inside are kept). Image element: `image` required, with `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
@@ -243,7 +252,7 @@ Body: `{ name, email, websiteId }` (link an existing website) **or** `{ name, em
 1. Validate with `validation/account.js` + `validation/website.js` (zod). Exactly one of `websiteId` or (`websiteName` + `websiteUrl`) → otherwise `400`.
 2. Lowercase the email. If an account with that email exists → `409` "An account with this email already exists."
 3. **Existing website path** (`websiteId`): the website must exist and be active → otherwise `404` "Website not found." In one transaction: insert `account` (role `site_owner`), insert the `account_website` row. No key or secret is generated.
-4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." If that website is inactive (so it is not in the dropdown), the `409` names it instead: "A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`), insert the `account_website` row — three inserts, if any fails nothing is saved.
+4. **New website path** (`websiteName` + `websiteUrl`): normalize the URL (`lib/normalizeUrl.js`). If a website with that URL exists, with or without a leading `www.` (`urlVariants`) → `409` "A website with this URL already exists — select it from the dropdown." If that website is inactive (so it is not in the dropdown), the `409` names it instead: "A website with this URL already exists but is inactive — it's named [Website Name]. Reactivate and then try again." Generate the API key and webhook secret with `lib/crypto.js`, hash the key, encrypt the secret. Derive the website's `media_folder` from the normalized URL (`docs/setup.md` → Image Hosting). In one transaction: insert `account`, insert `website` (with `api_key_hash`, `webhook_secret_encrypted`, `media_folder`), insert the `account_website` row — three inserts, if any fails nothing is saved.
 5. Return `201 { data: { account, website, credentials? } }`. `credentials: { apiKey, webhookSecret }` (plaintext) is included **only** on the new-website path, and only in this one response.
 
 ### Link a Website — `POST /api/admin/accounts/:id/websites`
@@ -272,9 +281,10 @@ The site owner's active websites (via `account_website`), sorted by `websiteName
 
 1. Validate with `validation/post.js` — the backend re-validates everything regardless of what the frontend checked.
 2. Ownership check on `websiteId` → `404` "Website not found." if it fails.
-3. One transaction: insert the post (`active` defaults to `true` if not sent), then its body in order (each image element's image, then every element with its position). If any insert fails the whole create rolls back — no orphaned post.
-4. Return `201 { data: Post }`.
-5. After the transaction has committed, call `revalidate(website.id, post.id)` (see Revalidation). Do not await it before responding.
+3. Every image `src` must be in the website's upload folder (Validation rules) → otherwise `400` "Invalid image."
+4. One transaction: insert the post (`active` defaults to `true` if not sent), then its body in order (each image element's image, then every element with its position). If any insert fails the whole create rolls back — no orphaned post.
+5. Return `201 { data: Post }`.
+6. After the transaction has committed, call `revalidate(website.id, post.id)` (see Revalidation). Do not await it before responding.
 
 ### Get a Post by ID — `GET /api/siteOwner/posts/:id`
 
@@ -286,7 +296,7 @@ Request body: the full edit form — `{ postName, header, subHeader, postDate, b
 
 1. Validate with `validation/post.js`.
 2. Ownership check → `404` "Post not found."
-3. Every image `id` (inside `body`) must belong to this post and appear only once → otherwise `400` "Invalid image." (stops editing another post's images by guessing ids).
+3. Every image `id` (inside `body`) must belong to this post and appear only once, and every image `src` must be in the post's website's upload folder → otherwise `400` "Invalid image." (stops editing another post's images by guessing ids, and saving an image uploaded for another website).
 4. One transaction:
    - Update the post's own fields.
    - Body: the post's elements are deleted and rewritten in the new order. Stored images whose `id` is missing from the body → delete; images with an `id` → update; images without → insert. Image ids stay stable across edits; elements are re-created.
@@ -297,6 +307,22 @@ Request body: the full edit form — `{ postName, header, subHeader, postDate, b
 ### Archive / Make Active — `PATCH /api/siteOwner/posts/:id/status`
 
 Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This is the soft delete — a post is never removed from the database, so it can be reactivated and its history kept. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
+
+### Sign an Upload — `POST /api/siteOwner/uploads/sign`
+
+Body `{ websiteId }`. Returns what the frontend needs to upload images for one website straight to Cloudinary (API Contract → Notes). The backend never receives the image file and writes nothing to the database.
+
+1. Validate `{ websiteId }` → `400` with `fields.websiteId`.
+2. Ownership check on `websiteId` → `404` "Website not found."
+3. Build every signed parameter on the backend; none comes from the request:
+   - `folder`: `<CLOUDINARY_FOLDER>/<website.mediaFolder>` (`3dwd/steviethedog` in production)
+   - `timestamp`: now, in Unix seconds
+   - `allowed_formats`: `jpg,jpeg,png,webp`
+   - `transformation`: `c_limit,w_2500,h_2500` (applied as the image is stored: scaled down to fit, never up)
+4. Sign them with `CLOUDINARY_API_SECRET`, by Cloudinary's signed-upload rule: the parameters sorted by name, joined as `key=value` with `&`, the secret appended, then the SHA-1 hex digest.
+5. Return `200 { data: { uploadUrl, fields } }`. `uploadUrl` is `https://api.cloudinary.com/v1_1/<CLOUDINARY_CLOUD_NAME>/image/upload`. `fields` holds the signed parameters, `signature`, and `api_key` (`CLOUDINARY_API_KEY`, which Cloudinary treats as public).
+
+`CLOUDINARY_API_SECRET` is never returned or logged.
 
 ---
 

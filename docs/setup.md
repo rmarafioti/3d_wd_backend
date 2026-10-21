@@ -33,6 +33,7 @@ Table website {
   url                      string   [not null, unique]  // normalized: https, lowercase host, no trailing slash
   api_key_hash             string   [not null, unique]  // SHA-256 hex of the API key
   webhook_secret_encrypted string   [not null]          // "iv:tag:ciphertext", AES-256-GCM, base64 parts
+  media_folder             string   [not null, unique]  // its Cloudinary upload folder, set once (Image Hosting)
   active                   bool     [not null, default: true]
   created_at               datetime [not null, default: now()]
   updated_at               datetime [not null]
@@ -82,7 +83,7 @@ Table element {
 Table image {
   id       string  [primary key, default: uuid v7]
   post_id  string  [not null]
-  src      string  [not null]   // Cloudinary URL from the site owner's Cloudinary account
+  src      string  [not null]   // Cloudinary secure_url in 3DWD's account, in the website's folder
   width    integer [not null]   // required by next/image on the client website
   height   integer [not null]
   alt_text string  [not null]
@@ -151,6 +152,46 @@ The only place keys and secrets are generated, hashed, encrypted or decrypted. U
 - `decryptSecret(stored)` → reverses the above. Used only by `services/revalidate.js`, immediately before sending.
 
 `SECRET_ENCRYPTION_KEY` must be backed up as carefully as the database password — if it is lost, every stored webhook secret becomes unreadable.
+
+## Image Hosting
+
+Images are stored in 3DWD's Cloudinary account, so site owners never need one of their own. The browser uploads each image straight to Cloudinary with a signature from `POST /api/siteOwner/uploads/sign` (`docs/endpoints.md` → Sign an Upload); the backend never handles the file.
+
+Environment variables:
+
+- `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_API_KEY`: the account's cloud name and API key. Both are public: they appear in upload URLs and in the signature's `fields`.
+- `CLOUDINARY_API_SECRET`: signs uploads and authorizes the cleanup. It is a secret like `SECRET_ENCRYPTION_KEY`: never logged, never returned, kept only in `.env` and Railway, and backed up.
+- `CLOUDINARY_FOLDER`: the environment's root folder, `3dwd` in production and `3dwd-dev` locally. Production and local share the one Cloudinary account, separated by this root. Tests use a fixed value and never call Cloudinary.
+
+Every upload goes to `<CLOUDINARY_FOLDER>/<website.mediaFolder>/`. A stored `src` looks like `https://res.cloudinary.com/<cloud name>/image/upload/v1760000000/3dwd/steviethedog/abc123.jpg`, and the backend accepts an image `src` only in the post's website's folder.
+
+### media_folder
+
+Set once, when a website is created (Create an Account or Link a Website, new-website path), and never changed, so stored image URLs stay valid:
+
+1. Take the normalized URL's host name (no port) and remove a leading `www.`.
+2. Drop the last label (the top-level domain) and turn the remaining dots into hyphens. A host with a single label keeps it whole.
+3. If another website already has that folder, add `-2`, then `-3`, and so on.
+
+| URL                                             | `media_folder`    |
+| ----------------------------------------------- | ----------------- |
+| `https://www.steviethedog.com`                  | `steviethedog`    |
+| `https://shop.example.co.uk`                    | `shop-example-co` |
+| `https://example.org` (when `example` is taken) | `example-2`       |
+
+The migration that adds the column backfills every existing website by the same rule (locally, Stevie The Dog → `steviethedog`).
+
+### Upload cleanup
+
+The database is the record of which images are kept. Post saves never call Cloudinary: an image removed in an edit, or uploaded for a Publish whose save then failed, is left for the cleanup.
+
+`npm run sweep:uploads`:
+
+- lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
+- deletes each one that no `image.src` refers to, whether its post is active or archived (archived posts keep their images);
+- never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
+
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The script is safe to re-run. Locally it is run by hand; once deployed, a daily Railway cron service runs it.
 
 ## Seed Users
 
