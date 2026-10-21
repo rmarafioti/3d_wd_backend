@@ -21,7 +21,7 @@ const {
 } = require('../../testing/helpers');
 
 const VALIDATION_FAILED = 'Please fix the highlighted fields.';
-const URL_TAKEN = 'A website with this URL already exists — select it from the dropdown.';
+const URL_TAKEN = 'A website with this URL already exists. Select it from the dropdown.';
 
 beforeEach(resetDatabase);
 after(disconnect);
@@ -266,7 +266,7 @@ describe('POST /api/admin/accounts', () => {
     assert.deepEqual(res.body, {
       error: {
         message:
-          "A website with this URL already exists but is inactive — it's named Old Stevie. Reactivate and then try again.",
+          "A website with this URL already exists but is inactive. It's named Old Stevie. Reactivate and then try again.",
       },
     });
   });

@@ -33,7 +33,7 @@ const ACCOUNT_SELECT = {
 const WEBSITE_SUMMARY_SELECT = { id: true, websiteName: true, url: true, active: true };
 
 const EMAIL_TAKEN = 'An account with this email already exists.';
-const URL_TAKEN = 'A website with this URL already exists — select it from the dropdown.';
+const URL_TAKEN = 'A website with this URL already exists. Select it from the dropdown.';
 
 // Existing website path: the chosen website must exist and be active (inactive websites are not
 // in the picker). Returns its summary, or throws the 404.
@@ -61,7 +61,7 @@ async function assertUrlAvailable(websiteUrl) {
   if (duplicate && !duplicate.active) {
     throw new ServerError(
       409,
-      `A website with this URL already exists but is inactive — it's named ${duplicate.websiteName}. Reactivate and then try again.`,
+      `A website with this URL already exists but is inactive. It's named ${duplicate.websiteName}. Reactivate and then try again.`,
     );
   }
   if (duplicate) throw new ServerError(409, URL_TAKEN);
