@@ -46,12 +46,16 @@ root
 │   │   └── index.js          *GET /public/posts (API key auth)
 │   └── index.js              *mounts all routers + GET /health
 ├── services/
-│   └── revalidate.js         *fire-and-forget webhook call to a client website
+│   ├── revalidate.js         *fire-and-forget webhook call to a client website
+│   └── sweepUploads.js       *upload cleanup: deletes unused Cloudinary uploads over 24h old
+├── scripts/
+│   └── sweepUploads.js       *entry point for npm run sweep:uploads (Railway cron once deployed)
 ├── validation/               *zod schemas, one per resource
 │   ├── auth.js               *login body ({ credential })
 │   ├── account.js
 │   ├── website.js
 │   ├── post.js
+│   ├── upload.js             *Sign an Upload body ({ websiteId })
 │   └── validate.js           *validate() → 400 envelope, blankToUndefined
 ├── middleware/
 │   ├── requireAuth.js        *verifies the session cookie, loads req.user
@@ -59,9 +63,11 @@ root
 │   ├── requireCsrfHeader.js  *403 on POST/PATCH/DELETE without X-CSRF-Protection: 1
 │   └── requireApiKey.js      *public endpoint: hashes Bearer key, loads req.website
 ├── lib/                      *shared utilities
+│   ├── cloudinary.js         *upload signature, image src folder check, Admin API list/delete
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt
 │   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
 │   ├── jwt.js                *sign/verify session JWT, cookie options
+│   ├── mediaFolder.js        *website media_folder name from its URL, -2/-3 on a clash
 │   ├── normalizeUrl.js       *https, lowercase host, no trailing slash
 │   └── postBody.js           *element rows → the post body list in API responses
 ├── errors/                   *custom error classes + the single error handler (error envelope)
@@ -102,26 +108,31 @@ The app is built in this order across both repos. Each step is built, tested and
 - **Now:** the MVP Build Order is complete in both repos. Features 1, 2 and 4 are merged. Feature 3 Post preview is built on the frontend (branch `feat/post-preview`, PR pending).
 - **Next:**
   1. The Stevie The Dog website renders Feature 4 formatting (in its own repo): Rich drops in the updated `docs/client-website.md` and tests the formatting and links.
-  2. Feature 5 Image uploads, the last feature. The contract is on `docs/image-uploads`. Next is the backend step: Rich provides the Cloudinary values for `.env` (3DWD's account, `3dwd-dev` folder). Then the frontend copies the contract and builds the upload.
+  2. Feature 5 Image uploads, the last feature. The contract is merged (PR #22). The backend is built and committed on `feat/image-uploads`, **not pushed**, and manually tested against `3dwd-dev` (2026-10-20). The frontend has built the upload from the backend handoff. Rich is now testing in the browser and in Postman (his own notes) and streamlining the frontend UI and UX. **When Rich reports Postman clear and the frontend done:**
+     1. Fix anything his testing found on this branch first (plan → approval → build, as usual).
+     2. Delete any rows his testing added (back to the baseline below) and their uploads in Cloudinary `3dwd-dev/`.
+     3. Update this progress row with the PR number, rerun `npm run lint`, `npm run format:check` and `npm test`, then push `feat/image-uploads` and open the PR.
   3. After Feature 5, a full Documentation Sync across the frontend, the backend, the master doc and the client website docs, with the em dash decision. Before security hardening.
   4. Security hardening, in its own session, with backend suggestions.
   5. The production deploy.
-- **Local database baseline** (test rows cleared on 2026-10-19):
+- **Local database baseline** (test rows cleared on 2026-10-20):
   - the admin
-  - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website
+  - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
 
-  Rich has recorded Stevie's API key. Four client websites are waiting to onboard once the app is live.
+  Cloudinary `3dwd-dev/` is empty. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Rich has recorded Stevie's API key. Four client websites are waiting to onboard once the app is live.
 
 - **Pending notes:**
   - **Em dashes (next Documentation Sync):** Rich prefers no em dashes in user-facing messages, and the frontend already follows this for its own strings. Contract messages with em dashes ("A website with this URL already exists — select it from the dropdown.") stay unchanged until Rich decides, because rewording them is a contract change in both repos.
   - **Cloudinary on client websites (next Documentation Sync):** the master doc's "Client to Website" tab needs a `next.config` `remotePatterns` entry for `res.cloudinary.com/<3DWD cloud>/image/upload/**` before a client website can show uploaded images.
+  - **Cloudinary secret (before the production deploy):** the current API secret was shared in a Claude session while setting up `3dwd-dev`. Generate a new key pair for production and keep it only in Railway.
   - **Railway:** the rule that migrations run as a Railway pre-deploy step (`docs/scaling.md` §7) is unconfirmed until the Railway deploy is set up.
 
 One row per merged piece of work, newest first. Add a row on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
 | Date       | What was done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-20 | `feat/image-uploads` (PR pending, not pushed until Rich's browser and Postman testing is clear): Feature 5 backend. `website.media_folder` (migration with backfill, Stevie → `steviethedog`), `POST /api/siteOwner/uploads/sign`, the image `src` folder rule on create and edit (400 "Invalid image."), new websites get a folder (`-2`, `-3`… on a clash), `npm run sweep:uploads`. `lib/cloudinary.js` uses `crypto` and `fetch`, no Cloudinary SDK. 220 tests. Tested against 3DWD's `3dwd-dev` folder: signed uploads, 2500 px scaling, gif refused, the cleanup.                                                                                                                             |
 | 2026-10-20 | `docs/image-uploads` (docs only): Feature 5 contract. `POST /api/siteOwner/uploads/sign` returns `UploadSignature { uploadUrl, fields }` (Cloudinary's keys, posted unchanged). Image `src` must be a `secure_url` in the website's folder, else 400 "Invalid image.". `website.media_folder` with its naming rule, the Image Hosting and Upload cleanup sections in `docs/setup.md`, the R2 fallback and the cleanup cron in `docs/scaling.md`. Uploads are jpg, png or webp, at most 10 MB, scaled down to fit 2500 × 2500.                                                                                                                                                                       |
 | 2026-10-20 | `docs/post-preview` (docs only): Feature 3 entry matches the live preview the frontend built; Planned Later gains "Streamlined post editor"; Feature 5 Image uploads planned; Current progress becomes this table. The master doc's "Client to Website" tab is brought up to Feature 4: `links` removed, a Paragraph formatting section with a `parseParagraph` / `FormattedText` renderer (checked against every contract example and against the dashboard's parser) and the examples table, post date shown first. Its "Client - Claude.md" template tab follows: paragraph text renders through `FormattedText`, the formatting is tested against the examples, and links keep their underline. |
 | 2026-10-20 | Frontend: Feature 4 merged (PRs #16, #17). Feature 3 Post preview built and pushed on `feat/post-preview`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |

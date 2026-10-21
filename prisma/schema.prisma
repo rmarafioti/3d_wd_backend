@@ -47,6 +47,7 @@ model Website {
   url                    String   @unique // normalized: https, lowercase host, no trailing slash
   apiKeyHash             String   @unique @map("api_key_hash") // SHA-256 hex of the API key
   webhookSecretEncrypted String   @map("webhook_secret_encrypted") // "iv:tag:ciphertext", AES-256-GCM, base64 parts
+  mediaFolder            String   @unique @map("media_folder") // its Cloudinary upload folder, set once (docs/setup.md → Image Hosting)
   active                 Boolean  @default(true)
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
@@ -112,7 +113,7 @@ model Element {
 model Image {
   id      String @id @default(uuid(7))
   postId  String @map("post_id")
-  src     String // Cloudinary URL from the site owner's Cloudinary account
+  src     String // Cloudinary secure_url in 3DWD's account, in the website's upload folder
   width   Int // required by next/image on the client website
   height  Int
   altText String @map("alt_text")

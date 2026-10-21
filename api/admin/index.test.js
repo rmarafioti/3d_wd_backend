@@ -183,6 +183,7 @@ describe('POST /api/admin/accounts', () => {
     const stored = await prisma.website.findUnique({ where: { id: website.id } });
     assert.equal(stored.apiKeyHash, hashApiKey(credentials.apiKey));
     assert.equal(decryptSecret(stored.webhookSecretEncrypted), credentials.webhookSecret);
+    assert.equal(stored.mediaFolder, 'stevithedog');
     const link = await prisma.accountWebsite.findFirst({ where: { accountId: account.id } });
     assert.equal(link.websiteId, website.id);
     await assertNoSecrets(res.body);
@@ -337,6 +338,23 @@ describe('POST /api/admin/accounts/:id/websites', () => {
     const link = await prisma.accountWebsite.findFirst({ where: { accountId: owner.id } });
     assert.equal(link.websiteId, website.id);
     await assertNoSecrets(res.body);
+  });
+
+  it('gives the new website the next free media folder when its name is taken', async () => {
+    const admin = await createAdmin();
+    const account = await createSiteOwner();
+    await createWebsite({ url: 'https://www.example.com', mediaFolder: 'example' });
+    await createWebsite({ url: 'https://example.net', mediaFolder: 'example-2' });
+
+    const res = await as(admin, 'post', `/api/admin/accounts/${account.id}/websites`).send({
+      websiteName: 'Example Shop',
+      websiteUrl: 'https://example.org',
+    });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.website.mediaFolder, undefined);
+    const stored = await prisma.website.findUnique({ where: { id: res.body.data.website.id } });
+    assert.equal(stored.mediaFolder, 'example-3');
   });
 
   it('returns 404 for an unknown account, before validating the body', async () => {

@@ -69,6 +69,7 @@ async function createWebsite(overrides = {}) {
       url: `https://site${unique()}.example.com`,
       apiKeyHash: hashApiKey(apiKey),
       webhookSecretEncrypted: encryptSecret(webhookSecret),
+      mediaFolder: `site${unique()}`,
       ...overrides,
     },
   });
@@ -77,6 +78,13 @@ async function createWebsite(overrides = {}) {
 
 function linkWebsite(account, website) {
   return prisma.accountWebsite.create({ data: { accountId: account.id, websiteId: website.id } });
+}
+
+// A Cloudinary secure_url in the website's upload folder (lib/cloudinary.js → isInFolder), the
+// only kind of image src the post routes accept. `name` makes it distinct within a post.
+function imageSrc(website, name = 'a') {
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_FOLDER } = process.env;
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/v1760000000/${CLOUDINARY_FOLDER}/${website.mediaFolder}/${name}.jpg`;
 }
 
 // A paragraph element for createPost's body.
@@ -180,6 +188,7 @@ module.exports = {
   createSiteOwner,
   createWebsite,
   linkWebsite,
+  imageSrc,
   paragraph,
   imageElement,
   createPost,

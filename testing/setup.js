@@ -17,4 +17,8 @@ process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
 process.env.CORS_ORIGIN = 'http://localhost:3000';
+process.env.CLOUDINARY_CLOUD_NAME = 'test-cloud';
+process.env.CLOUDINARY_API_KEY = 'test-cloudinary-key';
+process.env.CLOUDINARY_API_SECRET = 'test-cloudinary-secret';
+process.env.CLOUDINARY_FOLDER = '3dwd-test';
 delete process.env.COOKIE_DOMAIN;

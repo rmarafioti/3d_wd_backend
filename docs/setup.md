@@ -157,13 +157,15 @@ The only place keys and secrets are generated, hashed, encrypted or decrypted. U
 
 Images are stored in 3DWD's Cloudinary account, so site owners never need one of their own. The browser uploads each image straight to Cloudinary with a signature from `POST /api/siteOwner/uploads/sign` (`docs/endpoints.md` → Sign an Upload); the backend never handles the file.
 
+The account uses Cloudinary's fixed folder mode, where the signed `folder` is also the start of each upload's public id (and so of its `secure_url`). The `src` rule and the cleanup both rely on that. Everything that talks to Cloudinary is in `lib/cloudinary.js` (no Cloudinary SDK: signing uses Node's `crypto`, the Admin API calls use `fetch`); the folder name rule is `lib/mediaFolder.js`.
+
 Environment variables:
 
 - `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_API_KEY`: the account's cloud name and API key. Both are public: they appear in upload URLs and in the signature's `fields`.
 - `CLOUDINARY_API_SECRET`: signs uploads and authorizes the cleanup. It is a secret like `SECRET_ENCRYPTION_KEY`: never logged, never returned, kept only in `.env` and Railway, and backed up.
 - `CLOUDINARY_FOLDER`: the environment's root folder, `3dwd` in production and `3dwd-dev` locally. Production and local share the one Cloudinary account, separated by this root. Tests use a fixed value and never call Cloudinary.
 
-Every upload goes to `<CLOUDINARY_FOLDER>/<website.mediaFolder>/`. A stored `src` looks like `https://res.cloudinary.com/<cloud name>/image/upload/v1760000000/3dwd/steviethedog/abc123.jpg`, and the backend accepts an image `src` only in the post's website's folder.
+Every upload goes to `<CLOUDINARY_FOLDER>/<website.mediaFolder>/`. No folder is created by hand: Cloudinary creates each folder on the first upload into it. File names are Cloudinary's random public ids (letters, digits, `_` and `-`), and the `src` rule accepts only those, so the upload preset option "use filename" stays off. A stored `src` looks like `https://res.cloudinary.com/<cloud name>/image/upload/v1760000000/3dwd/steviethedog/abc123.jpg`, and the backend accepts an image `src` only in the post's website's folder.
 
 ### media_folder
 
@@ -185,7 +187,7 @@ The migration that adds the column backfills every existing website by the same 
 
 The database is the record of which images are kept. Post saves never call Cloudinary: an image removed in an edit, or uploaded for a Publish whose save then failed, is left for the cleanup.
 
-`npm run sweep:uploads`:
+`npm run sweep:uploads` (`scripts/sweepUploads.js`, running `services/sweepUploads.js`):
 
 - lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
 - deletes each one that no `image.src` refers to, whether its post is active or archived (archived posts keep their images);

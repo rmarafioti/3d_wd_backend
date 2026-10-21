@@ -1,9 +1,10 @@
 // Request tests for the site owner routes (api/siteOwner/index.js): websites with post summaries
-// and post create / read / edit / status. Covers the role guard, the ownership rule (another
-// owner's or an inactive website's data is a 404), validation, the body order and the edit
-// reconcile, and the revalidation call after every change. fetch is mocked in every test, so no call leaves the
+// post create / read / edit / status, and Sign an Upload. Covers the role guard, the ownership rule
+// (another owner's or an inactive website's data is a 404), validation, the image src folder rule,
+// the body order and the edit reconcile, and the revalidation call after every change. fetch is mocked in every test, so no call leaves the
 // machine.
 require('../../testing/setup');
+const crypto = require('node:crypto');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -17,6 +18,7 @@ const {
   createSiteOwner,
   createWebsite,
   paragraph,
+  imageSrc,
   imageElement,
   createPost,
   createOwnerWithWebsite,
@@ -30,7 +32,10 @@ const POST_NOT_FOUND = { error: { message: 'Post not found.' } };
 const WEBSITE_NOT_FOUND = { error: { message: 'Website not found.' } };
 const UNKNOWN_ID = '019a0000-0000-7000-8000-000000000000';
 
-const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
+// An image in the website's upload folder; override any field.
+function image(website, overrides = {}) {
+  return { src: imageSrc(website), width: 800, height: 600, altText: 'A', ...overrides };
+}
 
 let fetchMock;
 
@@ -83,6 +88,7 @@ describe('site owner route guards', () => {
     ['get', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id/status'],
+    ['post', '/api/siteOwner/uploads/sign'],
   ];
 
   for (const [method, path] of routes) {
@@ -159,7 +165,7 @@ describe('GET /api/siteOwner/websites', () => {
 describe('POST /api/siteOwner/posts', () => {
   it('creates a post with its body in order, markup kept as typed, and returns the Post shape', async () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
-    const second = { ...IMAGE, src: 'https://res.cloudinary.com/b.jpg', altText: 'B' };
+    const second = image(website, { src: imageSrc(website, 'b'), altText: 'B' });
 
     const res = await as(owner, 'post', '/api/siteOwner/posts').send(
       newPost(website, {
@@ -168,7 +174,7 @@ describe('POST /api/siteOwner/posts', () => {
         subHeader: 'World',
         postDate: '2026-10-07',
         body: [
-          imageElement(IMAGE),
+          imageElement(image(website)),
           paragraph(' First paragraph.\nSecond line. '),
           imageElement(second),
           paragraph('**Bold** and *italic* and [a link](https://example.com).'),
@@ -201,7 +207,7 @@ describe('POST /api/siteOwner/posts', () => {
     const storedImages = await prisma.image.findMany({ where: { postId: post.id } });
     const imageId = (src) => storedImages.find((image) => image.src === src).id;
     assert.deepEqual(post.body, [
-      { type: 'image', image: { id: imageId(IMAGE.src), ...IMAGE } },
+      { type: 'image', image: { id: imageId(image(website).src), ...image(website) } },
       { type: 'paragraph', text: 'First paragraph.\nSecond line.' },
       { type: 'image', image: { id: imageId(second.src), ...second } },
       { type: 'paragraph', text: '**Bold** and *italic* and [a link](https://example.com).' },
@@ -302,6 +308,22 @@ describe('POST /api/siteOwner/posts', () => {
     assert.deepEqual(res.body, WEBSITE_NOT_FOUND);
   });
 
+  it("returns 400 and saves nothing for an image in another website's folder", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, {
+        body: [paragraph(), imageElement(image(website, { src: imageSrc(otherWebsite) }))],
+      }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { error: { message: 'Invalid image.' } });
+    assert.equal(await prisma.post.count(), 0);
+    assert.equal(fetchMock.mock.callCount(), 0);
+  });
+
   it('returns 400 with fields keyed by the full path to each bad input', async () => {
     const { owner, website } = await createOwnerWithWebsite();
 
@@ -310,7 +332,7 @@ describe('POST /api/siteOwner/posts', () => {
         postName: '',
         body: [
           paragraph('[menu](http://example.com)'),
-          imageElement({ ...IMAGE, src: 'http://insecure.example.com/a.jpg' }),
+          imageElement(image(website, { src: 'http://insecure.example.com/a.jpg' })),
         ],
       }),
     );
@@ -333,7 +355,7 @@ describe('POST /api/siteOwner/posts', () => {
     const { owner, website } = await createOwnerWithWebsite();
 
     const res = await as(owner, 'post', '/api/siteOwner/posts').send(
-      newPost(website, { body: [imageElement(IMAGE)] }),
+      newPost(website, { body: [imageElement(image(website))] }),
     );
 
     assert.equal(res.status, 400);
@@ -348,9 +370,9 @@ describe('GET /api/siteOwner/posts/:id', () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
     const post = await createPost(website, {
       header: 'Hello',
-      body: [paragraph('Intro'), imageElement(IMAGE), paragraph('Outro')],
+      body: [paragraph('Intro'), imageElement(image(website)), paragraph('Outro')],
     });
-    const { postId, ...image } = post.images[0];
+    const { postId, ...stored } = post.images[0];
 
     const res = await as(owner, 'get', `/api/siteOwner/posts/${post.id}`);
 
@@ -369,7 +391,7 @@ describe('GET /api/siteOwner/posts/:id', () => {
         updatedAt: post.updatedAt.toISOString(),
         body: [
           { type: 'paragraph', text: 'Intro' },
-          { type: 'image', image },
+          { type: 'image', image: stored },
           { type: 'paragraph', text: 'Outro' },
         ],
       },
@@ -411,7 +433,11 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
   it('updates kept images, inserts new ones and deletes the missing ones', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, {
-      body: [paragraph(), imageElement(IMAGE), imageElement({ ...IMAGE, altText: 'Removed' })],
+      body: [
+        paragraph(),
+        imageElement(image(website)),
+        imageElement(image(website, { altText: 'Removed' })),
+      ],
     });
     const [keptImage, removedImage] = post.images;
 
@@ -421,8 +447,8 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
         postDate: '2026-10-07',
         body: [
           paragraph('Edited body'),
-          imageElement({ id: keptImage.id, ...IMAGE, altText: 'Updated' }),
-          imageElement({ ...IMAGE, altText: 'Added' }),
+          imageElement({ id: keptImage.id, ...image(website, { altText: 'Updated' }) }),
+          imageElement(image(website, { altText: 'Added' })),
         ],
       }),
     );
@@ -448,17 +474,17 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
   it('reorders the body, keeping image ids and leaving no stale elements', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, {
-      body: [paragraph('One'), paragraph('Two'), imageElement(IMAGE)],
+      body: [paragraph('One'), paragraph('Two'), imageElement(image(website))],
     });
     const imageId = post.images[0].id;
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
-      editPost({ body: [imageElement({ id: imageId, ...IMAGE }), paragraph('Two')] }),
+      editPost({ body: [imageElement({ id: imageId, ...image(website) }), paragraph('Two')] }),
     );
 
     assert.equal(res.status, 200);
     assert.deepEqual(res.body.data.body, [
-      { type: 'image', image: { id: imageId, ...IMAGE } },
+      { type: 'image', image: { id: imageId, ...image(website) } },
       { type: 'paragraph', text: 'Two' },
     ]);
     const stored = await prisma.element.findMany({
@@ -523,11 +549,13 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
   it("returns 400 and changes nothing for another post's image id", async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, { postName: 'Original' });
-    const otherPost = await createPost(website, { body: [paragraph(), imageElement(IMAGE)] });
+    const otherPost = await createPost(website, {
+      body: [paragraph(), imageElement(image(website))],
+    });
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
       editPost({
-        body: [paragraph(), imageElement({ id: otherPost.images[0].id, ...IMAGE })],
+        body: [paragraph(), imageElement({ id: otherPost.images[0].id, ...image(website) })],
       }),
     );
 
@@ -541,15 +569,37 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
 
   it('returns 400 for an image id sent twice', async () => {
     const { owner, website } = await createOwnerWithWebsite();
-    const post = await createPost(website, { body: [paragraph(), imageElement(IMAGE)] });
-    const image = { id: post.images[0].id, ...IMAGE };
+    const post = await createPost(website, { body: [paragraph(), imageElement(image(website))] });
+    const stored = { id: post.images[0].id, ...image(website) };
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
-      editPost({ body: [paragraph(), imageElement(image), imageElement(image)] }),
+      editPost({ body: [paragraph(), imageElement(stored), imageElement(stored)] }),
     );
 
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, { error: { message: 'Invalid image.' } });
+  });
+
+  it('returns 400 and changes nothing when an image is outside the website folder', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { body: [paragraph(), imageElement(image(website))] });
+    const outside = 'https://res.cloudinary.com/test-cloud/image/upload/v1/elsewhere/a.jpg';
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
+      editPost({
+        body: [
+          paragraph(),
+          imageElement({ id: post.images[0].id, ...image(website) }),
+          imageElement(image(website, { src: outside })),
+        ],
+      }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { error: { message: 'Invalid image.' } });
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.postName, 'Post');
+    assert.equal(await prisma.image.count(), 1);
   });
 
   it('returns 400 with fields for an invalid edit', async () => {
@@ -653,5 +703,90 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     assert.deepEqual(res.body, POST_NOT_FOUND);
     const stored = await prisma.post.findUnique({ where: { id: post.id } });
     assert.equal(stored.active, true);
+  });
+});
+
+describe('POST /api/siteOwner/uploads/sign', () => {
+  it("returns a signed upload for the website's folder, built only by the backend", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const before = Math.floor(Date.now() / 1000);
+
+    const res = await as(owner, 'post', '/api/siteOwner/uploads/sign').send({
+      websiteId: website.id,
+      folder: 'someone-else',
+      transformation: 'c_scale,w_10000',
+    });
+
+    assert.equal(res.status, 200);
+    const { uploadUrl, fields } = res.body.data;
+    assert.equal(uploadUrl, 'https://api.cloudinary.com/v1_1/test-cloud/image/upload');
+    const { signature, api_key: apiKey, ...signed } = fields;
+    assert.deepEqual(signed, {
+      allowed_formats: 'jpg,jpeg,png,webp',
+      folder: `3dwd-test/${website.mediaFolder}`,
+      timestamp: signed.timestamp,
+      transformation: 'c_limit,w_2500,h_2500',
+    });
+    assert.ok(signed.timestamp >= before && signed.timestamp <= Math.floor(Date.now() / 1000));
+    assert.equal(apiKey, 'test-cloudinary-key');
+    const toSign = Object.keys(signed)
+      .sort()
+      .map((key) => `${key}=${signed[key]}`)
+      .join('&');
+    const expected = crypto
+      .createHash('sha1')
+      .update(`${toSign}test-cloudinary-secret`)
+      .digest('hex');
+    assert.equal(signature, expected);
+    assert.ok(!JSON.stringify(res.body).includes('test-cloudinary-secret'));
+    await assertNoSecrets(res.body);
+  });
+
+  it('returns 400 with fields when websiteId is missing', async () => {
+    const { owner } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/uploads/sign').send({ websiteId: ' ' });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: { websiteId: 'Website is required.' },
+      },
+    });
+  });
+
+  it("returns 404 for another site owner's website", async () => {
+    const { owner } = await createOwnerWithWebsite();
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/uploads/sign').send({
+      websiteId: otherWebsite.id,
+    });
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, WEBSITE_NOT_FOUND);
+  });
+
+  it("returns 404 for the owner's inactive website", async () => {
+    const { owner, website } = await createOwnerWithWebsite({ active: false });
+
+    const res = await as(owner, 'post', '/api/siteOwner/uploads/sign').send({
+      websiteId: website.id,
+    });
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, WEBSITE_NOT_FOUND);
+  });
+
+  it('returns 404 for an unknown website id', async () => {
+    const { owner } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/uploads/sign').send({
+      websiteId: UNKNOWN_ID,
+    });
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, WEBSITE_NOT_FOUND);
   });
 });

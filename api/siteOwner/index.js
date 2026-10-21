@@ -1,5 +1,6 @@
 // Site owner routes, mounted at /api/siteOwner: the site owner's websites with post summaries,
-// and post create / read / edit / archive / make active. Every route requires a signed-in site owner.
+// post create / read / edit / archive / make active, and the signature for uploading a website's
+// images to Cloudinary. Every route requires a signed-in site owner.
 //
 // Ownership: the account always comes from req.user (the session), never from the request.
 // A website belongs to the site owner when an account_website row links them AND the website is
@@ -12,14 +13,18 @@ const requireAuth = require('../../middleware/requireAuth');
 const requireRole = require('../../middleware/requireRole');
 const { validate } = require('../../validation/validate');
 const { createPostSchema, updatePostSchema, postStatusSchema } = require('../../validation/post');
+const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
+const { signUpload, isInFolder } = require('../../lib/cloudinary');
 const revalidate = require('../../services/revalidate');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('site_owner'));
 
 const POST_NOT_FOUND = 'Post not found.';
+const WEBSITE_NOT_FOUND = 'Website not found.';
+const INVALID_IMAGE = 'Invalid image.';
 
 // Body elements are ordered by position.
 const POST_SELECT = {
@@ -80,10 +85,23 @@ function assertOwnImages(images, storedImages) {
   for (const { id } of images) {
     if (id === undefined) continue;
     if (!storedIds.has(id) || seen.has(id)) {
-      throw new ServerError(400, 'Invalid image.');
+      throw new ServerError(400, INVALID_IMAGE);
     }
     seen.add(id);
   }
+}
+
+// Every image src must be a Cloudinary upload in the website's own folder (lib/cloudinary.js).
+// Stops a post showing an image from anywhere else, including another website's folder.
+function assertImagesInFolder(images, mediaFolder) {
+  if (images.some((image) => !isInFolder(image.src, mediaFolder))) {
+    throw new ServerError(400, INVALID_IMAGE);
+  }
+}
+
+// The images in a validated body, in body order.
+function bodyImages(body) {
+  return body.filter((item) => item.type === 'image').map((item) => item.image);
 }
 
 // Writes a post's body inside a transaction, in list order: each image element's image is updated
@@ -135,9 +153,11 @@ router.post('/posts', async (req, res) => {
 
   const website = await prisma.website.findFirst({
     where: { id: input.websiteId, ...ownedWebsiteWhere(req.user.id) },
-    select: { id: true },
+    select: { id: true, mediaFolder: true },
   });
-  if (!website) throw new ServerError(404, 'Website not found.');
+  if (!website) throw new ServerError(404, WEBSITE_NOT_FOUND);
+
+  assertImagesInFolder(bodyImages(input.body), website.mediaFolder);
 
   // Post, then body: if any insert fails the whole create rolls back.
   const post = await prisma.$transaction(async (tx) => {
@@ -176,13 +196,15 @@ router.patch('/posts/:id', async (req, res) => {
   const post = await findOwnedPost(req.user.id, req.params.id, {
     id: true,
     websiteId: true,
+    website: { select: { mediaFolder: true } },
     images: { select: { id: true } },
   });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
-  const images = input.body.filter((item) => item.type === 'image').map((item) => item.image);
+  const images = bodyImages(input.body);
   const keptImageIds = images.filter((image) => image.id).map((image) => image.id);
   assertOwnImages(images, post.images);
+  assertImagesInFolder(images, post.website.mediaFolder);
 
   // The body is rewritten in its new order: elements are deleted first, so no element still points
   // at an image being removed, then stored images missing from the body are deleted, and
@@ -224,6 +246,20 @@ router.patch('/posts/:id/status', async (req, res) => {
 
   res.json({ data: toPost(updated) });
   revalidate(post.websiteId, post.id);
+});
+
+// POST /api/siteOwner/uploads/sign — one signed upload for the website's Cloudinary folder.
+// The browser uploads the files straight to Cloudinary; nothing is written to the database.
+router.post('/uploads/sign', async (req, res) => {
+  const input = validate(signUploadSchema, req.body ?? {});
+
+  const website = await prisma.website.findFirst({
+    where: { id: input.websiteId, ...ownedWebsiteWhere(req.user.id) },
+    select: { mediaFolder: true },
+  });
+  if (!website) throw new ServerError(404, WEBSITE_NOT_FOUND);
+
+  res.json({ data: signUpload(website.mediaFolder) });
 });
 
 module.exports = router;
