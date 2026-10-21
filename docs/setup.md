@@ -195,6 +195,18 @@ The database is the record of which images are kept. Post saves never call Cloud
 
 Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The script is safe to re-run. Locally it is run by hand; once deployed, a daily Railway cron service runs it.
 
+### Client websites
+
+A client website shows its images with `next/image`, so its `next.config` must allow their host. It allows only its own images in 3DWD's account, never all of `res.cloudinary.com`: three `remotePatterns` entries, each with `protocol: "https"` and `hostname: "res.cloudinary.com"` (checked against Next.js 16.3.4's matcher, 2026-10-21):
+
+| `pathname`                                                | Allows                                           |
+| --------------------------------------------------------- | ------------------------------------------------ |
+| `/<cloud name>/image/upload/*/3dwd/<media_folder>/**`     | its uploads, production                          |
+| `/<cloud name>/image/upload/*/3dwd-dev/<media_folder>/**` | its uploads, local testing                       |
+| `/<cloud name>/image/upload/**/<static folder>/**`        | its own static images (Stevie: `stevie_the_dog`) |
+
+Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The master doc's "Client to Website" tab carries the same rule.
+
 ## Seed Users
 
 Only the administrator is seeded. The test site owner is created afterwards through the real Create an Account flow, so that flow (validation, transaction, key generation, one-time reveal) is tested end to end through the UI.
