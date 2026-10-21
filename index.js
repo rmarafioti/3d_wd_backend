@@ -7,6 +7,10 @@ const REQUIRED_ENV = [
   'GOOGLE_CLIENT_ID',
   'CORS_ORIGIN',
   'SECRET_ENCRYPTION_KEY',
+  'CLOUDINARY_CLOUD_NAME',
+  'CLOUDINARY_API_KEY',
+  'CLOUDINARY_API_SECRET',
+  'CLOUDINARY_FOLDER',
 ];
 const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
 if (missing.length) {

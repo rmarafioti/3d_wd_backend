@@ -27,6 +27,7 @@ Installs:
 - zod
 - Prisma / @prisma/client
 - Prisma driver adapter (`@prisma/adapter-pg`, `pg`)
+- No Cloudinary SDK: uploads are signed with Node's `crypto`, and the cleanup calls Cloudinary's Admin API with `fetch`
 - Dev: Prettier, ESLint, Supertest (tests run on Node's built-in `node:test`)
 
 ```
@@ -47,6 +48,10 @@ Set:
 | `CORS_ORIGIN`           | `http://localhost:3000`             | `https://3dwebdev.com`   |
 | `COOKIE_DOMAIN`         | leave empty                         | `.3dwebdev.com`          |
 | `SEED_ADMIN_EMAIL`      | the admin's Google email            | same                     |
+| `CLOUDINARY_CLOUD_NAME` | 3DWD's Cloudinary cloud name        | same                     |
+| `CLOUDINARY_API_KEY`    | Cloudinary → Settings → API Keys    | same                     |
+| `CLOUDINARY_API_SECRET` | same place — never log or share it  | same — back it up        |
+| `CLOUDINARY_FOLDER`     | `3dwd-dev`                          | `3dwd`                   |
 
 Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`) with:
 
@@ -62,6 +67,12 @@ npx prisma migrate dev     # creates the tables
 npm run seed               # seeds the administrator only
 npm run dev                # starts the API on http://localhost:4000
 npx prisma studio          # optional - browser GUI to inspect the database; handy right after seeding to confirm the admin row landed
+```
+
+Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post uses; only under `CLOUDINARY_FOLDER`):
+
+```
+npm run sweep:uploads
 ```
 
 Tests:

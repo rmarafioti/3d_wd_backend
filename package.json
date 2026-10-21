@@ -29,6 +29,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "seed": "node prisma/seed.js",
+    "sweep:uploads": "node scripts/sweepUploads.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "prisma generate",

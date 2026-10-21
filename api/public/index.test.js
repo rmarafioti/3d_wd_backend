@@ -12,13 +12,17 @@ const {
   disconnect,
   createWebsite,
   paragraph,
+  imageSrc,
   imageElement,
   createPost,
 } = require('../../testing/helpers');
 
 const INVALID_KEY = { error: { message: 'Invalid API key.' } };
 
-const IMAGE = { src: 'https://res.cloudinary.com/a.jpg', width: 800, height: 600, altText: 'A' };
+// An image in the website's upload folder; override any field.
+function image(website, overrides = {}) {
+  return { src: imageSrc(website), width: 800, height: 600, altText: 'A', ...overrides };
+}
 
 beforeEach(resetDatabase);
 after(disconnect);
@@ -34,9 +38,9 @@ describe('GET /api/public/posts', () => {
       header: 'Older',
       postDate: new Date('2026-10-01T00:00:00.000Z'),
       body: [
-        imageElement(IMAGE),
+        imageElement(image(website)),
         paragraph('Intro'),
-        imageElement({ ...IMAGE, altText: 'Second' }),
+        imageElement(image(website, { altText: 'Second' })),
         paragraph('Outro'),
       ],
     });
@@ -67,9 +71,9 @@ describe('GET /api/public/posts', () => {
           createdAt: older.createdAt.toISOString(),
           updatedAt: older.updatedAt.toISOString(),
           body: [
-            { type: 'image', image: IMAGE },
+            { type: 'image', image: image(website) },
             { type: 'paragraph', text: 'Intro' },
-            { type: 'image', image: { ...IMAGE, altText: 'Second' } },
+            { type: 'image', image: image(website, { altText: 'Second' }) },
             { type: 'paragraph', text: 'Outro' },
           ],
         },

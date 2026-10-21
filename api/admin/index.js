@@ -11,6 +11,7 @@ const { validate } = require('../../validation/validate');
 const { createAccountSchema } = require('../../validation/account');
 const { websiteChoiceSchema } = require('../../validation/website');
 const { normalizeUrl, urlVariants } = require('../../lib/normalizeUrl');
+const { findFreeMediaFolder } = require('../../lib/mediaFolder');
 const {
   generateApiKey,
   generateWebhookSecret,
@@ -68,8 +69,8 @@ async function assertUrlAvailable(websiteUrl) {
 }
 
 // Generates a new website's API key and webhook secret and inserts the website (hashed key,
-// encrypted secret) inside the caller's transaction. Returns the website summary plus the
-// plaintext credentials, which the caller returns once and never stores or logs.
+// encrypted secret, its media folder) inside the caller's transaction. Returns the website
+// summary plus the plaintext credentials, which the caller returns once and never stores or logs.
 async function createWebsiteWithCredentials(tx, websiteName, url) {
   const apiKey = generateApiKey();
   const webhookSecret = generateWebhookSecret();
@@ -80,6 +81,7 @@ async function createWebsiteWithCredentials(tx, websiteName, url) {
       url,
       apiKeyHash: hashApiKey(apiKey),
       webhookSecretEncrypted: encryptSecret(webhookSecret),
+      mediaFolder: await findFreeMediaFolder(tx, url),
     },
     select: WEBSITE_SUMMARY_SELECT,
   });
