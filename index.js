@@ -1,20 +1,11 @@
-// Server entry point. Loads .env, checks required config, then starts the Express app from app.js.
+// Server entry point. Loads .env, checks the config (lib/config.js), then starts the Express app
+// from app.js.
 require('dotenv/config');
+const { configProblems } = require('./lib/config');
 
-const REQUIRED_ENV = [
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'GOOGLE_CLIENT_ID',
-  'CORS_ORIGIN',
-  'SECRET_ENCRYPTION_KEY',
-  'CLOUDINARY_CLOUD_NAME',
-  'CLOUDINARY_API_KEY',
-  'CLOUDINARY_API_SECRET',
-  'CLOUDINARY_FOLDER',
-];
-const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
-if (missing.length) {
-  console.error(`Missing required environment variables: ${missing.join(', ')}`);
+const problems = configProblems(process.env);
+if (problems.length) {
+  for (const problem of problems) console.error(problem);
   process.exit(1);
 }
 

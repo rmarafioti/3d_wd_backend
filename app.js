@@ -12,6 +12,11 @@ const { errorHandler, ServerError } = require('./errors');
 
 const app = express();
 
+// One proxy sits in front of the API (Railway in production, Next's dev rewrite locally), so
+// req.ip is the client's address from X-Forwarded-For, as the rate limits and audit log need.
+// Recheck the hop count when the Railway deploy is set up.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 // Exact origin, never a wildcard: browsers refuse credentialed responses with `*`.
 app.use(

@@ -43,7 +43,7 @@ Set:
 | `DATABASE_URL`          | docker-compose Postgres, port 5433  | Railway Postgres URL     |
 | `TEST_DATABASE_URL`     | `.../headless_cms_test`, port 5433  | not used                 |
 | `GOOGLE_CLIENT_ID`      | same as the frontend's              | same                     |
-| `JWT_SECRET`            | any long random string              | long random string       |
+| `JWT_SECRET`            | 32+ random characters               | same, never reused       |
 | `SECRET_ENCRYPTION_KEY` | 32 random bytes, base64 (see below) | its own key — back it up |
 | `CORS_ORIGIN`           | `http://localhost:3000`             | `https://3dwebdev.com`   |
 | `COOKIE_DOMAIN`         | leave empty                         | `.3dwebdev.com`          |
@@ -53,13 +53,13 @@ Set:
 | `CLOUDINARY_API_SECRET` | same place — never log or share it  | same — back it up        |
 | `CLOUDINARY_FOLDER`     | `3dwd-dev`                          | `3dwd`                   |
 
-Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`) with:
+Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`, which must be at least 32 characters) with:
 
 ```
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-If `SECRET_ENCRYPTION_KEY` is ever lost, every stored webhook secret becomes unreadable — store it somewhere safe.
+If `SECRET_ENCRYPTION_KEY` is ever lost, every stored webhook secret becomes unreadable — store it somewhere safe. The server refuses to start with a missing variable or a weak secret (`lib/config.js`). Secrets, rotation and the pre-deploy checklist are in `docs/security.md`.
 
 ```
 docker compose up -d       # starts local Postgres
@@ -89,8 +89,11 @@ Before committing:
 ```
 npm run format             # Prettier
 npm run lint               # ESLint
+npm audit --omit=dev       # no high or critical advisories
 npm test                   # test suite
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request and every push to `main`.
 
 Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true } }`.
 

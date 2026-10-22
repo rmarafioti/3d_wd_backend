@@ -1,4 +1,5 @@
 // Session guard: verifies the `session` cookie, loads the account and sets req.user.
+// A token whose sv (session version) no longer matches the account was ended by a logout.
 // Any failure clears the cookie, because the frontend's proxy redirects on cookie *presence*
 // and a dead cookie must not be left behind.
 const prisma = require('../prisma');
@@ -13,13 +14,21 @@ async function requireAuth(req, res, next) {
   let account = null;
   if (token) {
     try {
-      const { sub } = verifySession(token);
-      account = await prisma.account.findUnique({
+      const { sub, sv } = verifySession(token);
+      const found = await prisma.account.findUnique({
         where: { id: sub },
-        select: { id: true, name: true, email: true, role: true, active: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          active: true,
+          sessionVersion: true,
+        },
       });
+      if (found?.sessionVersion === sv) account = found;
     } catch {
-      // Invalid, tampered or expired token: handled below as "no account".
+      // Invalid, tampered or expired token: handled below as "no account", like a stale sv.
     }
   }
 

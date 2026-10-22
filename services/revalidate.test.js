@@ -5,14 +5,14 @@ const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const revalidate = require('./revalidate');
 const {
-  resetDatabase,
+  resetState,
   disconnect,
   createWebsite,
   createPost,
   mockFetch,
 } = require('../testing/helpers');
 
-beforeEach(resetDatabase);
+beforeEach(resetState);
 after(disconnect);
 
 describe('revalidate', () => {

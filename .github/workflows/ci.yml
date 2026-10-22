@@ -1,0 +1,49 @@
+# CI: the Code Review checklist's tooling checks (item 9) on every pull request and every push to
+# main, so branch protection can require them before a merge. The tests run against a throwaway
+# Postgres service; testing/migrate.js (pretest) creates and migrates the _test database on it.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # testing/setup.js fixes every other variable the tests need.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/headless_cms_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test

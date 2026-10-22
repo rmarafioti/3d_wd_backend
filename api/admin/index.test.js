@@ -1,6 +1,7 @@
 // Request tests for the admin routes (api/admin/index.js): the account list, the website picker,
 // Create an Account and Link a Website. Covers the role guard, every documented 400/404/409,
-// credentials only on a new website, and that no secret ever reaches a response.
+// credentials only on a new website, the audit events each change writes, and that no secret
+// ever reaches a response.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,7 +11,7 @@ const prisma = require('../../prisma');
 const { hashApiKey, decryptSecret } = require('../../lib/crypto');
 const {
   CSRF,
-  resetDatabase,
+  resetState,
   disconnect,
   createAdmin,
   createSiteOwner,
@@ -18,18 +19,24 @@ const {
   linkWebsite,
   sessionCookie,
   assertNoSecrets,
+  auditEvents,
 } = require('../../testing/helpers');
 
 const VALIDATION_FAILED = 'Please fix the highlighted fields.';
 const URL_TAKEN = 'A website with this URL already exists. Select it from the dropdown.';
 
-beforeEach(resetDatabase);
+beforeEach(resetState);
 after(disconnect);
 
 // Sends a request as the given account. Writes carry the CSRF header.
 function as(account, method, path) {
   const req = request(app)[method](path).set('Cookie', sessionCookie(account));
   return method === 'get' ? req : req.set(CSRF);
+}
+
+// The audit events an administrator's change writes, as audit_event rows return them.
+function adminEvent(admin, action, targetType, targetId, metadata = null) {
+  return { action, actorId: admin.id, actorEmail: admin.email, targetType, targetId, metadata };
 }
 
 async function rowCounts() {
@@ -189,6 +196,45 @@ describe('POST /api/admin/accounts', () => {
     await assertNoSecrets(res.body);
   });
 
+  it('records the new account and its link to an existing website in the audit log', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+
+    const res = await as(admin, 'post', '/api/admin/accounts').send({
+      name: 'Rich',
+      email: 'rich@example.com',
+      websiteId: website.id,
+    });
+
+    const accountId = res.body.data.account.id;
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(admin, 'account.created', 'account', accountId, { websiteId: website.id }),
+      adminEvent(admin, 'website.linked', 'account', accountId, { websiteId: website.id }),
+    ]);
+  });
+
+  it('records the new website, account and link in the audit log, without credentials', async () => {
+    const admin = await createAdmin();
+
+    const res = await as(admin, 'post', '/api/admin/accounts').send({
+      name: 'Rich',
+      email: 'rich@example.com',
+      websiteName: 'Stevie The Dog',
+      websiteUrl: 'https://www.steviethedog.com',
+    });
+
+    const { account, website, credentials } = res.body.data;
+    const events = await auditEvents();
+    assert.deepEqual(events, [
+      adminEvent(admin, 'website.created', 'website', website.id),
+      adminEvent(admin, 'account.created', 'account', account.id, { websiteId: website.id }),
+      adminEvent(admin, 'website.linked', 'account', account.id, { websiteId: website.id }),
+    ]);
+    const text = JSON.stringify(events);
+    assert.ok(!text.includes(credentials.apiKey) && !text.includes(credentials.webhookSecret));
+    await assertNoSecrets(events);
+  });
+
   it('returns 400 with a message per field for a blank name, a bad email and an http URL', async () => {
     const admin = await createAdmin();
 
@@ -338,6 +384,36 @@ describe('POST /api/admin/accounts/:id/websites', () => {
     const link = await prisma.accountWebsite.findFirst({ where: { accountId: owner.id } });
     assert.equal(link.websiteId, website.id);
     await assertNoSecrets(res.body);
+  });
+
+  it('records linking an existing website in the audit log', async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const { website } = await createWebsite();
+
+    await as(admin, 'post', `/api/admin/accounts/${owner.id}/websites`).send({
+      websiteId: website.id,
+    });
+
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(admin, 'website.linked', 'account', owner.id, { websiteId: website.id }),
+    ]);
+  });
+
+  it('records the new website and its link in the audit log', async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+
+    const res = await as(admin, 'post', `/api/admin/accounts/${owner.id}/websites`).send({
+      websiteName: 'Second Site',
+      websiteUrl: 'https://second.example.com',
+    });
+
+    const { website } = res.body.data;
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(admin, 'website.created', 'website', website.id),
+      adminEvent(admin, 'website.linked', 'account', owner.id, { websiteId: website.id }),
+    ]);
   });
 
   it('gives the new website the next free media folder when its name is taken', async () => {

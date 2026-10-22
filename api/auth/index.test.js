@@ -9,18 +9,20 @@ const app = require('../../app');
 const prisma = require('../../prisma');
 const {
   CSRF,
-  resetDatabase,
+  resetState,
   disconnect,
   createAdmin,
   createSiteOwner,
   sessionCookie,
+  auditEvents,
   mockGoogle,
 } = require('../../testing/helpers');
 
 const NOT_AUTHORIZED = { error: { message: 'You are not authorized to log in.' } };
 const SESSION_EXPIRED = { error: { message: 'Your session expired, please sign in again.' } };
+const TOO_MANY_REQUESTS = { error: { message: 'Too many requests. Please try again later.' } };
 
-beforeEach(resetDatabase);
+beforeEach(resetState);
 afterEach(() => mock.restoreAll());
 after(disconnect);
 
@@ -170,6 +172,74 @@ describe('POST /api/auth/login', () => {
     assert.equal(res.status, 401);
     assert.deepEqual(res.body, NOT_AUTHORIZED);
   });
+
+  it('records a successful login in the audit log', async () => {
+    const owner = await createSiteOwner();
+    mockGoogle(mock, { payload: verifiedPayload(owner.email) });
+
+    await login();
+
+    assert.deepEqual(await auditEvents(), [
+      {
+        action: 'auth.login_succeeded',
+        actorId: owner.id,
+        actorEmail: owner.email,
+        targetType: null,
+        targetId: null,
+        metadata: null,
+      },
+    ]);
+  });
+
+  it('records a rejected Google token without an email', async () => {
+    mockGoogle(mock, { error: new Error('Invalid token signature') });
+
+    await login();
+
+    const [event] = await auditEvents();
+    assert.equal(event.action, 'auth.login_failed');
+    assert.equal(event.actorId, null);
+    assert.equal(event.actorEmail, null);
+    assert.deepEqual(event.metadata, { reason: 'invalid_token' });
+  });
+
+  it('records the verified email as the actor email when no account has it, and still returns the same 401', async () => {
+    mockGoogle(mock, { payload: verifiedPayload('nobody@example.com') });
+
+    const res = await login();
+
+    assert.deepEqual(res.body, NOT_AUTHORIZED);
+    const [event] = await auditEvents();
+    assert.equal(event.actorId, null);
+    assert.equal(event.actorEmail, 'nobody@example.com');
+    assert.deepEqual(event.metadata, { reason: 'no_account' });
+  });
+
+  it('records an inactive account as the actor of its failed login', async () => {
+    const owner = await createSiteOwner({ active: false });
+    mockGoogle(mock, { payload: verifiedPayload(owner.email) });
+
+    const res = await login();
+
+    assert.deepEqual(res.body, NOT_AUTHORIZED);
+    const [event] = await auditEvents();
+    assert.equal(event.actorId, owner.id);
+    assert.equal(event.actorEmail, owner.email);
+    assert.deepEqual(event.metadata, { reason: 'inactive' });
+  });
+
+  it('returns 429 for the sixth login from one address within 15 minutes', async () => {
+    mockGoogle(mock, { error: new Error('Invalid token signature') });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      assert.equal((await login()).status, 401);
+    }
+
+    const res = await login();
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, TOO_MANY_REQUESTS);
+    assert.ok(res.headers['ratelimit-policy']);
+  });
 });
 
 describe('POST /api/auth/logout', () => {
@@ -190,6 +260,68 @@ describe('POST /api/auth/logout', () => {
 
     assert.equal(res.status, 204);
     assert.match(sessionSetCookie(res), /^session=;/);
+  });
+
+  it('ends every session of the account, on this device and others', async () => {
+    const owner = await createSiteOwner();
+    const thisDevice = sessionCookie(owner);
+    const otherDevice = sessionCookie(owner);
+
+    await request(app).post('/api/auth/logout').set(CSRF).set('Cookie', thisDevice);
+
+    const res = await request(app).get('/api/auth/me').set('Cookie', otherDevice);
+    assert.equal(res.status, 401);
+    assert.deepEqual(res.body, SESSION_EXPIRED);
+    assert.match(sessionSetCookie(res), /^session=;/);
+    assert.deepEqual(
+      (await auditEvents()).map(({ action, actorId, actorEmail }) => ({
+        action,
+        actorId,
+        actorEmail,
+      })),
+      [{ action: 'auth.logout', actorId: owner.id, actorEmail: owner.email }],
+    );
+  });
+
+  it('lets the account sign in again after logging out', async () => {
+    const owner = await createSiteOwner();
+    await request(app).post('/api/auth/logout').set(CSRF).set('Cookie', sessionCookie(owner));
+    mockGoogle(mock, { payload: verifiedPayload(owner.email) });
+
+    const signedIn = await login();
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `session=${sessionToken(signedIn)}`);
+
+    assert.equal(res.status, 200);
+  });
+
+  it('does not end newer sessions when an ended cookie is sent again', async () => {
+    const owner = await createSiteOwner();
+    const ended = sessionCookie(owner);
+    await request(app).post('/api/auth/logout').set(CSRF).set('Cookie', ended);
+    const newer = sessionCookie(await prisma.account.findUnique({ where: { id: owner.id } }));
+
+    await request(app).post('/api/auth/logout').set(CSRF).set('Cookie', ended);
+
+    const res = await request(app).get('/api/auth/me').set('Cookie', newer);
+    assert.equal(res.status, 200);
+    assert.equal((await auditEvents()).length, 1);
+  });
+
+  it('changes nothing for a cookie that does not verify', async () => {
+    const owner = await createSiteOwner();
+    const tampered = jwt.sign({ sub: owner.id, role: owner.role, sv: 0 }, 'some-other-secret');
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set(CSRF)
+      .set('Cookie', `session=${tampered}`);
+
+    assert.equal(res.status, 204);
+    const stored = await prisma.account.findUnique({ where: { id: owner.id } });
+    assert.equal(stored.sessionVersion, 0);
+    assert.deepEqual(await auditEvents(), []);
   });
 });
 
@@ -269,10 +401,20 @@ describe('GET /api/auth/me', () => {
     assert.match(sessionSetCookie(res), /^session=;/);
   });
 
+  it('returns 401 for a token from before session versions', async () => {
+    const owner = await createSiteOwner();
+    const versionless = jwt.sign({ sub: owner.id, role: owner.role }, process.env.JWT_SECRET);
+
+    const res = await request(app).get('/api/auth/me').set('Cookie', `session=${versionless}`);
+
+    assert.equal(res.status, 401);
+    assert.deepEqual(res.body, SESSION_EXPIRED);
+  });
+
   it('returns 401 when the account no longer exists', async () => {
     const owner = await createSiteOwner();
     const cookie = sessionCookie(owner);
-    await resetDatabase();
+    await resetState();
 
     const res = await request(app).get('/api/auth/me').set('Cookie', cookie);
 

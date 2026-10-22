@@ -28,13 +28,15 @@ enum ElementType {
 }
 
 model Account {
-  id        String   @id @default(uuid(7))
-  name      String
-  email     String   @unique // always stored lowercase
-  role      Role
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(uuid(7))
+  name           String
+  email          String   @unique // always stored lowercase
+  role           Role
+  active         Boolean  @default(true)
+  // Bumped on logout, which ends every session: a session cookie only works while its `sv` matches.
+  sessionVersion Int      @default(0) @map("session_version")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   accountWebsites AccountWebsite[]
 
@@ -123,4 +125,25 @@ model Image {
 
   @@index([postId])
   @@map("image")
+}
+
+// Append-only record of who did what (docs/security.md → Audit log). Written by lib/audit.js,
+// inside the same transaction as the change it records. No foreign keys, so an event never blocks
+// or depends on another row. metadata never holds a key, secret, token, header or post content.
+model AuditEvent {
+  id         String   @id @default(uuid(7))
+  action     String // one of the AUDIT_ACTIONS in lib/audit.js
+  actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account
+  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token
+  targetType String?  @map("target_type") // 'account', 'website' or 'post'
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([actorId])
+  @@index([actorEmail])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_event")
 }
