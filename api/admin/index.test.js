@@ -36,7 +36,7 @@ function as(account, method, path) {
 
 // The audit events an administrator's change writes, as audit_event rows return them.
 function adminEvent(admin, action, targetType, targetId, metadata = null) {
-  return { action, actorId: admin.id, targetType, targetId, metadata };
+  return { action, actorId: admin.id, actorEmail: admin.email, targetType, targetId, metadata };
 }
 
 async function rowCounts() {

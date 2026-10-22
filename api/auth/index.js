@@ -39,10 +39,15 @@ async function verifiedGoogleEmail(credential) {
 }
 
 // Records why a login failed, then throws the one 401 every failure shares. The reason and the
-// email stay in the audit log and never reach the response.
-async function failLogin(req, { reason, email, actorId }) {
-  const metadata = email ? { reason, email } : { reason };
-  await recordAuditEvent(prisma, req, { action: AUDIT_ACTIONS.LOGIN_FAILED, actorId, metadata });
+// email stay in the audit log and never reach the response. actorEmail is only ever a
+// Google-verified email: an invalid token has none.
+async function failLogin(req, { reason, actorId, actorEmail }) {
+  await recordAuditEvent(prisma, req, {
+    action: AUDIT_ACTIONS.LOGIN_FAILED,
+    actorId,
+    actorEmail,
+    metadata: { reason },
+  });
   throw new ServerError(401, NOT_AUTHORIZED);
 }
 
@@ -73,12 +78,15 @@ router.post('/login', loginRateLimit, async (req, res) => {
     where: { email },
     select: { id: true, role: true, active: true, sessionVersion: true },
   });
-  if (!account) return failLogin(req, { reason: 'no_account', email });
-  if (!account.active) return failLogin(req, { reason: 'inactive', actorId: account.id });
+  if (!account) return failLogin(req, { reason: 'no_account', actorEmail: email });
+  if (!account.active) {
+    return failLogin(req, { reason: 'inactive', actorId: account.id, actorEmail: email });
+  }
 
   await recordAuditEvent(prisma, req, {
     action: AUDIT_ACTIONS.LOGIN_SUCCEEDED,
     actorId: account.id,
+    actorEmail: email,
   });
 
   // The token goes only in Set-Cookie, never in the JSON body.
@@ -99,7 +107,16 @@ router.post('/logout', async (req, res) => {
         data: { sessionVersion: { increment: 1 } },
       });
       if (count === 0) return;
-      await recordAuditEvent(tx, req, { action: AUDIT_ACTIONS.LOGOUT, actorId: session.sub });
+      // The cookie carries no email, so it is read from the account for the audit row.
+      const account = await tx.account.findUnique({
+        where: { id: session.sub },
+        select: { email: true },
+      });
+      await recordAuditEvent(tx, req, {
+        action: AUDIT_ACTIONS.LOGOUT,
+        actorId: session.sub,
+        actorEmail: account.email,
+      });
     });
   }
 

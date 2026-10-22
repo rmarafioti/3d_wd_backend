@@ -236,7 +236,7 @@ The public valid-key limit is keyed by website, not IP, because client websites 
 2. Verify it with `google-auth-library` (`OAuth2Client.verifyIdToken`, `audience: GOOGLE_CLIENT_ID`) — this checks signature, expiry and that it was issued for our app.
 3. Require `payload.email_verified === true`.
 4. Look up the account by `payload.email` lowercased. Email only — the Google display name is never compared.
-5. No account, or `account.active === false`, or any failure in steps 2–3 → `401` "You are not authorized to log in." (one message for every case, so nobody can probe which emails have accounts). The failure is written to the audit log with its reason (`invalid_token`, `no_account` with the verified email, or `inactive` with the account as actor); the reason never reaches the response.
+5. No account, or `account.active === false`, or any failure in steps 2–3 → `401` "You are not authorized to log in." (one message for every case, so nobody can probe which emails have accounts). The failure is written to the audit log with its reason (`invalid_token`, `no_account` with the verified email as the actor email, or `inactive` with the account as actor); the reason never reaches the response.
 6. Success → write `auth.login_succeeded` to the audit log, set the session cookie and return `200 { data: { role } }`. The frontend uses `role` once, to route to `/admin` or `/dashboard`.
 
 ### Logout — `POST /api/auth/logout`
@@ -363,22 +363,24 @@ Returns `200 { data: { ok: true } }`. No auth. Used by Railway to check the serv
 
 ## Audit Log
 
-`lib/audit.js` writes one append-only `audit_event` row per sign-in, sign-out and change: who (`actorId`), what (`action`), to what (`targetType`, `targetId`), from where (`ip`) and when. The schema is in `docs/setup.md`; retention and how it is used are in `docs/security.md`.
+`lib/audit.js` writes one append-only `audit_event` row per sign-in, sign-out and change: who (`actorId`, plus `actorEmail` so a row reads at a glance), what (`action`), to what (`targetType`, `targetId`), from where (`ip`) and when. The schema is in `docs/setup.md`; retention and how it is used are in `docs/security.md`.
 
 - An event for a database change is written with the transaction client, **inside the same `$transaction`** as the change, so a saved change always has its event and a rolled-back one leaves none. Routes that would otherwise do a single write (Link a Website's existing-website path, Archive / Make Active) use a transaction for this.
 - Nothing reads, edits or deletes audit rows through the API.
 - `metadata` never holds a key, secret, token, Google credential, header or post content.
 
-| `action`                           | Written by                                           | `actorId`                     | Target    | `metadata`                                                    |
-| ---------------------------------- | ---------------------------------------------------- | ----------------------------- | --------- | ------------------------------------------------------------- |
-| `auth.login_succeeded`             | Login                                                | the account                   | —         | —                                                             |
-| `auth.login_failed`                | Login                                                | the account if found, or null | —         | `{ reason }`, plus `email` for `no_account` (Google-verified) |
-| `auth.logout`                      | Logout (cookie verified)                             | the account                   | —         | —                                                             |
-| `account.created`                  | Create an Account                                    | the admin                     | `account` | `{ websiteId }`                                               |
-| `website.created`                  | Create an Account, Link a Website (new website path) | the admin                     | `website` | —                                                             |
-| `website.linked`                   | Create an Account, Link a Website (both paths)       | the admin                     | `account` | `{ websiteId }`                                               |
-| `post.created` / `post.updated`    | Create a Post, Edit a Post                           | the site owner                | `post`    | `{ websiteId }`                                               |
-| `post.archived` / `post.activated` | Archive / Make Active                                | the site owner                | `post`    | `{ websiteId }`                                               |
+| `action`                           | Written by                                           | `actorId`                     | `actorEmail`                                           | Target    | `metadata`      |
+| ---------------------------------- | ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------ | --------- | --------------- |
+| `auth.login_succeeded`             | Login                                                | the account                   | the account's email                                    | —         | —               |
+| `auth.login_failed`                | Login                                                | the account if found, or null | the Google-verified email, or null for `invalid_token` | —         | `{ reason }`    |
+| `auth.logout`                      | Logout (cookie verified)                             | the account                   | the account's email                                    | —         | —               |
+| `account.created`                  | Create an Account                                    | the admin                     | the admin's email                                      | `account` | `{ websiteId }` |
+| `website.created`                  | Create an Account, Link a Website (new website path) | the admin                     | the admin's email                                      | `website` | —               |
+| `website.linked`                   | Create an Account, Link a Website (both paths)       | the admin                     | the admin's email                                      | `account` | `{ websiteId }` |
+| `post.created` / `post.updated`    | Create a Post, Edit a Post                           | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }` |
+| `post.archived` / `post.activated` | Archive / Make Active                                | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }` |
+
+`actorEmail` is a copy of the email at the time of the event, and only ever a verified one: a Google token that fails verification records none.
 
 ## Revalidation
 

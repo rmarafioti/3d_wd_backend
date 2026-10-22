@@ -131,6 +131,7 @@ function recordPostEvent(tx, req, action, post) {
   return recordAuditEvent(tx, req, {
     action,
     actorId: req.user.id,
+    actorEmail: req.user.email,
     targetType: 'post',
     targetId: post.id,
     metadata: { websiteId: post.websiteId },

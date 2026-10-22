@@ -134,6 +134,7 @@ model AuditEvent {
   id         String   @id @default(uuid(7))
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
   actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account
+  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token
   targetType String?  @map("target_type") // 'account', 'website' or 'post'
   targetId   String?  @map("target_id")
   metadata   Json?
@@ -141,6 +142,7 @@ model AuditEvent {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([actorId])
+  @@index([actorEmail])
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_event")

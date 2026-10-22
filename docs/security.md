@@ -42,7 +42,7 @@ What is recorded is in `docs/endpoints.md` → Audit Log; the table is `audit_ev
 
 - **Retention:** kept indefinitely for now. Rows are small, and SOC 2 commonly expects at least a year. Revisit if the table grows large.
 - **Integrity:** no route reads, edits or deletes audit rows. Production data is changed only through the API, a reviewed migration or a reviewed script (`docs/scaling.md` §8), never by deleting audit rows.
-- **Privacy:** rows hold account ids, IP addresses and, for a failed login, the Google-verified email tried. The privacy policy must say so once it is written.
+- **Privacy:** rows hold account ids, the actor's email, and IP addresses. A failed login with no account still records the Google-verified email tried. The privacy policy must say so once it is written.
 - **Reading it:** Prisma Studio or SQL for now, filtered by `actor_id`, `target_id` or `created_at`. An admin screen is on Planned Later.
 
 ## Secrets

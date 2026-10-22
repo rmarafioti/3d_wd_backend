@@ -155,7 +155,14 @@ async function assertNoSecrets(body) {
 function auditEvents() {
   return prisma.auditEvent.findMany({
     orderBy: { id: 'asc' },
-    select: { action: true, actorId: true, targetType: true, targetId: true, metadata: true },
+    select: {
+      action: true,
+      actorId: true,
+      actorEmail: true,
+      targetType: true,
+      targetId: true,
+      metadata: true,
+    },
   });
 }
 

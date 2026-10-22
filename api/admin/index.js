@@ -96,6 +96,7 @@ function recordWebsiteCreated(tx, req, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.WEBSITE_CREATED,
     actorId: req.user.id,
+    actorEmail: req.user.email,
     targetType: 'website',
     targetId: websiteId,
   });
@@ -105,6 +106,7 @@ function recordAccountCreated(tx, req, accountId, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.ACCOUNT_CREATED,
     actorId: req.user.id,
+    actorEmail: req.user.email,
     targetType: 'account',
     targetId: accountId,
     metadata: { websiteId },
@@ -115,6 +117,7 @@ function recordWebsiteLinked(tx, req, accountId, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.WEBSITE_LINKED,
     actorId: req.user.id,
+    actorEmail: req.user.email,
     targetType: 'account',
     targetId: accountId,
     metadata: { websiteId },

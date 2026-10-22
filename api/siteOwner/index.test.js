@@ -58,6 +58,7 @@ function postEvent(owner, action, postId, websiteId) {
   return {
     action,
     actorId: owner.id,
+    actorEmail: owner.email,
     targetType: 'post',
     targetId: postId,
     metadata: { websiteId },

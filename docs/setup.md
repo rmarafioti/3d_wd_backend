@@ -98,6 +98,7 @@ Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
   actor_id    string   [null]      // the signed-in account; null for a failed login with no account
+  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
   target_type string   [null]      // account, website or post
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
@@ -106,6 +107,7 @@ Table audit_event {
 
   indexes {
     actor_id
+    actor_email
     (target_type, target_id)
     created_at
   }

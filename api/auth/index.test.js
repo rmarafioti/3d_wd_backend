@@ -183,6 +183,7 @@ describe('POST /api/auth/login', () => {
       {
         action: 'auth.login_succeeded',
         actorId: owner.id,
+        actorEmail: owner.email,
         targetType: null,
         targetId: null,
         metadata: null,
@@ -198,10 +199,11 @@ describe('POST /api/auth/login', () => {
     const [event] = await auditEvents();
     assert.equal(event.action, 'auth.login_failed');
     assert.equal(event.actorId, null);
+    assert.equal(event.actorEmail, null);
     assert.deepEqual(event.metadata, { reason: 'invalid_token' });
   });
 
-  it('records the verified email when no account has it, and still returns the same 401', async () => {
+  it('records the verified email as the actor email when no account has it, and still returns the same 401', async () => {
     mockGoogle(mock, { payload: verifiedPayload('nobody@example.com') });
 
     const res = await login();
@@ -209,7 +211,8 @@ describe('POST /api/auth/login', () => {
     assert.deepEqual(res.body, NOT_AUTHORIZED);
     const [event] = await auditEvents();
     assert.equal(event.actorId, null);
-    assert.deepEqual(event.metadata, { reason: 'no_account', email: 'nobody@example.com' });
+    assert.equal(event.actorEmail, 'nobody@example.com');
+    assert.deepEqual(event.metadata, { reason: 'no_account' });
   });
 
   it('records an inactive account as the actor of its failed login', async () => {
@@ -221,6 +224,7 @@ describe('POST /api/auth/login', () => {
     assert.deepEqual(res.body, NOT_AUTHORIZED);
     const [event] = await auditEvents();
     assert.equal(event.actorId, owner.id);
+    assert.equal(event.actorEmail, owner.email);
     assert.deepEqual(event.metadata, { reason: 'inactive' });
   });
 
@@ -270,8 +274,12 @@ describe('POST /api/auth/logout', () => {
     assert.deepEqual(res.body, SESSION_EXPIRED);
     assert.match(sessionSetCookie(res), /^session=;/);
     assert.deepEqual(
-      (await auditEvents()).map(({ action, actorId }) => ({ action, actorId })),
-      [{ action: 'auth.logout', actorId: owner.id }],
+      (await auditEvents()).map(({ action, actorId, actorEmail }) => ({
+        action,
+        actorId,
+        actorEmail,
+      })),
+      [{ action: 'auth.logout', actorId: owner.id, actorEmail: owner.email }],
     );
   });
 
