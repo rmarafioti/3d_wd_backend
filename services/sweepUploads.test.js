@@ -6,7 +6,7 @@ const { describe, it, beforeEach, afterEach, after, mock } = require('node:test'
 const assert = require('node:assert/strict');
 const sweepUploads = require('./sweepUploads');
 const {
-  resetDatabase,
+  resetState,
   disconnect,
   createWebsite,
   createPost,
@@ -17,7 +17,7 @@ const {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-beforeEach(resetDatabase);
+beforeEach(resetState);
 afterEach(() => mock.restoreAll());
 after(disconnect);
 

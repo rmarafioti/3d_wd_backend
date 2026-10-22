@@ -32,6 +32,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 | 404  | Not found **or not yours** — the same answer either way, so ids can't be probed                                                 |
 | 409  | Conflict — duplicate email, duplicate website URL, or account already linked to that website                                    |
 | 413  | Request body over the 256 KB limit                                                                                              |
+| 429  | Too many requests: over a rate limit (login, public posts, upload signing)                                                      |
 | 500  | Server error — message is always the generic "Something went wrong, please try again."                                          |
 
 ### Shapes
@@ -57,7 +58,7 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | Method & path                           | Who                                               | Request body                                                                                                                                                         | Success                                             |
 | --------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `POST /api/auth/login`                  | anyone                                            | `{ credential }` (Google ID token)                                                                                                                                   | `200 { role }` + sets session cookie                |
-| `POST /api/auth/logout`                 | anyone                                            | —                                                                                                                                                                    | `204`, clears session cookie                        |
+| `POST /api/auth/logout`                 | anyone                                            | —                                                                                                                                                                    | `204`, ends every session of the account            |
 | `GET /api/auth/me`                      | signed in                                         | —                                                                                                                                                                    | `200 { id, name, email, role }`                     |
 | `GET /api/admin/accounts`               | admin                                             | —                                                                                                                                                                    | `200 [ Account + { websites: WebsiteSummary[] } ]`  |
 | `GET /api/admin/websites`               | admin                                             | —                                                                                                                                                                    | `200 WebsiteSummary[]` (active only)                |
@@ -102,6 +103,7 @@ Notes:
 | Create / edit: an image id that isn't on this post, or an image `src` outside this website's upload folder | 400  | Invalid image.                                                                                                    |
 | Public: missing / unknown key, or inactive website                                                         | 401  | Invalid API key.                                                                                                  |
 | Request body over the 256 KB limit                                                                         | 413  | Request body is too large.                                                                                        |
+| Over a rate limit: login, public posts or upload signing                                                   | 429  | Too many requests. Please try again later.                                                                        |
 
 ### Validation rules (identical on frontend and backend)
 
@@ -179,6 +181,8 @@ Rejected examples (`400` on `body.N.text`):
 
 ## Middleware Stack
 
+`app.js` first sets `app.set('trust proxy', 1)`: one proxy sits in front of the API (Railway in production, Next's dev rewrite locally), so `req.ip` is the client's address, as the rate limits and the audit log need. Recheck the hop count when the Railway deploy is set up.
+
 Applied in `app.js` / `api/index.js`, in this order:
 
 1. `helmet()` — standard security headers.
@@ -193,9 +197,20 @@ Per-router guards:
 
 - `/api/admin/*` → `requireAuth` then `requireRole('admin')`.
 - `/api/siteOwner/*` → `requireAuth` then `requireRole('site_owner')`.
-- `/api/public/*` → `requireApiKey` (no cookie, no CSRF header — this is a server-to-server `GET`).
+- `/api/public/*` → `invalidApiKeyRateLimit`, `requireApiKey`, then `publicPostsRateLimit` (no cookie, no CSRF header — this is a server-to-server `GET`).
 
-`requireAuth`: reads the `session` cookie, verifies the JWT (`lib/jwt.js`), then loads the account by `sub`. If the cookie is missing, the JWT is invalid/expired, or the account no longer exists or is inactive → clear the cookie and return `401` "Your session expired, please sign in again." Otherwise sets `req.user = { id, name, email, role }`. Clearing the cookie on a bad token matters: the frontend `proxy.js` redirects on cookie _presence_, so a dead cookie must not be left behind.
+Rate limits (`lib/rateLimit.js`, express-rate-limit, in-memory per instance). Over a limit → `429` "Too many requests. Please try again later.", with the standard `RateLimit` and `RateLimit-Policy` headers. The numbers are a few times real use of each route, to be tuned from the audit log after launch:
+
+| Route                              | Limit         | Keyed by   |
+| ---------------------------------- | ------------- | ---------- |
+| `POST /api/auth/login`             | 5 per 15 min  | IP         |
+| `GET /api/public/posts`, valid key | 30 per minute | website    |
+| `GET /api/public/*`, refused key   | 10 per minute | IP         |
+| `POST /api/siteOwner/uploads/sign` | 10 per 15 min | site owner |
+
+The public valid-key limit is keyed by website, not IP, because client websites on Vercel share outgoing IP addresses. The refused-key limit counts only `requireApiKey`'s 401s, so a website's valid calls never use it up.
+
+`requireAuth`: reads the `session` cookie, verifies the JWT (`lib/jwt.js`), then loads the account by `sub`. If the cookie is missing, the JWT is invalid/expired, its `sv` doesn't match the account's `sessionVersion` (ended by a logout), or the account no longer exists or is inactive → clear the cookie and return `401` "Your session expired, please sign in again." Otherwise sets `req.user = { id, name, email, role }`. Clearing the cookie on a bad token matters: the frontend `proxy.js` redirects on cookie _presence_, so a dead cookie must not be left behind.
 
 `requireRole(role)`: `req.user.role !== role` → `403` "You do not have access to this page."
 
@@ -205,7 +220,8 @@ Per-router guards:
 
 ## Session Cookie
 
-- Name: `session`. Value: a JWT signed with `JWT_SECRET`, payload `{ sub: account.id, role }`, expires in **24 hours** (fixed — no refresh tokens, no sliding expiry).
+- Name: `session`. Value: a JWT signed with `JWT_SECRET`, payload `{ sub: account.id, role, sv: account.sessionVersion }`, expires in **24 hours** (fixed — no refresh tokens, no sliding expiry).
+- `sv` is the account's session version. Logout increments it, so every cookie issued before then stops working (Logout).
 - Production: `httpOnly: true, secure: true, sameSite: 'lax', domain: COOKIE_DOMAIN (.3dwebdev.com), path: '/', maxAge: 24h`.
 - Local: `httpOnly: true, secure: false, sameSite: 'lax'`, no domain (the frontend dev proxy makes the backend same-origin).
 - The token is **only** ever in the `Set-Cookie` header — never in a JSON body.
@@ -220,12 +236,15 @@ Per-router guards:
 2. Verify it with `google-auth-library` (`OAuth2Client.verifyIdToken`, `audience: GOOGLE_CLIENT_ID`) — this checks signature, expiry and that it was issued for our app.
 3. Require `payload.email_verified === true`.
 4. Look up the account by `payload.email` lowercased. Email only — the Google display name is never compared.
-5. No account, or `account.active === false`, or any failure in steps 2–3 → `401` "You are not authorized to log in." (one message for every case, so nobody can probe which emails have accounts).
-6. Success → set the session cookie and return `200 { data: { role } }`. The frontend uses `role` once, to route to `/admin` or `/dashboard`.
+5. No account, or `account.active === false`, or any failure in steps 2–3 → `401` "You are not authorized to log in." (one message for every case, so nobody can probe which emails have accounts). The failure is written to the audit log with its reason (`invalid_token`, `no_account` with the verified email, or `inactive` with the account as actor); the reason never reaches the response.
+6. Success → write `auth.login_succeeded` to the audit log, set the session cookie and return `200 { data: { role } }`. The frontend uses `role` once, to route to `/admin` or `/dashboard`.
 
 ### Logout — `POST /api/auth/logout`
 
-Clears the `session` cookie (same options it was set with) and returns `204`. Works whether or not the cookie is valid.
+Ends **every** session of the account, then clears the `session` cookie (same options it was set with) and returns `204`.
+
+- If the cookie verifies and carries an `sv`, increment the account's `sessionVersion` where it still equals that `sv`, and write `auth.logout` to the audit log, in one transaction. Every cookie issued before then, in this browser or any other, now fails `requireAuth`. The `sv` condition means an already-ended cookie sent again changes nothing.
+- Works whether or not the cookie is valid: a missing or bad cookie changes nothing and is still `204`.
 
 ### Me — `GET /api/auth/me`
 
@@ -310,7 +329,7 @@ Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This i
 
 ### Sign an Upload — `POST /api/siteOwner/uploads/sign`
 
-Body `{ websiteId }`. Returns what the frontend needs to upload images for one website straight to Cloudinary (API Contract → Notes). The backend never receives the image file and writes nothing to the database.
+Body `{ websiteId }`. Returns what the frontend needs to upload images for one website straight to Cloudinary (API Contract → Notes). The backend never receives the image file and writes nothing to the database. Rate limited per site owner (Middleware Stack → Rate limits).
 
 1. Validate `{ websiteId }` → `400` with `fields.websiteId`.
 2. Ownership check on `websiteId` → `404` "Website not found."
@@ -341,6 +360,25 @@ How the client website uses this is specced in the master doc's "Client to Websi
 Returns `200 { data: { ok: true } }`. No auth. Used by Railway to check the server is up.
 
 ---
+
+## Audit Log
+
+`lib/audit.js` writes one append-only `audit_event` row per sign-in, sign-out and change: who (`actorId`), what (`action`), to what (`targetType`, `targetId`), from where (`ip`) and when. The schema is in `docs/setup.md`; retention and how it is used are in `docs/security.md`.
+
+- An event for a database change is written with the transaction client, **inside the same `$transaction`** as the change, so a saved change always has its event and a rolled-back one leaves none. Routes that would otherwise do a single write (Link a Website's existing-website path, Archive / Make Active) use a transaction for this.
+- Nothing reads, edits or deletes audit rows through the API.
+- `metadata` never holds a key, secret, token, Google credential, header or post content.
+
+| `action`                           | Written by                                           | `actorId`                     | Target    | `metadata`                                                    |
+| ---------------------------------- | ---------------------------------------------------- | ----------------------------- | --------- | ------------------------------------------------------------- |
+| `auth.login_succeeded`             | Login                                                | the account                   | —         | —                                                             |
+| `auth.login_failed`                | Login                                                | the account if found, or null | —         | `{ reason }`, plus `email` for `no_account` (Google-verified) |
+| `auth.logout`                      | Logout (cookie verified)                             | the account                   | —         | —                                                             |
+| `account.created`                  | Create an Account                                    | the admin                     | `account` | `{ websiteId }`                                               |
+| `website.created`                  | Create an Account, Link a Website (new website path) | the admin                     | `website` | —                                                             |
+| `website.linked`                   | Create an Account, Link a Website (both paths)       | the admin                     | `account` | `{ websiteId }`                                               |
+| `post.created` / `post.updated`    | Create a Post, Edit a Post                           | the site owner                | `post`    | `{ websiteId }`                                               |
+| `post.archived` / `post.activated` | Archive / Make Active                                | the site owner                | `post`    | `{ websiteId }`                                               |
 
 ## Revalidation
 

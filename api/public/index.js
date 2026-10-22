@@ -1,13 +1,16 @@
 // Public routes, mounted at /api/public: called server-side by a client's website with its API
 // key (Authorization: Bearer <apiKey>). No cookie, no CSRF header, no CORS needed.
+// Rate limited twice (lib/rateLimit.js): refused keys per IP, before the key check, and each
+// website's calls per website, after it.
 const express = require('express');
 const prisma = require('../../prisma');
 const requireApiKey = require('../../middleware/requireApiKey');
+const { invalidApiKeyRateLimit, publicPostsRateLimit } = require('../../lib/rateLimit');
 const { toDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
 
 const router = express.Router();
-router.use(requireApiKey);
+router.use(invalidApiKeyRateLimit, requireApiKey, publicPostsRateLimit);
 
 // GET /api/public/posts — the website's active posts, newest first, each body in reading order.
 // postName is internal and is never returned here; neither are image ids.

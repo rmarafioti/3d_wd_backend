@@ -1,6 +1,7 @@
 // Site owner routes, mounted at /api/siteOwner: the site owner's websites with post summaries,
 // post create / read / edit / archive / make active, and the signature for uploading a website's
-// images to Cloudinary. Every route requires a signed-in site owner.
+// images to Cloudinary. Every route requires a signed-in site owner. Every post change writes its
+// audit event (lib/audit.js) inside the same transaction.
 //
 // Ownership: the account always comes from req.user (the session), never from the request.
 // A website belongs to the site owner when an account_website row links them AND the website is
@@ -17,6 +18,8 @@ const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
 const { signUpload, isInFolder } = require('../../lib/cloudinary');
+const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { uploadSignRateLimit } = require('../../lib/rateLimit');
 const revalidate = require('../../services/revalidate');
 
 const router = express.Router();
@@ -123,6 +126,17 @@ async function writeBody(tx, postId, body) {
   await tx.element.createMany({ data: elements });
 }
 
+// A post change's audit event, written with the transaction client that made the change.
+function recordPostEvent(tx, req, action, post) {
+  return recordAuditEvent(tx, req, {
+    action,
+    actorId: req.user.id,
+    targetType: 'post',
+    targetId: post.id,
+    metadata: { websiteId: post.websiteId },
+  });
+}
+
 // GET /api/siteOwner/websites — the site owner's active websites, each with post summaries.
 router.get('/websites', async (req, res) => {
   const websites = await prisma.website.findMany({
@@ -173,6 +187,10 @@ router.post('/posts', async (req, res) => {
       select: { id: true },
     });
     await writeBody(tx, created.id, input.body);
+    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_CREATED, {
+      id: created.id,
+      websiteId: website.id,
+    });
     return tx.post.findUnique({ where: { id: created.id }, select: POST_SELECT });
   });
 
@@ -223,6 +241,7 @@ router.patch('/posts/:id', async (req, res) => {
     await tx.element.deleteMany({ where: { postId: post.id } });
     await tx.image.deleteMany({ where: { postId: post.id, id: { notIn: keptImageIds } } });
     await writeBody(tx, post.id, input.body);
+    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, post);
     return tx.post.findUnique({ where: { id: post.id }, select: POST_SELECT });
   });
 
@@ -238,10 +257,10 @@ router.patch('/posts/:id/status', async (req, res) => {
   const post = await findOwnedPost(req.user.id, req.params.id, { id: true, websiteId: true });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
-  const updated = await prisma.post.update({
-    where: { id: post.id },
-    data: { active },
-    select: POST_SELECT,
+  const action = active ? AUDIT_ACTIONS.POST_ACTIVATED : AUDIT_ACTIONS.POST_ARCHIVED;
+  const updated = await prisma.$transaction(async (tx) => {
+    await recordPostEvent(tx, req, action, post);
+    return tx.post.update({ where: { id: post.id }, data: { active }, select: POST_SELECT });
   });
 
   res.json({ data: toPost(updated) });
@@ -250,7 +269,8 @@ router.patch('/posts/:id/status', async (req, res) => {
 
 // POST /api/siteOwner/uploads/sign — one signed upload for the website's Cloudinary folder.
 // The browser uploads the files straight to Cloudinary; nothing is written to the database.
-router.post('/uploads/sign', async (req, res) => {
+// Rate limited per account (lib/rateLimit.js).
+router.post('/uploads/sign', uploadSignRateLimit, async (req, res) => {
   const input = validate(signUploadSchema, req.body ?? {});
 
   const website = await prisma.website.findFirst({

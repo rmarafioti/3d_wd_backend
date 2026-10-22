@@ -91,14 +91,14 @@ The MVP is fine at its current size. These rules stop it degrading as accounts, 
 The backend is stateless today (the session is a signed JWT cookie, nothing is held in memory), so Railway can run several instances. Keep it that way:
 
 - **No shared in-memory state** — no in-process caches, counters or sessions that other instances would need. Anything shared goes in Postgres (or, later, Redis).
-- **Rate limiting** on `POST /api/auth/login` and `GET /api/public/posts` is added before more client websites are onboarded. Per-instance limits are acceptable while there is one instance; a shared store is needed once there are several.
+- **Rate limiting** is built (`lib/rateLimit.js`, numbers in `docs/endpoints.md` → Middleware Stack) with in-memory stores, so each instance counts on its own. That is acceptable while there is one instance; a shared store (Postgres or Redis) is needed before running several, or the limits multiply by the instance count.
 - **Revalidation is best-effort.** It runs fire-and-forget in the request's process (`services/revalidate.js`), so a call in flight is lost if the instance restarts. When missed revalidations start to matter, move it to an outbox: a `revalidation_job` row written in the same transaction as the post change, sent by a worker with retries. Until then, the client website's own time-based regeneration is the fallback.
 - **Upload cleanup runs on its own.** `npm run sweep:uploads` (`docs/setup.md` → Upload cleanup) is a separate Railway cron service, not part of the API instances, so the number of instances doesn't change it. It keeps no state between runs, and two overlapping runs only try to delete the same images.
 - **Migrations run once per deploy, not per instance:** production runs `npx prisma migrate deploy` as the Railway pre-deploy step. `prisma migrate dev` is never run against production. (The Railway deploy has not been set up yet; confirm or update this rule when it is.)
 
 ## 8. Environments and deployment
 
-- **New env vars** are added to `.env.example` (with a comment), to `REQUIRED_ENV` in `index.js` if the server can't run without them, to `testing/setup.js` if tests need a fixed value, and to Railway before the code that reads them is deployed.
+- **New env vars** are added to `.env.example` (with a comment), to `REQUIRED_ENV` in `lib/config.js` if the server can't run without them (with a strength check there if it is a secret), to `testing/setup.js` if tests need a fixed value, and to Railway before the code that reads them is deployed.
 - **Back up before destructive migrations:** take a Railway Postgres backup before any migration that drops or rewrites data. `SECRET_ENCRYPTION_KEY` is backed up separately (`docs/setup.md`).
 - **Staging before the first breaking change after the production launch:** a staging environment (Railway service + Vercel preview, with its own database) where migrations and contract changes are deployed and checked before production.
 - **Rollback:** a code deploy can be rolled back; a migration cannot. That is why schema changes are additive and removals happen in a later release.

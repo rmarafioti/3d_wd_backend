@@ -1,14 +1,14 @@
 // Request tests for the public route (api/public/index.js): a client website fetching its posts
 // with its API key. Covers every 401, that only this website's active posts come back, newest
-// first, each body in order, and that the PublicPost shape never carries postName, item ids or
-// secrets.
+// first, each body in order, that the PublicPost shape never carries postName, item ids or
+// secrets, and both rate limits (per website for a valid key, per address for a refused one).
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../../app');
 const {
-  resetDatabase,
+  resetState,
   disconnect,
   createWebsite,
   paragraph,
@@ -18,13 +18,14 @@ const {
 } = require('../../testing/helpers');
 
 const INVALID_KEY = { error: { message: 'Invalid API key.' } };
+const TOO_MANY_REQUESTS = { error: { message: 'Too many requests. Please try again later.' } };
 
 // An image in the website's upload folder; override any field.
 function image(website, overrides = {}) {
   return { src: imageSrc(website), width: 800, height: 600, altText: 'A', ...overrides };
 }
 
-beforeEach(resetDatabase);
+beforeEach(resetState);
 after(disconnect);
 
 function fetchPosts(apiKey) {
@@ -116,5 +117,41 @@ describe('GET /api/public/posts', () => {
 
     assert.equal(res.status, 401);
     assert.deepEqual(res.body, INVALID_KEY);
+  });
+
+  it('returns 429 for the 31st request from one website within a minute, per website', async () => {
+    const { apiKey } = await createWebsite();
+    const other = await createWebsite();
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      assert.equal((await fetchPosts(apiKey)).status, 200);
+    }
+
+    const res = await fetchPosts(apiKey);
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, TOO_MANY_REQUESTS);
+    assert.equal((await fetchPosts(other.apiKey)).status, 200);
+  });
+
+  it('returns 429 for the 11th refused key from one address within a minute', async () => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      assert.equal((await fetchPosts('not-a-real-key')).status, 401);
+    }
+
+    const res = await fetchPosts('not-a-real-key');
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, TOO_MANY_REQUESTS);
+  });
+
+  it('does not count valid requests toward the refused key limit', async () => {
+    const { apiKey } = await createWebsite();
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      assert.equal((await fetchPosts(apiKey)).status, 200);
+    }
+
+    const res = await fetchPosts('not-a-real-key');
+
+    assert.equal(res.status, 401);
   });
 });

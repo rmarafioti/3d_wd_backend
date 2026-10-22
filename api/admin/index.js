@@ -2,6 +2,7 @@
 // Create an Account and Link a Website. Every route requires a signed-in administrator.
 // api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
 // secret exist only in the one response that creates the new website they belong to.
+// Every change writes its audit events (lib/audit.js) inside the same transaction.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -18,6 +19,7 @@ const {
   hashApiKey,
   encryptSecret,
 } = require('../../lib/crypto');
+const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -89,6 +91,36 @@ async function createWebsiteWithCredentials(tx, websiteName, url) {
   return { website, credentials: { apiKey, webhookSecret } };
 }
 
+// Audit events, written with the transaction client that made the change.
+function recordWebsiteCreated(tx, req, websiteId) {
+  return recordAuditEvent(tx, req, {
+    action: AUDIT_ACTIONS.WEBSITE_CREATED,
+    actorId: req.user.id,
+    targetType: 'website',
+    targetId: websiteId,
+  });
+}
+
+function recordAccountCreated(tx, req, accountId, websiteId) {
+  return recordAuditEvent(tx, req, {
+    action: AUDIT_ACTIONS.ACCOUNT_CREATED,
+    actorId: req.user.id,
+    targetType: 'account',
+    targetId: accountId,
+    metadata: { websiteId },
+  });
+}
+
+function recordWebsiteLinked(tx, req, accountId, websiteId) {
+  return recordAuditEvent(tx, req, {
+    action: AUDIT_ACTIONS.WEBSITE_LINKED,
+    actorId: req.user.id,
+    targetType: 'account',
+    targetId: accountId,
+    metadata: { websiteId },
+  });
+}
+
 // Returns 'email', 'url' or 'link' when err is a Prisma unique constraint violation (P2002) on
 // that column / pair, otherwise null. With the pg driver adapter the Postgres constraint name
 // sits nested in err.meta.driverAdapterError, so the meta object is searched for it as a string.
@@ -154,6 +186,8 @@ router.post('/accounts', async (req, res) => {
       const account = await prisma.$transaction(async (tx) => {
         const created = await tx.account.create({ data: accountData, select: ACCOUNT_SELECT });
         await tx.accountWebsite.create({ data: { accountId: created.id, websiteId: website.id } });
+        await recordAccountCreated(tx, req, created.id, website.id);
+        await recordWebsiteLinked(tx, req, created.id, website.id);
         return created;
       });
 
@@ -163,7 +197,7 @@ router.post('/accounts', async (req, res) => {
     // New website path.
     const url = await assertUrlAvailable(input.websiteUrl);
 
-    // Three inserts: if any one fails, nothing is saved.
+    // Three inserts, plus their audit events: if any one fails, nothing is saved.
     const { account, website, credentials } = await prisma.$transaction(async (tx) => {
       const account = await tx.account.create({ data: accountData, select: ACCOUNT_SELECT });
       const { website, credentials } = await createWebsiteWithCredentials(
@@ -172,6 +206,9 @@ router.post('/accounts', async (req, res) => {
         url,
       );
       await tx.accountWebsite.create({ data: { accountId: account.id, websiteId: website.id } });
+      await recordWebsiteCreated(tx, req, website.id);
+      await recordAccountCreated(tx, req, account.id, website.id);
+      await recordWebsiteLinked(tx, req, account.id, website.id);
       return { account, website, credentials };
     });
 
@@ -210,8 +247,9 @@ router.post('/accounts/:id/websites', async (req, res) => {
     if (existingLink) throw new ServerError(409, alreadyLinkedMessage);
 
     try {
-      await prisma.accountWebsite.create({
-        data: { accountId: account.id, websiteId: website.id },
+      await prisma.$transaction(async (tx) => {
+        await tx.accountWebsite.create({ data: { accountId: account.id, websiteId: website.id } });
+        await recordWebsiteLinked(tx, req, account.id, website.id);
       });
     } catch (err) {
       // Safety net: a concurrent request linked the same pair after the check above.
@@ -226,12 +264,14 @@ router.post('/accounts/:id/websites', async (req, res) => {
   const url = await assertUrlAvailable(input.websiteUrl);
 
   try {
-    // Two inserts: if either fails, nothing is saved.
+    // Two inserts, plus their audit events: if either fails, nothing is saved.
     const { website, credentials } = await prisma.$transaction(async (tx) => {
       const created = await createWebsiteWithCredentials(tx, input.websiteName, url);
       await tx.accountWebsite.create({
         data: { accountId: account.id, websiteId: created.website.id },
       });
+      await recordWebsiteCreated(tx, req, created.website.id);
+      await recordWebsiteLinked(tx, req, account.id, created.website.id);
       return created;
     });
 

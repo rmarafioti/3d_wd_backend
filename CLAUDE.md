@@ -4,6 +4,7 @@
 @docs/setup.md
 @docs/scaling.md
 @docs/client-website-test.md
+@docs/security.md
 
 ## Project Overview
 
@@ -63,13 +64,16 @@ root
 │   ├── requireCsrfHeader.js  *403 on POST/PATCH/DELETE without X-CSRF-Protection: 1
 │   └── requireApiKey.js      *public endpoint: hashes Bearer key, loads req.website
 ├── lib/                      *shared utilities
+│   ├── audit.js              *audit_event writer and action names
 │   ├── cloudinary.js         *upload signature, image src folder check, Admin API list/delete
+│   ├── config.js             *startup config check: required env vars, secret strength
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt
 │   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
 │   ├── jwt.js                *sign/verify session JWT, cookie options
 │   ├── mediaFolder.js        *website media_folder name from its URL, -2/-3 on a clash
 │   ├── normalizeUrl.js       *https, lowercase host, no trailing slash
-│   └── postBody.js           *element rows → the post body list in API responses
+│   ├── postBody.js           *element rows → the post body list in API responses
+│   └── rateLimit.js          *rate limiters: login, public posts, upload signing
 ├── errors/                   *custom error classes + the single error handler (error envelope)
 │   ├── serverError.js
 │   └── index.js
@@ -82,12 +86,14 @@ root
 ├── testing/                  *test-only support; the *.test.js files sit next to the code they test
 │   ├── setup.js              *test env: TEST_DATABASE_URL (name must end in _test), fixed secrets
 │   ├── migrate.js            *pretest: creates and migrates the test database
-│   └── helpers.js            *row builders, session cookie, assertNoSecrets, Google/fetch mocks
+│   └── helpers.js            *resetState, row builders, session cookie, assertNoSecrets, auditEvents, Google/fetch mocks
 ├── docs/                     *reference docs, imported from CLAUDE.md
 │   ├── endpoints.md          *API contract (source of truth) + per-endpoint behavior
 │   ├── setup.md              *schema, Prisma conventions, crypto, seeding
 │   ├── scaling.md            *rules for changing the schema, API and flows after launch
-│   └── client-website-test.md *end-to-end test against a client website (local, deployed, tunnel)
+│   ├── client-website-test.md *end-to-end test against a client website (local, deployed, tunnel)
+│   └── security.md           *controls, audit log, secrets, access, incident response, pre-deploy checklist
+├── .github/workflows/ci.yml  *lint, format, npm audit and tests on every PR and push to main
 ├── docker-compose.yml        *local Postgres
 ├── prisma.config.js          *Prisma 7 CLI config: datasource URL, migrations path, seed command
 ├── .env.example
@@ -105,19 +111,27 @@ The app is built in this order across both repos. Each step is built, tested and
 
 ### Current progress (as of 2026-10-21)
 
-- **Now:** the MVP Build Order is complete in both repos. Features 1 to 5 are all merged (Feature 3: frontend PR #18; Feature 5: backend PRs #22 and #24, frontend PRs #19 and #20).
+- **Now:** the MVP Build Order is complete in both repos. Features 1 to 5 are all merged (Feature 3: frontend PR #18; Feature 5: backend PRs #22 and #24, frontend PRs #19 and #20). Backend security hardening is built and committed locally on `feat/security-hardening`, **not pushed**: Rich's manual tests come first (Pending notes).
 - **Next:**
   1. Stevie The Dog client docs (in its own repo): Rich brings the master doc's "Client to Website" tab up to Feature 5 (images in 3DWD's Cloudinary account, the `remotePatterns` rule in `docs/setup.md` → Image Hosting → Client websites, images uploaded from the post form), drops it into Stevie's `docs/client-website.md`, narrows Stevie's `next.config`, and tests formatting, links and uploaded images (`docs/client-website-test.md`).
-  2. Security hardening, in its own session, with backend suggestions.
-  3. The production deploy.
+  2. Security hardening: finish the backend branch (Pending notes), then the frontend branch (CSP split by page type and security headers, `docs/security.md` → Frontend).
+  3. Rich's pre-deploy checklist (`docs/security.md`), then the production deploy.
 - **Local database baseline** (test rows cleared on 2026-10-21):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
+  - no `audit_event` rows
 
   Cloudinary `3dwd-dev/` is empty. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Rich has recorded Stevie's API key. Four client websites are waiting to onboard once the app is live.
 
 - **Pending notes:**
+  - **`feat/security-hardening` (committed, not pushed):** Rich still runs
+    1. Postman: 31 calls to `GET /api/public/posts` with Stevie's key, the last one `429`;
+    2. the two-browser check: sign in as the test site owner in two browsers, sign out in one, and the other's next action returns to sign-in; then a post change, and the `audit_event` rows checked in Prisma Studio.
+
+    Afterwards, delete the rows those tests added (posts with their elements and images, and every `audit_event` row) and fix anything the tests turn up. Then write the frontend handoff: the contract gained the `429` status row and error message, and the logout row now reads "ends every session of the account". Then push and open the PR. Already verified: the 6th login, 11th wrong-key call and 11th upload sign each return `429` against the dev server.
+
+  - **Railway proxy:** `app.set('trust proxy', 1)` assumes one proxy in front of the API. Check the hop count when the Railway deploy is set up (`docs/security.md` → Pre-deploy checklist).
   - **Cloudinary secret (before the production deploy):** the current API secret was shared in a Claude session while setting up `3dwd-dev`. Generate a new key pair for production and keep it only in Railway.
   - **Railway:** the rule that migrations run as a Railway pre-deploy step (`docs/scaling.md` §7) is unconfirmed until the Railway deploy is set up.
 
@@ -125,6 +139,7 @@ One row per merged piece of work, newest first. Add a row on every branch, and u
 
 | Date       | What was done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-21 | `feat/security-hardening` (backend): rate limits (login 5 per 15 min per IP; public posts 30 per minute per website plus 10 refused keys per minute per IP; upload sign 10 per 15 min per site owner) with a new `429` "Too many requests. Please try again later."; logout ends every session of the account (`account.session_version`, `sv` in the JWT); an append-only `audit_event` table written in each change's transaction; a startup config check (`lib/config.js`); CI (`.github/workflows/ci.yml`); `docs/security.md`. Prisma 7.10.1 clears 4 high `npm audit` advisories. 248 tests. Contract change in both repos (429, logout wording).                                              |
 | 2026-10-21 | `fix/em-dash-messages`: the two 409 website-URL messages lose their em dashes ("A website with this URL already exists. Select it from the dropdown." and "…but is inactive. It's named [Website Name]. …"). A contract change in both repos, made in place under `docs/scaling.md` §0; the frontend updates `docs/api.md`, `docs/flows.md` and its own em dash strings.                                                                                                                                                                                                                                                                                                                             |
 | 2026-10-21 | `docs/doc-sync-2` (docs only): the Documentation Sync after Features 3 and 5. The API Contract is identical in both repos and the backend docs match the code. Feature 3 recorded as merged (frontend PR #18), Next reordered, the client websites' image host rule written into `docs/setup.md`, em dash removal decided, and the frontend findings handed off.                                                                                                                                                                                                                                                                                                                                     |
 | 2026-10-21 | `feat/image-uploads` (PR #24): Feature 5 backend. `website.media_folder` (migration with backfill, Stevie → `steviethedog`), `POST /api/siteOwner/uploads/sign`, the image `src` folder rule on create and edit (400 "Invalid image."), new websites get a folder (`-2`, `-3`… on a clash), `npm run sweep:uploads`. `lib/cloudinary.js` uses `crypto` and `fetch`, no Cloudinary SDK. 220 tests. Tested against 3DWD's `3dwd-dev` folder: signed uploads, 2500 px scaling, gif refused, the cleanup. Rich's Postman run (2026-10-21) passed: sign, upload, save, the refused `src` cases, keep-and-add on edit, and the sign route's 400 / 401 / 403 / 404. The frontend upload is frontend PR #20. |
@@ -196,6 +211,7 @@ Ideas Rich has chosen for later. Not scheduled and not to be built yet. Each bec
 - **Administrator notifications.** An alert when a site owner requests an add-on, or has filled one in and it is ready to wire. A job row is written in the same transaction as the site owner's change, and a worker sends the email or message (the same outbox `docs/scaling.md` §7 plans for revalidation). Ships separately from the request flow; until then the admin dashboard shows "requested".
 - **Site owner collaboration.** Site owners suggest new add-ons, or optional fields for existing ones. Approved suggestions are built once and offered to every site owner. Rich curates: a suggestion is built when at least two businesses want it, or it clearly helps several. Sharing between site owners is opt-in or anonymized. It starts outside the software (a shared suggestion board) and moves into the app once there are roughly 10–20 site owners. Feature creep until live use with the early adopters shows owners want it. Not built before then.
 - **Streamlined post editor.** After the MVP, the Create / Edit Post editor cuts its clutter: each paragraph and image section collapses (open one to edit it), and "Add a paragraph" / "Add an image" move into a toolbar at the side of the dialog. Frontend only, no contract change. The current editor stays for the V1 MVP.
+- **Admin audit log view.** An admin page that lists `audit_event` rows, filtered by account, website or date, so the administrator can answer "who changed this?" without Prisma Studio. Needs a paginated admin `GET` (`docs/scaling.md` §6), and an admin action to end an account's sessions could sit beside it. Read-only: audit rows are never edited or deleted.
 - **Image library (reuse stored images).** Picking the same photo for a new post today uploads a second copy to 3DWD's Cloudinary account. Instead, the image field offers "Choose from your images". A new site owner `GET` (ownership-checked like every site owner route) returns a website's distinct stored images (`src`, `width`, `height`, latest `altText`) from the `image` table, including images on archived posts. It reads the database, not Cloudinary's Admin API: the database is the record of which images are kept, the Admin API is rate-limited, and its listing includes abandoned uploads the cleanup hasn't deleted yet. A reused image is sent in the create or edit body like a new one, without an id; its `src` is already in the website's folder, so the `src` rule accepts it. Image rows may share a `src` (no unique constraint), and neither post saves nor the cleanup delete a file while any row refers to it; a test proving the shared-src case is written with the feature. The only contract change is the new `GET`, in both repos. Automatic dedupe by content hash was set aside: it needs a signature per file and the site owner never sees it.
 
 ## Role Ownership Check Rule
@@ -219,6 +235,9 @@ Cookies silently fail to be accepted. The exact origin comes from `CORS_ORIGIN`.
 **Never let revalidation affect the user's request:**
 Revalidation runs after the transaction commits, is not awaited before responding, and can never throw into the route. A client website being down must never stop a site owner saving a post.
 
+**Never put secrets or content in the audit log:**
+An `audit_event` row's `metadata` holds ids and short facts only: never a key, secret, token, Google credential, header or post content. A failed login's reason is logged but never returned; login always answers with the single 401.
+
 **Never select secrets by default:**
 `api_key_hash` and `webhook_secret_encrypted` are excluded from every query except the ones that need them (`requireApiKey`, `services/revalidate.js`).
 
@@ -232,6 +251,9 @@ Revalidation runs after the transaction commits, is not awaited before respondin
 
 **Multi-row writes:**
 Account + website + account_website, website + account_website, and post + elements + images always happen inside a single `prisma.$transaction`.
+
+**Audit events in the change's transaction:**
+Every sign-in, sign-out and change writes its `audit_event` through `recordAuditEvent` (`lib/audit.js`), with the transaction client `tx`, inside the same `prisma.$transaction` as the change it records (`docs/endpoints.md` → Audit Log). A new route that changes data adds its action to `AUDIT_ACTIONS` and the table in `docs/endpoints.md`.
 
 **Never a hard delete:**
 Soft delete via an `active` boolean is the standard for every client-facing resource (account, website, post). Posts are archived / reactivated through the API. Accounts and websites have no API for this in the MVP — they are flipped in Prisma Studio — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
@@ -313,8 +335,10 @@ A review is read-only. It produces findings; it never edits code. Fixes are thei
    - no hard deletes of accounts, websites or posts, and inactive accounts and websites are honoured
    - emails are lowercased and URLs go through `normalizeUrl`
    - the CORS origin comes from `CORS_ORIGIN`
+   - every change writes its audit event in the same transaction, and no audit metadata holds a secret or post content
+   - the rate limits in `lib/rateLimit.js` still cover login, public posts and upload signing
 8. **Every endpoint handles every outcome.** Success, validation `400` with `fields`, `401`, `403`, `404`, `409` where it applies, and the generic `500`. Each uses the status code and message `docs/endpoints.md` documents for it.
-9. **Tooling is clean.** `npm run lint`, `npm run format:check` and `npm test` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
+9. **Tooling is clean.** `npm run lint`, `npm run format:check`, `npm audit --omit=dev` (no high or critical) and `npm test` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
 
 ### Output
 
@@ -322,7 +346,7 @@ Return the findings as a list, most important first. Each finding has: the file 
 
 ### Scope
 
-A full review covers `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), the `*.test.js` files and `testing/`, plus CLAUDE.md, `docs/`, `README.md` and `.env.example`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
+A full review covers `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), the `*.test.js` files and `testing/`, plus CLAUDE.md, `docs/`, `README.md`, `.env.example` and `.github/workflows/`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
 
 ## Documentation Sync
 
@@ -392,6 +416,7 @@ Don't write a test for: a constant, the Prisma client setup (`prisma/index.js`),
 - Checks after building:
   - Self-review the diff against Code Review → Checklist
   - `npm test` passes, with new tests wherever Unit Tests says one is justified
+  - `npm audit --omit=dev` shows no high or critical advisory (`docs/security.md` → Dependencies)
   - Role-gating and ownership check on every route
   - Transaction wrapped (if multi-row write)
   - CSRF header required on every POST/PATCH/DELETE

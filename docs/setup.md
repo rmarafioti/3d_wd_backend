@@ -23,6 +23,7 @@ Table account {
   email      string   [not null, unique]        // always stored lowercase
   role       role     [not null]
   active     bool     [not null, default: true]
+  session_version integer [not null, default: 0] // bumped on logout; a session cookie works only while its sv matches
   created_at datetime [not null, default: now()]
   updated_at datetime [not null]                // auto-updated on every change
 }
@@ -93,6 +94,23 @@ Table image {
   }
 }
 
+Table audit_event {
+  id          string   [primary key, default: uuid v7]
+  action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
+  actor_id    string   [null]      // the signed-in account; null for a failed login with no account
+  target_type string   [null]      // account, website or post
+  target_id   string   [null]
+  metadata    json     [null]      // never a key, secret, token, header or post content
+  ip          string   [null]
+  created_at  datetime [not null, default: now()]
+
+  indexes {
+    actor_id
+    (target_type, target_id)
+    created_at
+  }
+}
+
 Enum role {
   admin
   site_owner
@@ -111,11 +129,12 @@ Ref: post.website_id > website.id   // a website can have many posts
 Ref: element.post_id > post.id      // a post's body is many elements (paragraphs and images)
 Ref: element.image_id - image.id    // an image element shows exactly one image
 Ref: image.post_id > post.id        // a post can have many images
+// audit_event has no references on purpose: an event never blocks or depends on another row
 ```
 
 ### Prisma conventions
 
-- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`) mapped to the snake_case tables above with `@@map`.
+- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `AuditEvent`) mapped to the snake_case tables above with `@@map`.
 - Every snake_case column has a camelCase field with `@map` (e.g. `apiKeyHash String @unique @map("api_key_hash")`), so nothing snake_case ever reaches an API response.
 - Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created.
 - A post's body is its `element` rows, read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.
@@ -139,7 +158,7 @@ Ref: image.post_id > post.id        // a post can have many images
 - `npm test` runs against a separate database on the same docker-compose Postgres: `TEST_DATABASE_URL` (`headless_cms_test` locally). The dev database is never used by the suite.
 - `testing/setup.js` points `DATABASE_URL` at `TEST_DATABASE_URL` and refuses to run unless the database name ends in `_test`, because the suite truncates every table.
 - The `pretest` script (`testing/migrate.js`) creates the test database if it doesn't exist, then runs `prisma migrate deploy` against it, so a new migration reaches the test database on the next `npm test`.
-- Every test starts from empty tables (`TRUNCATE` in `beforeEach`) and builds its own rows with `testing/helpers.js`. Nothing is seeded.
+- Every test starts from empty tables and empty rate limit counts (`resetState` in `beforeEach`) and builds its own rows with `testing/helpers.js`. Nothing is seeded.
 
 ## Crypto Module — `lib/crypto.js`
 

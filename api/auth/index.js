@@ -1,10 +1,18 @@
-// Auth routes, mounted at /api/auth: login (Google ID token → session cookie), logout, me.
+// Auth routes, mounted at /api/auth: login (Google ID token → session cookie), logout (ends every
+// session of the account), me. Login and logout write audit events (lib/audit.js).
 const express = require('express');
 const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const requireAuth = require('../../middleware/requireAuth');
-const { SESSION_COOKIE, signSession, sessionCookieOptions } = require('../../lib/jwt');
+const {
+  SESSION_COOKIE,
+  signSession,
+  verifySession,
+  sessionCookieOptions,
+} = require('../../lib/jwt');
+const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { loginRateLimit } = require('../../lib/rateLimit');
 const { loginSchema } = require('../../validation/auth');
 
 const router = express.Router();
@@ -30,28 +38,71 @@ async function verifiedGoogleEmail(credential) {
   }
 }
 
+// Records why a login failed, then throws the one 401 every failure shares. The reason and the
+// email stay in the audit log and never reach the response.
+async function failLogin(req, { reason, email, actorId }) {
+  const metadata = email ? { reason, email } : { reason };
+  await recordAuditEvent(prisma, req, { action: AUDIT_ACTIONS.LOGIN_FAILED, actorId, metadata });
+  throw new ServerError(401, NOT_AUTHORIZED);
+}
+
+// The session a cookie belongs to ({ sub, sv }), or null when it is missing, doesn't verify or has
+// no sv (a token from before session versions). Prisma skips an undefined filter, so a missing sv
+// must never reach the logout update.
+function cookieSession(req) {
+  const token = req.cookies?.[SESSION_COOKIE];
+  if (!token) return null;
+  try {
+    const session = verifySession(token);
+    return Number.isInteger(session.sv) ? session : null;
+  } catch {
+    return null;
+  }
+}
+
 // POST /api/auth/login — body { credential }. Sets the session cookie, returns { role }.
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body ?? {});
-  if (!parsed.success) throw new ServerError(401, NOT_AUTHORIZED);
+  if (!parsed.success) return failLogin(req, { reason: 'invalid_token' });
 
   const email = await verifiedGoogleEmail(parsed.data.credential);
-  if (!email) throw new ServerError(401, NOT_AUTHORIZED);
+  if (!email) return failLogin(req, { reason: 'invalid_token' });
 
   // Matched by email only; the Google display name is never compared.
   const account = await prisma.account.findUnique({
     where: { email },
-    select: { id: true, role: true, active: true },
+    select: { id: true, role: true, active: true, sessionVersion: true },
   });
-  if (!account || !account.active) throw new ServerError(401, NOT_AUTHORIZED);
+  if (!account) return failLogin(req, { reason: 'no_account', email });
+  if (!account.active) return failLogin(req, { reason: 'inactive', actorId: account.id });
+
+  await recordAuditEvent(prisma, req, {
+    action: AUDIT_ACTIONS.LOGIN_SUCCEEDED,
+    actorId: account.id,
+  });
 
   // The token goes only in Set-Cookie, never in the JSON body.
   res.cookie(SESSION_COOKIE, signSession(account), sessionCookieOptions());
   res.json({ data: { role: account.role } });
 });
 
-// POST /api/auth/logout — clears the cookie whether or not it was valid.
-router.post('/logout', (req, res) => {
+// POST /api/auth/logout — ends every session of the account: bumping its session version makes
+// every cookie issued before now fail requireAuth, on this device and any other. The sv condition
+// means an old, already-ended cookie can't end the newer sessions again. Always clears this
+// browser's cookie and returns 204, whether or not the cookie was valid.
+router.post('/logout', async (req, res) => {
+  const session = cookieSession(req);
+  if (session) {
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.account.updateMany({
+        where: { id: session.sub, sessionVersion: session.sv },
+        data: { sessionVersion: { increment: 1 } },
+      });
+      if (count === 0) return;
+      await recordAuditEvent(tx, req, { action: AUDIT_ACTIONS.LOGOUT, actorId: session.sub });
+    });
+  }
+
   res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
   res.status(204).end();
 });

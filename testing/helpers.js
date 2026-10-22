@@ -1,10 +1,12 @@
-// Shared test helpers: builders that write real rows to the test database, the session cookie
-// and CSRF header a request needs, the no-secrets assertion, and mocks for the two external
+// Shared test helpers: the reset every test starts from, builders that write real rows to the test
+// database, the session cookie and CSRF header a request needs, the no-secrets assertion, the
+// audit log reader, and mocks for the two external
 // edges (Google ID-token verification and the outbound revalidation fetch).
 const assert = require('node:assert/strict');
 const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../prisma');
 const { SESSION_COOKIE, signSession } = require('../lib/jwt');
+const { resetRateLimits } = require('../lib/rateLimit');
 const {
   generateApiKey,
   generateWebhookSecret,
@@ -29,11 +31,12 @@ function unique() {
   return sequence;
 }
 
-// Run in beforeEach: every test starts from an empty database.
-async function resetDatabase() {
+// Run in beforeEach: every test starts from an empty database and empty rate limit counts.
+async function resetState() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE element, image, post, account_website, website, account CASCADE',
+    'TRUNCATE TABLE element, image, post, account_website, website, account, audit_event CASCADE',
   );
+  await resetRateLimits();
 }
 
 // Run in each file's after hook, so the Prisma connection pool doesn't keep the process alive.
@@ -148,6 +151,14 @@ async function assertNoSecrets(body) {
   }
 }
 
+// Every audit event written so far, oldest first, without id, ip and createdAt.
+function auditEvents() {
+  return prisma.auditEvent.findMany({
+    orderBy: { id: 'asc' },
+    select: { action: true, actorId: true, targetType: true, targetId: true, metadata: true },
+  });
+}
+
 // Replaces Google's ID-token verification: resolves with a ticket carrying `payload`, or rejects
 // with `error`. `tracker` is node:test's `mock` (or a test's `t.mock`), which restores it.
 function mockGoogle(tracker, { payload, error }) {
@@ -182,7 +193,7 @@ async function waitFor(check, timeoutMs = 1000) {
 
 module.exports = {
   CSRF,
-  resetDatabase,
+  resetState,
   disconnect,
   createAdmin,
   createSiteOwner,
@@ -195,6 +206,7 @@ module.exports = {
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,
+  auditEvents,
   mockGoogle,
   mockFetch,
   waitFor,

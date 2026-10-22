@@ -1,8 +1,8 @@
-// Request tests for the site owner routes (api/siteOwner/index.js): websites with post summaries
+// Request tests for the site owner routes (api/siteOwner/index.js): websites with post summaries,
 // post create / read / edit / status, and Sign an Upload. Covers the role guard, the ownership rule
 // (another owner's or an inactive website's data is a 404), validation, the image src folder rule,
-// the body order and the edit reconcile, and the revalidation call after every change. fetch is mocked in every test, so no call leaves the
-// machine.
+// the body order and the edit reconcile, the audit event and revalidation call after every change,
+// and the upload sign rate limit. fetch is mocked in every test, so no call leaves the machine.
 require('../../testing/setup');
 const crypto = require('node:crypto');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
@@ -12,7 +12,7 @@ const app = require('../../app');
 const prisma = require('../../prisma');
 const {
   CSRF,
-  resetDatabase,
+  resetState,
   disconnect,
   createAdmin,
   createSiteOwner,
@@ -24,6 +24,7 @@ const {
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,
+  auditEvents,
   mockFetch,
   waitFor,
 } = require('../../testing/helpers');
@@ -40,7 +41,7 @@ function image(website, overrides = {}) {
 let fetchMock;
 
 beforeEach(async () => {
-  await resetDatabase();
+  await resetState();
   fetchMock = mockFetch(mock);
 });
 afterEach(() => mock.restoreAll());
@@ -50,6 +51,17 @@ after(disconnect);
 function as(account, method, path) {
   const req = request(app)[method](path).set('Cookie', sessionCookie(account));
   return method === 'get' ? req : req.set(CSRF);
+}
+
+// The audit event a site owner's post change writes, as audit_event rows return it.
+function postEvent(owner, action, postId, websiteId) {
+  return {
+    action,
+    actorId: owner.id,
+    targetType: 'post',
+    targetId: postId,
+    metadata: { websiteId },
+  };
 }
 
 // A valid create body for the website; override any field.
@@ -163,6 +175,18 @@ describe('GET /api/siteOwner/websites', () => {
 });
 
 describe('POST /api/siteOwner/posts', () => {
+  it('records the new post in the audit log, without its content', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { body: [paragraph('Private draft words')] }),
+    );
+
+    const events = await auditEvents();
+    assert.deepEqual(events, [postEvent(owner, 'post.created', res.body.data.id, website.id)]);
+    assert.ok(!JSON.stringify(events).includes('Private draft words'));
+  });
+
   it('creates a post with its body in order, markup kept as typed, and returns the Post shape', async () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
     const second = image(website, { src: imageSrc(website, 'b'), altText: 'B' });
@@ -430,6 +454,15 @@ describe('GET /api/siteOwner/posts/:id', () => {
 });
 
 describe('PATCH /api/siteOwner/posts/:id', () => {
+  it('records the edit in the audit log', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+
+    await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(editPost());
+
+    assert.deepEqual(await auditEvents(), [postEvent(owner, 'post.updated', post.id, website.id)]);
+  });
+
   it('updates kept images, inserts new ones and deletes the missing ones', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, {
@@ -632,6 +665,20 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
 });
 
 describe('PATCH /api/siteOwner/posts/:id/status', () => {
+  it('records archiving and making active in the audit log', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+    const path = `/api/siteOwner/posts/${post.id}/status`;
+
+    await as(owner, 'patch', path).send({ active: false });
+    await as(owner, 'patch', path).send({ active: true });
+
+    assert.deepEqual(await auditEvents(), [
+      postEvent(owner, 'post.archived', post.id, website.id),
+      postEvent(owner, 'post.activated', post.id, website.id),
+    ]);
+  });
+
   it('archives a post and returns the Post shape', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
@@ -707,6 +754,24 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
 });
 
 describe('POST /api/siteOwner/uploads/sign', () => {
+  it('returns 429 for the eleventh sign from one account within 15 minutes, per account', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const other = await createOwnerWithWebsite();
+    const sign = (account, websiteId) =>
+      as(account, 'post', '/api/siteOwner/uploads/sign').send({ websiteId });
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      assert.equal((await sign(owner, website.id)).status, 200);
+    }
+
+    const res = await sign(owner, website.id);
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, {
+      error: { message: 'Too many requests. Please try again later.' },
+    });
+    assert.equal((await sign(other.owner, other.website.id)).status, 200);
+  });
+
   it("returns a signed upload for the website's folder, built only by the backend", async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const before = Math.floor(Date.now() / 1000);
