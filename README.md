@@ -22,6 +22,7 @@ Installs:
 
 - Express
 - cors, helmet, cookie-parser, dotenv
+- express-rate-limit
 - google-auth-library
 - jsonwebtoken
 - zod
