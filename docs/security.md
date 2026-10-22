@@ -19,6 +19,7 @@ The goal is to be ready for a SOC 2 audit if the business grows into needing one
 | Audit log       | Every sign-in, sign-out and change, written in the change's own transaction (Audit log).                                                                                                                                     | `lib/audit.js`                                               |
 | Config          | The server refuses to start with a missing variable, a `JWT_SECRET` under 32 characters, an encryption key that isn't 32 bytes, or (production) a non-https CORS origin or no cookie domain.                                 | `lib/config.js`                                              |
 | Headers         | helmet's defaults on every API response (HSTS, nosniff, frame-ancestors, a restrictive CSP).                                                                                                                                 | `app.js`                                                     |
+| Browser         | The frontend's Content Security Policy (a per-request nonce on session pages, a fixed policy on static pages) and security headers on every page (Frontend).                                                                 | frontend `src/proxy.js`                                      |
 | Change control  | Every change goes through a branch, a plan, a review and a PR. CI runs lint, format, `npm audit` and the tests on every PR and push to `main`.                                                                               | `CLAUDE.md` → Workflow Checklist, `.github/workflows/ci.yml` |
 
 ## Rate limits
@@ -95,18 +96,20 @@ When something looks wrong (a leaked secret, an unknown sign-in, unexpected chan
 - **Upload signatures:** one signature allows any number of uploads into the website's folder for an hour, a window Cloudinary fixes. The sign limit (10 per 15 minutes) limits signatures, not uploads. Abusing it needs a signed-in site owner, and the daily cleanup deletes every upload no post uses.
 - **In-memory rate limits:** they reset when the server restarts, and each instance counts on its own (Rate limits).
 
-## Frontend (next branch)
+## Frontend
 
-Browser-side protection is the frontend's job, planned as its own branch after this one:
+Browser-side protection is the frontend's job, built in frontend PR #23 (`src/proxy.js`, `src/app/_lib/contentSecurityPolicy.js`, `next.config.mjs`):
 
-- **Content Security Policy split by page type.** Pages that handle the session (`/sign-in`, `/dashboard`, `/admin`) render per request with a strict CSP: `script-src 'nonce-…' 'strict-dynamic'`, the nonce generated in `proxy.js` for each request, and no `'unsafe-inline'` for scripts. Static pages (landing, and the privacy and terms pages once they exist) stay on the CDN with a fixed policy. Next.js can only put a nonce in a page rendered per request, so a static page can't have one.
-- **Rule:** a page that renders user content is never static.
+- **Content Security Policy split by page type.** Pages that handle the session (`/sign-in`, `/dashboard`, `/admin`) render per request with a strict CSP: `script-src 'self' 'nonce-…' 'strict-dynamic'`, the nonce generated in `proxy.js` for each request, and no `'unsafe-inline'` for scripts. The `/dashboard` and `/admin` layouts call `connection()` so they render per request. Static pages (only the landing page today, listed in `STATIC_PATHS`) stay on the CDN with a fixed policy. Next.js can only put a nonce in a page rendered per request, so the static policy allows `'unsafe-inline'` scripts: safe only because those pages show no user content and hold no session. Any page not listed as static gets the nonce policy.
+- **Rule:** a page that renders user content or handles the session is never static.
+- **A policy belongs to the document,** so a link from a static page to a session page is a full page load ("Sign in" in the Navbar). A client-side route would keep the static page's policy.
 - **`style-src` keeps `'unsafe-inline'`.** A nonce covers `<style>` tags, not `style="…"` attributes, which React, `next/image` and the Google sign-in button all use. Injected styles are a much smaller risk than injected scripts.
 - The Google sign-in script and frame are allowed explicitly (`accounts.google.com`).
-- Also: `frame-ancestors 'none'`, `Referrer-Policy`, `Permissions-Policy`, and HSTS.
+- Every page also gets `Referrer-Policy`, `Permissions-Policy`, HSTS (no `preload`), `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`, and both policies carry `frame-ancestors 'none'`.
+- Rich browser-tested it on a production build with no CSP violations (2026-10-22).
 - After the production deploy:
   - check with `curl -I` that Vercel serves the headers on both static and dynamic pages;
-  - scan `https://3dwebdev.com/` and `/sign-in` with securityheaders.com and Mozilla HTTP Observatory;
+  - scan `https://3dwebdev.com/` and `/sign-in` with securityheaders.com and Mozilla HTTP Observatory (expected flags: `'unsafe-inline'` scripts on the static landing page, `'unsafe-inline'` styles everywhere, no HSTS `preload`, all decided above);
   - add `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Google's recommended value for the sign-in pop-up) and re-test Google sign-in;
   - decide whether to submit the domain to the browsers' HSTS preload list.
 - CSP violation reporting is on Planned Later (`CLAUDE.md`).
