@@ -103,7 +103,13 @@ Browser-side protection is the frontend's job, planned as its own branch after t
 - **Rule:** a page that renders user content is never static.
 - **`style-src` keeps `'unsafe-inline'`.** A nonce covers `<style>` tags, not `style="…"` attributes, which React, `next/image` and the Google sign-in button all use. Injected styles are a much smaller risk than injected scripts.
 - The Google sign-in script and frame are allowed explicitly (`accounts.google.com`).
-- Also: `frame-ancestors 'none'`, `Referrer-Policy`, `Permissions-Policy`, and HSTS. After the deploy, check with `curl -I` that Vercel serves them on both static and dynamic pages.
+- Also: `frame-ancestors 'none'`, `Referrer-Policy`, `Permissions-Policy`, and HSTS.
+- After the production deploy:
+  - check with `curl -I` that Vercel serves the headers on both static and dynamic pages;
+  - scan `https://3dwebdev.com/` and `/sign-in` with securityheaders.com and Mozilla HTTP Observatory;
+  - add `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Google's recommended value for the sign-in pop-up) and re-test Google sign-in;
+  - decide whether to submit the domain to the browsers' HSTS preload list.
+- CSP violation reporting is on Planned Later (`CLAUDE.md`).
 
 ## Pre-deploy checklist (Rich)
 
