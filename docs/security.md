@@ -48,14 +48,16 @@ What is recorded is in `docs/endpoints.md` → Audit Log; the table is `audit_ev
 
 ## Secrets
 
-| Secret                  | Lives in                                        | Rotation                                                                                                                                                                             | Backup                                                                                       |
-| ----------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`            | `.env`, Railway                                 | Replace and redeploy. Every session ends and everyone signs in again.                                                                                                                | Not needed: a lost value is just replaced.                                                   |
-| `SECRET_ENCRYPTION_KEY` | `.env`, Railway                                 | No re-encryption tool yet: rotating it makes every stored webhook secret unreadable. Planned with key / secret rotation (Out of Scope in `CLAUDE.md`).                               | **Required**, stored apart from the database backups. If lost, every webhook secret is lost. |
-| `CLOUDINARY_API_SECRET` | `.env`, Railway                                 | Generate a new key pair in Cloudinary, update `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET`, redeploy, then delete the old pair. Signatures already issued expire within an hour. | Required, like `SECRET_ENCRYPTION_KEY`.                                                      |
-| `DATABASE_URL` password | Railway                                         | Rotate in Railway, which updates the variable.                                                                                                                                       | Railway.                                                                                     |
-| Website API keys        | Hashed in `website.api_key_hash`                | No endpoint yet (Out of Scope). A leaked key: set the website inactive, which refuses the key at once.                                                                               | Not stored in plaintext anywhere; each client website holds its own.                         |
-| Website webhook secrets | Encrypted in `website.webhook_secret_encrypted` | No endpoint yet (Out of Scope).                                                                                                                                                      | Covered by the database backup plus `SECRET_ENCRYPTION_KEY`.                                 |
+| Secret                  | Lives in                                                                               | Rotation                                                                                                                                                                             | Backup                                                                                                   |
+| ----------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`            | `.env`, Railway, 1Password                                                             | Replace and redeploy. Every session ends and everyone signs in again.                                                                                                                | Not needed: a lost value is just replaced.                                                               |
+| `SECRET_ENCRYPTION_KEY` | `.env`, Railway, 1Password                                                             | No re-encryption tool yet: rotating it makes every stored webhook secret unreadable. Planned with key / secret rotation (Out of Scope in `CLAUDE.md`).                               | **Required**, stored apart from the database backups (1Password). If lost, every webhook secret is lost. |
+| `CLOUDINARY_API_SECRET` | `.env`, Railway, 1Password                                                             | Generate a new key pair in Cloudinary, update `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET`, redeploy, then delete the old pair. Signatures already issued expire within an hour. | Required, like `SECRET_ENCRYPTION_KEY` (1Password).                                                      |
+| `DATABASE_URL` password | Railway                                                                                | Rotate in Railway, which updates the variable.                                                                                                                                       | Railway.                                                                                                 |
+| Website API keys        | Hashed in `website.api_key_hash`; plaintext in 1Password (3DWD Clients)                | No endpoint yet (Out of Scope). A leaked key: set the website inactive, which refuses the key at once.                                                                               | 1Password (3DWD Clients), copied from the one-time reveal. Each client website also holds its own.       |
+| Website webhook secrets | Encrypted in `website.webhook_secret_encrypted`; plaintext in 1Password (3DWD Clients) | No endpoint yet (Out of Scope).                                                                                                                                                      | 1Password (3DWD Clients), plus the database backup with `SECRET_ENCRYPTION_KEY`.                         |
+
+1Password holds every secret outside the running systems, in three vaults: **3DWD Dev** (both repos' local `.env` values), **3DWD Production** (the production values, added as they are generated at deploy) and **3DWD Clients** (each client website's credentials from the one-time reveal, and the Vercel project that serves it). Every secret, id and password is saved as a hidden password field. A secret is copied from 1Password straight into `.env`, Railway or Vercel, never through a chat, an issue or a commit.
 
 `GOOGLE_CLIENT_ID`, `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_API_KEY` are public identifiers, not secrets. No secret is ever logged, returned outside its one creation response, or pasted into a chat, an issue or a commit.
 
@@ -63,16 +65,19 @@ What is recorded is in `docs/endpoints.md` → Audit Log; the table is `audit_ev
 
 Who can reach each system that holds production data or code. Fill in, and review whenever someone joins or leaves:
 
-| System                                      | Who has access | 2FA on? |
-| ------------------------------------------- | -------------- | ------- |
-| Google account (the admin sign-in)          | Rich           |         |
-| GitHub (both repos)                         | Rich           |         |
-| Railway (API, database, cron)               | Rich           |         |
-| Vercel (frontend)                           | Rich           |         |
-| Cloudinary (images, API secret)             | Rich           |         |
-| Domain registrar and DNS for `3dwebdev.com` | Rich           |         |
+| System                                                  | Who has access | 2FA on?                                                         |
+| ------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
+| Google account (the admin sign-in)                      | Rich           | Yes: fingerprint passkey; Google Authenticator as the fallback  |
+| GitHub (both repos)                                     | Rich           | Yes: GitHub's own 2FA, also signs in with Google                |
+| Railway (API, database, cron)                           | Rich           | Not yet: set up in the deploy steps                             |
+| Vercel (frontend)                                       | Rich           | Yes: signs in with GitHub; Google Authenticator as the fallback |
+| Cloudinary (images, API secret)                         | Rich           | Yes: signs in with Google, Cloudinary 2FA on                    |
+| Namecheap (domain registrar and DNS for `3dwebdev.com`) | Rich           | Yes: Google Authenticator                                       |
+| 1Password (every secret, Secrets)                       | Rich           | Yes: Google Authenticator                                       |
 
-The administrator's Google account is the app's highest privilege: whoever controls it controls every account. It must have 2FA, preferably a passkey or security key.
+The administrator's Google account is the app's highest privilege: whoever controls it controls every account. It must have 2FA, preferably a passkey or security key. Vercel signs in through GitHub, so GitHub's 2FA protects both.
+
+Recovery: the 1Password emergency kit and the recovery codes for Google, GitHub, Vercel and Namecheap are printed and kept offline, apart from where the work is done. Railway's codes go into 1Password when its 2FA is set up. Where the printouts are kept is not written down here.
 
 ## Incident response
 
@@ -118,12 +123,19 @@ Browser-side protection is the frontend's job, built in frontend PR #23 (`src/pr
 
 Done by hand before the first production deploy. Tick each one here when done:
 
-- [ ] 2FA on the Google admin account, GitHub, Railway, Vercel, Cloudinary and the domain registrar
-- [ ] A new Cloudinary key pair for production, kept only in Railway; the pair shared in a Claude session deleted
+- [x] 2FA on the Google admin account, GitHub, Vercel, Cloudinary, the domain registrar and 1Password (2026-10-23)
+- [x] 1Password set up with the Dev, Production and Clients vaults, and recovery codes printed and kept offline (2026-10-23)
+- [x] Dependabot alerts and secret scanning turned on in both repos (2026-10-23: alerts, security updates and grouped security updates on, self-hosted runners off; secret scanning and push protection on)
+- [x] The Access table above filled in (2026-10-23; Railway's row is completed in the deploy steps)
+- [ ] Branch protection on `main` in both repos: changes only through a PR, CI must pass. Waits on the frontend's CI workflow.
+
+## Deploy steps (with the deploy branch)
+
+Done together with the production deploy, on its branch, because each needs Railway or production values to exist:
+
+- [ ] 2FA on Railway, its recovery codes in 1Password, and Railway's row in the Access table filled in
+- [ ] A new Cloudinary key pair for production, kept only in Railway and 1Password (3DWD Production); the pair shared in a Claude session deleted
 - [ ] Production `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` freshly generated, never reused from local
-- [ ] `SECRET_ENCRYPTION_KEY` and `CLOUDINARY_API_SECRET` backed up apart from the database backups
-- [ ] Branch protection on `main` in both repos: changes only through a PR, CI must pass
-- [ ] Dependabot alerts and secret scanning turned on in both repos
+- [ ] `SECRET_ENCRYPTION_KEY` and `CLOUDINARY_API_SECRET` backed up in 1Password (3DWD Production), apart from the database backups
 - [ ] Railway Postgres backups confirmed, and one test restore done
 - [ ] Railway's proxy hop count checked against `app.set('trust proxy', 1)`: `req.ip` in an audit row should be a real client address, not Railway's
-- [ ] The Access table above filled in
