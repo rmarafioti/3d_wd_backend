@@ -60,7 +60,7 @@ Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`, which must be at least 32 
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-If `SECRET_ENCRYPTION_KEY` is ever lost, every stored webhook secret becomes unreadable — store it somewhere safe. The server refuses to start with a missing variable or a weak secret (`lib/config.js`). Secrets, rotation and the pre-deploy checklist are in `docs/security.md`.
+If `SECRET_ENCRYPTION_KEY` is ever lost, every stored webhook secret becomes unreadable — store it somewhere safe. The server refuses to start with a missing variable or a weak secret (`lib/config.js`). Secrets, rotation and the pre-deploy checklist are in `docs/security.md`; hosting, environments and the deployment checklist are in `docs/deploy.md`.
 
 ```
 docker compose up -d       # starts local Postgres

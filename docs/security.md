@@ -56,10 +56,12 @@ What is recorded is in `docs/endpoints.md` → Audit Log; the table is `audit_ev
 | `DATABASE_URL` password | Railway                                                                                | Rotate in Railway, which updates the variable.                                                                                                                                       | Railway.                                                                                                 |
 | Website API keys        | Hashed in `website.api_key_hash`; plaintext in 1Password (3DWD Clients)                | No endpoint yet (Out of Scope). A leaked key: set the website inactive, which refuses the key at once.                                                                               | 1Password (3DWD Clients), copied from the one-time reveal. Each client website also holds its own.       |
 | Website webhook secrets | Encrypted in `website.webhook_secret_encrypted`; plaintext in 1Password (3DWD Clients) | No endpoint yet (Out of Scope).                                                                                                                                                      | 1Password (3DWD Clients), plus the database backup with `SECRET_ENCRYPTION_KEY`.                         |
+| Backup private key      | 1Password (3DWD Production) only, never Railway                                        | Generate a new pair, put the new public key in Railway. Keep the old private key until every dump encrypted with it has expired (30 days).                                           | **Required**: if lost, every backup is unreadable. It is the only copy, so it is never deleted early.    |
+| R2 API token            | Railway (production), 1Password (3DWD Production)                                      | Create a new token scoped to the bucket in Cloudflare, update Railway, delete the old token.                                                                                         | Not needed: a lost token is just replaced.                                                               |
 
 1Password holds every secret outside the running systems, in three vaults: **3DWD Dev** (both repos' local `.env` values), **3DWD Production** (the production values, added as they are generated at deploy) and **3DWD Clients** (each client website's credentials from the one-time reveal, and the Vercel project that serves it). Every secret, id and password is saved as a hidden password field. A secret is copied from 1Password straight into `.env`, Railway or Vercel, never through a chat, an issue or a commit.
 
-`GOOGLE_CLIENT_ID`, `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_API_KEY` are public identifiers, not secrets. No secret is ever logged, returned outside its one creation response, or pasted into a chat, an issue or a commit.
+`GOOGLE_CLIENT_ID`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and the backup public key are public identifiers, not secrets. No secret is ever logged, returned outside its one creation response, or pasted into a chat, an issue or a commit.
 
 ## Access
 
@@ -69,9 +71,10 @@ Who can reach each system that holds production data or code. Fill in, and revie
 | ------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
 | Google account (the admin sign-in)                      | Rich           | Yes: fingerprint passkey; Google Authenticator as the fallback  |
 | GitHub (both repos)                                     | Rich           | Yes: GitHub's own 2FA, also signs in with Google                |
-| Railway (API, database, cron)                           | Rich           | Not yet: set up in the deploy steps                             |
+| Railway (API, database, cron)                           | Rich           | Not yet: set up in the deployment checklist                     |
 | Vercel (frontend)                                       | Rich           | Yes: signs in with GitHub; Google Authenticator as the fallback |
 | Cloudinary (images, API secret)                         | Rich           | Yes: signs in with Google, Cloudinary 2FA on                    |
+| Cloudflare (R2 database backups)                        | Rich           | Not yet: set up in the deployment checklist                     |
 | Namecheap (domain registrar and DNS for `3dwebdev.com`) | Rich           | Yes: Google Authenticator                                       |
 | 1Password (every secret, Secrets)                       | Rich           | Yes: Google Authenticator                                       |
 
@@ -100,6 +103,9 @@ When something looks wrong (a leaked secret, an unknown sign-in, unexpected chan
 - **Revalidation URL:** the backend sends a request to whatever URL a website has stored, which could in principle be aimed at an internal address (server-side request forgery, SSRF). Only the administrator enters it, and it must be `https://`. Accepted while the administrator is the only one who can set it.
 - **Upload signatures:** one signature allows any number of uploads into the website's folder for an hour, a window Cloudinary fixes. The sign limit (10 per 15 minutes) limits signatures, not uploads. Abusing it needs a signed-in site owner, and the daily cleanup deletes every upload no post uses.
 - **In-memory rate limits:** they reset when the server restarts, and each instance counts on its own (Rate limits).
+- **No Railway database backups:** Railway Hobby doesn't include them. Our own nightly dump replaces them: encrypted with a public key, kept 30 days in a private R2 bucket (`docs/deploy.md` → Railway services). Up to a day of changes can be lost. Revisit when Railway moves to Pro (`docs/deploy.md` → Hosting and plans).
+- **Admins can bypass branch protection:** kept on purpose as an escape hatch for an emergency fix (decided 2026-10-24). A bypass is used only in an incident and written in its incident notes (Incident response).
+- **Staging shares the session cookie's name and domain with production:** a browser signed into both sends both cookies to both. Staging is tested only in a separate browser profile (`docs/deploy.md` → Environments).
 
 ## Frontend
 
@@ -126,16 +132,9 @@ Done by hand before the first production deploy. Tick each one here when done:
 - [x] 2FA on the Google admin account, GitHub, Vercel, Cloudinary, the domain registrar and 1Password (2026-10-23)
 - [x] 1Password set up with the Dev, Production and Clients vaults, and recovery codes printed and kept offline (2026-10-23)
 - [x] Dependabot alerts and secret scanning turned on in both repos (2026-10-23: alerts, security updates and grouped security updates on, self-hosted runners off; secret scanning and push protection on)
-- [x] The Access table above filled in (2026-10-23; Railway's row is completed in the deploy steps)
-- [ ] Branch protection on `main` in both repos: changes only through a PR, CI must pass. Waits on the frontend's CI workflow.
+- [x] The Access table above filled in (2026-10-23; Railway's row is completed in the deployment checklist)
+- [x] Branch protection on `main` in both repos: changes only through a PR, CI's `check` must pass (2026-10-23, checked on GitHub 2026-10-24; admins can bypass it, Accepted risks)
 
-## Deploy steps (with the deploy branch)
+## Deploy steps
 
-Done together with the production deploy, on its branch, because each needs Railway or production values to exist:
-
-- [ ] 2FA on Railway, its recovery codes in 1Password, and Railway's row in the Access table filled in
-- [ ] A new Cloudinary key pair for production, kept only in Railway and 1Password (3DWD Production); the pair shared in a Claude session deleted
-- [ ] Production `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` freshly generated, never reused from local
-- [ ] `SECRET_ENCRYPTION_KEY` and `CLOUDINARY_API_SECRET` backed up in 1Password (3DWD Production), apart from the database backups
-- [ ] Railway Postgres backups confirmed, and one test restore done
-- [ ] Railway's proxy hop count checked against `app.set('trust proxy', 1)`: `req.ip` in an audit row should be a real client address, not Railway's
+The security steps that need Railway or production values (Railway 2FA, the new Cloudinary key pairs, fresh production secrets backed up in 1Password, the backups and a test restore, the proxy hop count) are steps in `docs/deploy.md` → Deployment checklist, in the order they are done.
