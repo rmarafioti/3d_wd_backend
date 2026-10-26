@@ -41,4 +41,4 @@ console.log(`Private key: ${privatePath}
   Save it in 1Password (3DWD Production) and nowhere else, then delete this file.
   Without it no backup can be read, so keep it until every backup made with it has expired.
 Public key: ${publicPath}
-  The whole line is the value of BACKUP_PUBLIC_KEY in Railway (production). It is not a secret.`);
+  The whole line is the value of BACKUP_PUBLIC_KEY in Render (production). It is not a secret.`);

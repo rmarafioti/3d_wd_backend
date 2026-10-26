@@ -181,7 +181,7 @@ Rejected examples (`400` on `body.N.text`):
 
 ## Middleware Stack
 
-`app.js` first sets `app.set('trust proxy', 1)`: one proxy sits in front of the API (Railway in production, Next's dev rewrite locally), so `req.ip` is the client's address, as the rate limits and the audit log need. Recheck the hop count when the Railway deploy is set up.
+`app.js` first sets `app.set('trust proxy', 1)`: one proxy sits in front of the API (Render's load balancer in staging and production, Next's dev rewrite locally), so `req.ip` is the client's address, as the rate limits and the audit log need. Recheck the hop count on staging (`docs/deploy.md` → Deployment checklist step 19).
 
 Applied in `app.js` / `api/index.js`, in this order:
 
@@ -357,7 +357,7 @@ How the client website uses this is specced in the master doc's "Client to Websi
 
 ### Health — `GET /api/health`
 
-Returns `200 { data: { ok: true } }`. No auth. Used by Railway to check the server is up.
+Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.yaml`) uses it to decide when a new deploy can take traffic.
 
 ---
 

@@ -1,7 +1,7 @@
 // Entry point for `npm run backup:database`: an encrypted dump of the database, uploaded to R2
-// (services/backupDatabase.js). A nightly Railway cron service runs it in production; run by hand
+// (services/backupDatabase.js). A nightly Render cron job runs it in production; run by hand
 // before a migration that drops or rewrites data. `-- --label test` marks a backup that isn't the
-// nightly one. Logs the object key and size only. Exits 1 on any failure, so Railway shows it.
+// nightly one. Logs the object key and size only. Exits 1 on any failure, so Render shows it.
 require('dotenv/config');
 const { parseArgs } = require('util');
 const { backupPublicKey } = require('../lib/crypto');

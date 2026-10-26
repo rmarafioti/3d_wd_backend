@@ -8,13 +8,14 @@ The frontend serves a public, static landing page and sign-in for two separate a
 
 This backend stores everything in PostgreSQL, serves the dashboards through an authenticated API, serves published post content to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post changes.
 
-- Production API: `https://api.3dwebdev.com` (Railway)
+- Production API: `https://api.3dwebdev.com` (Render, defined in `render.yaml`)
 - Production frontend: `https://3dwebdev.com` (Vercel)
 
 ## Install List
 
 ```
 git clone <ssh_key>
+nvm use          # Node 24, from .nvmrc (the version Render and CI run)
 npm install
 ```
 
@@ -39,9 +40,9 @@ Set:
 
 | Variable                | Local value                         | Production value         |
 | ----------------------- | ----------------------------------- | ------------------------ |
-| `PORT`                  | `4000`                              | set by Railway           |
+| `PORT`                  | `4000`                              | set by Render            |
 | `NODE_ENV`              | `development`                       | `production`             |
-| `DATABASE_URL`          | docker-compose Postgres, port 5433  | Railway Postgres URL     |
+| `DATABASE_URL`          | docker-compose Postgres, port 5433  | Render Postgres URL      |
 | `TEST_DATABASE_URL`     | `.../headless_cms_test`, port 5433  | not used                 |
 | `GOOGLE_CLIENT_ID`      | same as the frontend's              | same                     |
 | `JWT_SECRET`            | 32+ random characters               | same, never reused       |
@@ -76,7 +77,7 @@ Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post u
 npm run sweep:uploads
 ```
 
-Database backups (`docs/deploy.md` → Railway services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally):
+Database backups (`docs/deploy.md` → Render services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally):
 
 ```
 npm run backup:keygen -- --out <folder outside this repo>   # the backup key pair (once)

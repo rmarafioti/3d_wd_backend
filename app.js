@@ -12,9 +12,10 @@ const { errorHandler, ServerError } = require('./errors');
 
 const app = express();
 
-// One proxy sits in front of the API (Railway in production, Next's dev rewrite locally), so
-// req.ip is the client's address from X-Forwarded-For, as the rate limits and audit log need.
-// Recheck the hop count when the Railway deploy is set up.
+// One proxy sits in front of the API (Render's load balancer when deployed, Next's dev rewrite
+// locally), so req.ip is the client's address from X-Forwarded-For, as the rate limits and audit
+// log need.
+// Recheck the hop count on staging (docs/deploy.md → Deployment checklist step 19).
 app.set('trust proxy', 1);
 
 app.use(helmet());

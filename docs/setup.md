@@ -12,7 +12,7 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - A site owner can create, edit, archive (soft delete) and reactivate a post.
 - The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post changes.
 
-Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` in Prisma Studio for now), photo galleries, business hours.
+Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), photo galleries, business hours.
 
 ## Schema
 
@@ -148,12 +148,12 @@ Ref: image.post_id > post.id        // a post can have many images
 
 ### Prisma 7 notes
 
-- Generator is `prisma-client-js`. The newer `prisma-client` generator only outputs TypeScript, which Node 20 can't `require`; `prisma-client-js` outputs plain CommonJS imported with `require('@prisma/client')`.
+- Generator is `prisma-client-js`. The newer `prisma-client` generator only outputs TypeScript, which would need a build step before Node could `require` it; `prisma-client-js` outputs plain CommonJS imported with `require('@prisma/client')`.
 - `prisma.config.js` (repo root) holds the datasource URL, migrations path and seed command — not the schema's `datasource` block. It loads `.env` itself with `require('dotenv/config')`.
 - `prisma/index.js` builds the client with the `PrismaPg` driver adapter (`@prisma/adapter-pg` + `pg`). It does not load `.env`; each entry point (`index.js`, `prisma/seed.js`) requires `dotenv/config` first, and every test file that touches the environment or the database requires `testing/setup.js` first.
 - `prisma migrate dev` does **not** regenerate the client in v7. Run `npx prisma generate` after every schema change. The `postinstall` script covers fresh installs.
 - Local Postgres (docker-compose) runs on host port **5433**, because a native Postgres already uses 5432.
-- If a Prisma command fails with missing engines/binaries, run `npm install-scripts approve prisma @prisma/engines` (npm blocked those install scripts during setup).
+- npm 11 (Node 24) runs a dependency's install scripts only once they are approved. Prisma's two (`prisma`, `@prisma/engines`) are approved in `package.json` → `allowScripts`, pinned to their version, so a Prisma upgrade shows the warning again until `npm install-scripts approve prisma @prisma/engines` is run on that branch.
 
 ### Test database
 
@@ -172,7 +172,7 @@ The only place keys and secrets are generated, hashed, encrypted or decrypted. U
 - `encryptSecret(secret)` → AES-256-GCM with a random 12-byte IV, key = `SECRET_ENCRYPTION_KEY` (32 bytes, base64 in `.env`). Stored as one string: `base64(iv):base64(authTag):base64(ciphertext)`.
 - `decryptSecret(stored)` → reverses the above. Used only by `services/revalidate.js`, immediately before sending.
 
-Database backups (`docs/deploy.md` → Railway services):
+Database backups (`docs/deploy.md` → Render services):
 
 - `generateBackupKeyPair()` → an RSA 4096 key pair, PEM. Run once through `npm run backup:keygen`; the private key goes only into 1Password.
 - `backupPublicKey(encoded)` → reads `BACKUP_PUBLIC_KEY` (the public key's PEM, base64 on one line). Throws unless it is an RSA public key of at least 4096 bits; a private key is refused too.
@@ -190,7 +190,7 @@ The account uses Cloudinary's fixed folder mode, where the signed `folder` is al
 Environment variables:
 
 - `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_API_KEY`: the account's cloud name and API key. Both are public: they appear in upload URLs and in the signature's `fields`.
-- `CLOUDINARY_API_SECRET`: signs uploads and authorizes the cleanup. It is a secret like `SECRET_ENCRYPTION_KEY`: never logged, never returned, kept only in `.env` and Railway, and backed up.
+- `CLOUDINARY_API_SECRET`: signs uploads and authorizes the cleanup. It is a secret like `SECRET_ENCRYPTION_KEY`: never logged, never returned, kept only in `.env` and Render, and backed up.
 - `CLOUDINARY_FOLDER`: the environment's root folder, `3dwd` in production and `3dwd-dev` locally. Production and local share the one Cloudinary account, separated by this root. Tests use a fixed value and never call Cloudinary.
 
 Every upload goes to `<CLOUDINARY_FOLDER>/<website.mediaFolder>/`. No folder is created by hand: Cloudinary creates each folder on the first upload into it. File names are Cloudinary's random public ids (letters, digits, `_` and `-`), and the `src` rule accepts only those, so the upload preset option "use filename" stays off. A stored `src` looks like `https://res.cloudinary.com/<cloud name>/image/upload/v1760000000/3dwd/steviethedog/abc123.jpg`, and the backend accepts an image `src` only in the post's website's folder.
@@ -221,7 +221,7 @@ The database is the record of which images are kept. Post saves never call Cloud
 - deletes each one that no `image.src` refers to, whether its post is active or archived (archived posts keep their images);
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The script is safe to re-run. Locally it is run by hand; once deployed, a daily Railway cron service runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Client websites
 
