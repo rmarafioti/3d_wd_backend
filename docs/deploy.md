@@ -37,22 +37,26 @@ The decisions here were made on 2026-10-24. `docs/security.md` holds the control
 
 Every variable the backend reads, per deployed environment. Secrets are generated straight into 1Password (3DWD Production) and copied from there into Railway, never through a chat, an issue or a commit (`docs/security.md` → Secrets).
 
-| Variable                | Staging                                 | Production                                                                   |
-| ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
-| `PORT`                  | set by Railway                          | set by Railway                                                               |
-| `NODE_ENV`              | `production`                            | `production`                                                                 |
-| `DATABASE_URL`          | Railway reference to staging's Postgres | Railway reference to production's Postgres                                   |
-| `GOOGLE_CLIENT_ID`      | the OAuth client ID                     | the OAuth client ID                                                          |
-| `JWT_SECRET`            | its own, freshly generated              | its own, freshly generated                                                   |
-| `SECRET_ENCRYPTION_KEY` | its own, freshly generated              | its own, freshly generated, backed up                                        |
-| `CORS_ORIGIN`           | `https://staging.3dwebdev.com`          | `https://3dwebdev.com`                                                       |
-| `COOKIE_DOMAIN`         | `.3dwebdev.com`                         | `.3dwebdev.com`                                                              |
-| `CLOUDINARY_CLOUD_NAME` | 3DWD's cloud name                       | 3DWD's cloud name                                                            |
-| `CLOUDINARY_API_KEY`    | the dev pair                            | the production pair                                                          |
-| `CLOUDINARY_API_SECRET` | the dev pair                            | the production pair, backed up                                               |
-| `CLOUDINARY_FOLDER`     | `3dwd-dev`                              | `3dwd`                                                                       |
-| `SEED_ADMIN_EMAIL`      | the admin's Google email                | the admin's Google email                                                     |
-| Backup variables        | not set                                 | the R2 bucket, token and backup public key (named by `feat/database-backup`) |
+| Variable                | Staging                                 | Production                                        |
+| ----------------------- | --------------------------------------- | ------------------------------------------------- |
+| `PORT`                  | set by Railway                          | set by Railway                                    |
+| `NODE_ENV`              | `production`                            | `production`                                      |
+| `DATABASE_URL`          | Railway reference to staging's Postgres | Railway reference to production's Postgres        |
+| `GOOGLE_CLIENT_ID`      | the OAuth client ID                     | the OAuth client ID                               |
+| `JWT_SECRET`            | its own, freshly generated              | its own, freshly generated                        |
+| `SECRET_ENCRYPTION_KEY` | its own, freshly generated              | its own, freshly generated, backed up             |
+| `CORS_ORIGIN`           | `https://staging.3dwebdev.com`          | `https://3dwebdev.com`                            |
+| `COOKIE_DOMAIN`         | `.3dwebdev.com`                         | `.3dwebdev.com`                                   |
+| `CLOUDINARY_CLOUD_NAME` | 3DWD's cloud name                       | 3DWD's cloud name                                 |
+| `CLOUDINARY_API_KEY`    | the dev pair                            | the production pair                               |
+| `CLOUDINARY_API_SECRET` | the dev pair                            | the production pair, backed up                    |
+| `CLOUDINARY_FOLDER`     | `3dwd-dev`                              | `3dwd`                                            |
+| `SEED_ADMIN_EMAIL`      | the admin's Google email                | the admin's Google email                          |
+| `BACKUP_PUBLIC_KEY`     | not set                                 | the backup public key from step 10 (not a secret) |
+| `R2_ACCOUNT_ID`         | not set                                 | the Cloudflare account id                         |
+| `R2_ACCESS_KEY_ID`      | not set                                 | the R2 token's access key id                      |
+| `R2_SECRET_ACCESS_KEY`  | not set                                 | the R2 token's secret                             |
+| `R2_BUCKET`             | not set                                 | `3dwd-backups`                                    |
 
 `NODE_ENV=production` on staging makes `lib/config.js` check it like production: https `CORS_ORIGIN` and a cookie domain. Each environment's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` is its own; none is reused from local or the other environment.
 
@@ -62,7 +66,7 @@ One Railway project, built from this repo, with a `staging` and a `production` e
 
 - **API:** start `npm start`; pre-deploy `npx prisma migrate deploy`, so migrations run once per deploy, not per instance (`docs/scaling.md` §7); health check `GET /api/health`. Its configuration is kept in the repo as Railway config-as-code, written on the staging branch (checklist step 13).
 - **`sweep-uploads`** (production only): a cron service running `npm run sweep:uploads` daily (`docs/setup.md` → Upload cleanup).
-- **`backup-database`** (production only): a cron service running nightly. It dumps the production database with `pg_dump`, encrypts the dump with the backup public key, and uploads it to the private R2 bucket `3dwd-backups`, where a lifecycle rule deletes dumps after 30 days. Only the public key is in Railway, so a leak there can't read a backup. The private key lives only in 1Password (3DWD Production). Built on `feat/database-backup`.
+- **`backup-database`** (production only): a cron service running `npm run backup:database` nightly (`services/backupDatabase.js`). It dumps the production database with `pg_dump` (custom format, no owner or privileges), encrypts the dump with the backup public key (`docs/setup.md` → Crypto Module), and uploads it to the private R2 bucket `3dwd-backups` as `backups/<timestamp>.dump.enc`. A bucket lock keeps each dump from being deleted or overwritten for 30 days, then a lifecycle rule deletes it. Only the public key is in Railway, so a leak there can't read a backup. The private key lives only in 1Password (3DWD Production). The service needs a `pg_dump` of the same major version as the database (noted at step 12, installed when the service is set up at step 22). A failed run exits 1, so Railway shows it.
 
 Cron schedules are in UTC.
 
@@ -79,11 +83,11 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 
 ### Phase 1: Before anything is hosted
 
-5. [ ] **[Rich]** Vercel: upgrade to a Pro team and move the frontend and every client website project (Stevie The Dog today) into it. Update Vercel's row in the Access table (`docs/security.md`).
+5. [x] **[Rich]** Vercel: upgrade to a Pro team and move the frontend and every client website project (Stevie The Dog today) into it. Update Vercel's row in the Access table (`docs/security.md`).
 6. [x] **[Rich]** Branch protection on `main` in both repos: changes only through a PR, CI's `check` must pass (2026-10-23).
-7. [ ] **[Rich]** Cloudinary: generate two new key pairs, one for production and one for local dev and staging. Put the dev pair in the local `.env` and 1Password (3DWD Dev), keep the production pair for step 21, then delete the pair that was shared in a Claude session.
-8. [ ] **[Rich]** Cloudflare: an account with 2FA (add it to the Access table), a private R2 bucket `3dwd-backups`, a lifecycle rule deleting objects after 30 days, and an R2 API token scoped to that bucket (object read and write), saved in 1Password (3DWD Production). Cloudflare may ask for a card even on the free tier.
-9. [ ] **[Claude]** `feat/database-backup`, with its own plan: the backup and restore scripts, the Backups row in `docs/security.md` → Controls in place, the encryption in `lib/crypto.js` (a random AES-256-GCM key per dump, wrapped with the RSA public key), a key pair generator, the new env vars (`docs/scaling.md` §8) and tests. Tested against a local dump and the real bucket.
+7. [x] **[Rich]** Cloudinary: generate two new key pairs, one for production and one for local dev and staging. Put the dev pair in the local `.env` and 1Password (3DWD Dev), keep the production pair for step 21, then delete the pair that was shared in a Claude session.
+8. [x] **[Rich]** Cloudflare: an account with 2FA (add it to the Access table), a private R2 bucket `3dwd-backups`, a lifecycle rule deleting objects after 30 days, and an R2 API token scoped to that bucket (object read and write), saved in 1Password (3DWD Production). Cloudflare may ask for a card even on the free tier. Then a bucket lock rule on the whole bucket, retaining objects 30 days, so a leaked token can't delete or overwrite a backup (added on `feat/database-backup`).
+9. [x] **[Claude]** `feat/database-backup`, with its own plan: the backup and restore scripts, the Backups row in `docs/security.md` → Controls in place, the encryption in `lib/crypto.js` (a random AES-256-GCM key per dump, wrapped with the RSA public key), a key pair generator, the new env vars (`docs/scaling.md` §8) and tests. Tested against a local dump and the real bucket.
 10. [ ] **[Rich]** Generate the backup key pair. The private key goes into 1Password (3DWD Production) only; the public key goes to Railway in step 21.
 
 ### Phase 2: Staging
@@ -128,6 +132,18 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 29. [ ] **[Claude]** `docs/launch`: retire `docs/scaling.md` §0 (breaking changes now go through expand → migrate → contract) and the "until the first production deploy" lines in `CLAUDE.md`, add a production baseline beside the local one, and hand off so the frontend retires its own §0. In the master doc, mark the one-time sections as the record of the launch (the Runbook's build order, this checklist) and retire what no longer applies.
 30. [ ] **[Rich]** Delete the staging environment to save credit, or keep it. It is duplicated again from production before the first breaking change (`docs/scaling.md` §8).
 31. [ ] **[Rich]** Onboard the VIP clients one at a time.
+
+## Restoring a backup
+
+Used for the test restore (step 25) and in an incident (`docs/security.md` → Incident response). Needs `pg_restore` of the database's major version.
+
+1. Download the dump from the R2 dashboard (`3dwd-backups` → `backups/`).
+2. Save the private key from 1Password (3DWD Production) to a file outside the repo.
+3. Create a new, empty database to restore into.
+4. `npm run backup:restore -- --file <dump.enc> --key <private key .pem> --target <its URL>`. It refuses this environment's own `DATABASE_URL` and any database that already has tables. It decrypts to a temp file, checks it, runs `pg_restore`, then deletes the temp file.
+5. Check the rows, then delete the private key file and the downloaded dump.
+
+Restoring over production is never done by this script. If it is ever needed, it is a deliberate step written in the incident notes: restore into a new database, check it, then point `DATABASE_URL` at it.
 
 ## Every deploy after launch
 

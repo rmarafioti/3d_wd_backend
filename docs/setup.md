@@ -172,6 +172,13 @@ The only place keys and secrets are generated, hashed, encrypted or decrypted. U
 - `encryptSecret(secret)` → AES-256-GCM with a random 12-byte IV, key = `SECRET_ENCRYPTION_KEY` (32 bytes, base64 in `.env`). Stored as one string: `base64(iv):base64(authTag):base64(ciphertext)`.
 - `decryptSecret(stored)` → reverses the above. Used only by `services/revalidate.js`, immediately before sending.
 
+Database backups (`docs/deploy.md` → Railway services):
+
+- `generateBackupKeyPair()` → an RSA 4096 key pair, PEM. Run once through `npm run backup:keygen`; the private key goes only into 1Password.
+- `backupPublicKey(encoded)` → reads `BACKUP_PUBLIC_KEY` (the public key's PEM, base64 on one line). Throws unless it is an RSA public key of at least 4096 bits; a private key is refused too.
+- `createBackupEncryptor(publicKey)` → a stream that encrypts one dump: a random AES-256-GCM key for that dump, wrapped with the public key (RSA-OAEP, SHA-256). The file is `3DWDBK01` (8 bytes) | wrapped key length (2 bytes) | wrapped key | IV (12 bytes) | ciphertext | GCM tag (16 bytes). The tag goes last because GCM only knows it once the whole dump has passed through.
+- `decryptBackup(filePath, privateKey, output)` → reverses it. A wrong key, a file that isn't a backup or any changed byte rejects, so the output is used only once it resolves.
+
 `SECRET_ENCRYPTION_KEY` must be backed up as carefully as the database password — if it is lost, every stored webhook secret becomes unreadable.
 
 ## Image Hosting

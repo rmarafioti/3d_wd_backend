@@ -76,6 +76,16 @@ Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post u
 npm run sweep:uploads
 ```
 
+Database backups (`docs/deploy.md` → Railway services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally):
+
+```
+npm run backup:keygen -- --out <folder outside this repo>   # the backup key pair (once)
+npm run backup:database                                     # encrypted dump uploaded to R2
+npm run backup:restore -- --file <dump.enc> --key <private key .pem> --target <empty database URL>
+```
+
+Homebrew installs `postgresql@17` beside an existing Postgres without putting it on `PATH`, so put it first for these commands, for example `PATH=/opt/homebrew/opt/postgresql@17/bin:$PATH npm run backup:database`.
+
 Tests:
 
 ```

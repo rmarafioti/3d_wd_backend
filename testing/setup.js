@@ -21,4 +21,8 @@ process.env.CLOUDINARY_CLOUD_NAME = 'test-cloud';
 process.env.CLOUDINARY_API_KEY = 'test-cloudinary-key';
 process.env.CLOUDINARY_API_SECRET = 'test-cloudinary-secret';
 process.env.CLOUDINARY_FOLDER = '3dwd-test';
+process.env.R2_ACCOUNT_ID = 'test-account';
+process.env.R2_ACCESS_KEY_ID = 'test-r2-key';
+process.env.R2_SECRET_ACCESS_KEY = 'test-r2-secret';
+process.env.R2_BUCKET = 'test-backups';
 delete process.env.COOKIE_DOMAIN;
