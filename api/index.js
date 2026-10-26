@@ -1,4 +1,4 @@
-// Mounts every API router under /api, plus the health check Railway uses.
+// Mounts every API router under /api, plus the health check Render deploys wait on.
 const express = require('express');
 const authRouter = require('./auth');
 const adminRouter = require('./admin');

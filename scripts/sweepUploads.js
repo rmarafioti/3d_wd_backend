@@ -1,5 +1,5 @@
 // Entry point for `npm run sweep:uploads`: deletes unused Cloudinary uploads (services/sweepUploads.js).
-// Run by hand locally; once deployed, a daily Railway cron service runs it. Logs counts only.
+// Run by hand locally; once deployed, a daily Render cron job runs it. Logs counts only.
 require('dotenv/config');
 
 const REQUIRED_ENV = [

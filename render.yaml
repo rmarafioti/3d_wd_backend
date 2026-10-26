@@ -1,0 +1,67 @@
+# Render Blueprint: the API and its Postgres per environment (docs/deploy.md → Render services).
+# Render creates the services from this file (New → Blueprint) and syncs every later change to it.
+# Values here are public and reviewed in PRs. Secrets are `sync: false`: Render asks for each one
+# once, when the Blueprint is created, and they never enter the repo. Later syncs never ask again,
+# so a secret added after creation is set on the service by hand. Production (its own Postgres
+# and the two cron jobs) is added on deploy/production (Deployment checklist step 21).
+projects:
+  - name: 3dwd
+    environments:
+      - name: staging
+        services:
+          - type: web
+            name: 3dwd-api-staging
+            runtime: node
+            plan: 0.5c-512mb
+            # Next to Vercel's default functions region (iad1, Washington DC).
+            region: virginia
+            branch: main
+            # Deploys a commit to main only after CI's check passes on it.
+            autoDeployTrigger: checksPass
+            # --include=dev: NODE_ENV=production is also set at build time, which makes npm omit
+            # devDependencies. The Prisma CLI (postinstall generate, pre-deploy migrate) is one.
+            buildCommand: npm ci --include=dev
+            # Runs once per deploy, before the new version takes traffic; if it fails, the deploy
+            # fails and the previous version keeps running (docs/scaling.md §7).
+            preDeployCommand: npx prisma migrate deploy
+            startCommand: npm start
+            healthCheckPath: /api/health
+            envVars:
+              - key: NODE_ENV
+                value: production
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: 3dwd-db-staging
+                  property: connectionString
+              - key: CORS_ORIGIN
+                value: https://staging.3dwebdev.com
+              - key: COOKIE_DOMAIN
+                value: .3dwebdev.com
+              - key: CLOUDINARY_FOLDER
+                value: 3dwd-dev
+              - key: GOOGLE_CLIENT_ID
+                sync: false
+              - key: JWT_SECRET
+                sync: false
+              - key: SECRET_ENCRYPTION_KEY
+                sync: false
+              - key: CLOUDINARY_CLOUD_NAME
+                sync: false
+              - key: CLOUDINARY_API_KEY
+                sync: false
+              - key: CLOUDINARY_API_SECRET
+                sync: false
+              - key: SEED_ADMIN_EMAIL
+                sync: false
+        databases:
+          - name: 3dwd-db-staging
+            databaseName: headless_cms
+            # The same major version as local Docker, CI and the pg_dump / pg_restore used for
+            # backups. Fixed once the database is created.
+            postgresMajorVersion: '17'
+            plan: 0.1c-256mb
+            region: virginia
+            diskSizeGB: 1
+            # No connections from outside Render: the API and the Render Shell reach it on the
+            # private network.
+            ipAllowList: []

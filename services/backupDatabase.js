@@ -1,4 +1,4 @@
-// The database backup (docs/deploy.md → Railway services), run by `npm run backup:database`.
+// The database backup (docs/deploy.md → Render services), run by `npm run backup:database`.
 // pg_dump writes the whole database in its compressed custom format, the dump is encrypted with
 // the backup public key (lib/crypto.js) and uploaded to the R2 bucket (lib/r2.js) under backups/.
 // Every object key is timestamped, so a run never overwrites an earlier backup.

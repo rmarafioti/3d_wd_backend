@@ -45,6 +45,10 @@
     "test:watch": "node --test --test-concurrency=1 --watch"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": ">=24 <25"
+  },
+  "allowScripts": {
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true
   }
 }
