@@ -84,6 +84,7 @@ The MVP is fine at its current size. These rules stop it degrading as accounts, 
 - **Explicit `select` everywhere** (already a Code Style rule). It also keeps payloads small as models gain columns.
 - **Bounded child lists.** Every list a client can grow has a maximum in validation, as paragraphs (5) and images (5) do now.
 - **Image storage:** Cloudinary's free tier (25 credits a month) covers the 10–15 client websites expected in the first year. If it is outgrown, Cloudflare R2 is the fallback: new uploads switch to R2, old images stay where they are, and an optional one-off script in `prisma/scripts/` copies them and rewrites `image.src`.
+- **Backup size:** `backup-database` holds the whole encrypted dump in memory before one upload to R2 (`services/backupDatabase.js`). That is fine while the dump is small: 19 KB locally on 2026-10-26, and its size is in every run's log line (`uploaded backups/… (N bytes)`). Once it passes 100 MB, switch the service to stream the dump to R2 with a multipart upload, so memory use stays flat however large the database grows. R2's 10 GB free tier holds 30 nightly dumps of up to about 300 MB each; past that, R2 starts to charge (`docs/deploy.md` → Hosting and plans).
 - **Connection pool:** each backend instance opens its own `pg` pool through `PrismaPg` (`prisma/index.js`; `pg` defaults to 10 connections). Pool size × number of instances must stay under the Postgres connection limit on Railway. Check this before adding instances.
 
 ## 7. Running more than one instance
