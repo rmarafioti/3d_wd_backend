@@ -12,13 +12,61 @@ General to specific, top to bottom, like the code: the mission and Rich's backgr
 
 The evidence that would answer the review's questions 1 and 3 with real numbers:
 
-- **Client questionnaire** (the four owners): time and money spent before 3D Web Dev, what changed after launch (quote requests, inquiries), and whether they would pay for Hosting or Partner.
+- **Client questionnaire** (the four owners): written, below (Client questionnaire). Whether they would pay for Hosting is asked in person, not in writing.
 - **Rich's worksheet:** hours per project, the effective hourly rate on each build, monthly support time, the hours each week Rich has for 3D Web Dev alongside his full-time job, and from those, how many builds and Partner clients he can carry.
 - **More UX moments** like the "Book now" button, from the four projects (Rich). Once there are a few, they go back into the Proposal together (decided 2026-10-25); one example alone read oddly.
 
 The Proposal's "What I'm validating next" list is ordered by what can be gathered soonest: the client and Rich's own numbers first, then the clients posting on their own, a feature one client wants reused by another, and last, whether clients move to Hosting or Partner after the Portal's first year.
 
 Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $300 a year in total, so two clients on Hosting cover them." It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
+
+## Feedback on v1 (Mark, 2026-10-26)
+
+Mark (the B2B sales friend) read v1 and now sees the business as intended: helping small business owners design and build sites that meet their needs, then adapting them as the business grows. The four clients' shared traits made the case. His next steps, in his order of priority:
+
+1. **Lead with the business outcome.** The client stories say what was built, not what changed for the owner (more inquiries, easier booking, less admin work). Ask each owner what improved after launch, and quantify it. The questionnaire below gathers this.
+2. **Validate the economics.** Actual hours and costs for builds, support and hosting, to know the margins and how many clients Rich can support profitably. Rich's worksheet (Still to gather).
+3. **Make the buying decision easier.** Who it's for already names the three situations (no site, a stalled DIY site, a site that doesn't meet their needs). Turn each into why that owner should hire Rich and what they get for the money. The next Proposal change; it gets stronger once 1 has results.
+4. **No more Client Portal technology.** Its value to the owner is keeping the site current without depending on Rich for every change; the v1 section already says this.
+
+Results and costs come before investing in marketing. Mark offered to pressure-test the go-to-market plan once the numbers are in. Proposal work runs alongside the deployment checklist and doesn't block it; it shapes the landing page, if and when it's built (Rich, 2026-10-26).
+
+## Client questionnaire
+
+For the four owners, written 2026-10-26. Bucketed choices so answers can be compared across clients and repeated with every future client (Rich: open answers can't be quantified); every scale has "Not sure"; "before" and "now" share one scale, since there are no pre-launch measurements. Two open questions keep the stories and quotes. Ask it in conversation where possible, with this as the form. Back the answers with Rich's own counts (form emails before and after launch, analytics or Search Console where a site has them): don't bucket what can be counted. Question 5 keeps one scale for every business, so answers stay comparable; Rich's counts give the detail. Questions 12 to 14 shape the Partner plan: whether check-ins are wanted, how often, and about what.
+
+> **A few questions about your website**
+>
+> Your answers help me see what's working and what to improve. It takes about 10 minutes. If you're unsure, pick "Not sure".
+>
+> **Before the site**
+>
+> 1. Before your website, how did most new customers find you? (Pick up to two) Social media · Referrals or word of mouth · Walk-ins · Google search or Maps · Other: \_\_\_
+> 2. Did you try building a website yourself first? Yes, and it went live · Yes, but I didn't finish it · No
+> 3. If yes, about how much time did you spend on it? Under 5 hours · 5 to 20 hours · 20 to 50 hours · Over 50 hours · Not sure
+> 4. And about how much money (platform fees, templates, other help)? $0 · Under $100 · $100 to $500 · Over $500 · Not sure
+>
+> **Since launch**
+>
+> 5. In a typical month, how many inquiries, quote requests or booking requests do you get, counting every way customers reach you? _Before the site:_ 0 to 5 · 6 to 15 · 16 to 30 · More than 30 · Not sure. _Now:_ 0 to 5 · 6 to 15 · 16 to 30 · More than 30 · Not sure
+> 6. About how many new customers a month mention finding you through your website? None · 1 to 2 · 3 to 5 · 6 to 10 · More than 10 · Not sure
+> 7. Compared to before, how much time do you spend each week answering messages to give quotes or book appointments? Much less · A little less · About the same · More · Not sure
+> 8. About how many hours a week does the site save you? None · Under 1 hour · 1 to 3 hours · 3 to 5 hours · More than 5 hours · Not sure
+> 9. Since launch, have you noticed any of these? (Check all that apply) Customers arrive better informed · More of the jobs I want · Fewer no-shows · Fewer repeat questions · None of these · Other: \_\_\_
+>
+> **Going forward**
+>
+> 10. What would you most want to update on your site yourself? (Check all that apply) Photos or gallery · News and updates · Events · Business hours · Services and prices · Other: \_\_\_
+> 11. How often would you update it? Weekly · Monthly · A few times a year · Rarely
+> 12. Would regular check-ins with me be useful? Very useful · Somewhat useful · Not really
+> 13. If very or somewhat useful, how often? Monthly · Every three months · Twice a year · Once a year · Not sure
+> 14. If very or somewhat useful, what would you want them to cover? (Check all that apply) How many people visit the site, and how it shows up on Google · What's working and what isn't · New features or pages for the site · Planning ahead for the business (seasonal promotions, events, busy periods) · Other: \_\_\_
+> 15. Overall, how satisfied are you with your website? 1 (not at all) · 2 · 3 · 4 · 5 (very)
+> 16. What's one thing you'd like your site to do next?
+> 17. In a sentence or two, what would you tell another business owner about working with me?
+> 18. May I quote you? Yes · No
+
+Built as a Google Form: questions 3, 4, 13, 14, 16 and 17 are optional, the rest required; question 1 is checkboxes limited to two; question 5 is a grid (rows Before the site and Now).
 
 ## Moved out of the Proposal
 
