@@ -1,0 +1,25 @@
+# The backup-database cron job's image (docs/deploy.md → Render services): Node 24 and pg_dump 17.
+# It runs in Docker because Render's native Node runtime only has Postgres clients 12 to 14, and
+# pg_dump refuses to dump a server newer than itself. Debian 13 (trixie) ships
+# postgresql-client-17, the major version render.yaml pins for every database.
+FROM node:24.22.1-trixie-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-17 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# The backup needs only dotenv at runtime, but it is installed with a plain `npm ci` like everywhere
+# else: every package is checked against package-lock.json's integrity hashes, and the extra size
+# (Prisma and the API's packages, never used here) costs nothing on Render. --ignore-scripts skips
+# postinstall's prisma generate, which needs the Prisma CLI, a devDependency.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+COPY lib ./lib
+COPY services ./services
+COPY scripts ./scripts
+
+USER node
+CMD ["node", "scripts/backupDatabase.js"]

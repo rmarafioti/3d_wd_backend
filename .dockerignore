@@ -1,0 +1,9 @@
+# Kept out of every Docker build context (Dockerfile.backup), so no local secret or dependency
+# folder can end up in an image.
+.git
+node_modules
+.env
+.env.*
+docs
+testing
+**/*.test.js

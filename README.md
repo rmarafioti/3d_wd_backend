@@ -77,7 +77,7 @@ Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post u
 npm run sweep:uploads
 ```
 
-Database backups (`docs/deploy.md` → Render services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally):
+Database backups (`docs/deploy.md` → Render services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally; in production the nightly job runs in Docker, `Dockerfile.backup`):
 
 ```
 npm run backup:keygen -- --out <folder outside this repo>   # the backup key pair (once)
@@ -110,3 +110,13 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every pull request and e
 Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true } }`.
 
 When testing in Postman, every POST/PATCH/DELETE needs the header `X-CSRF-Protection: 1`.
+
+## Releasing
+
+Staging deploys every merge to `main` (`https://api-staging.3dwebdev.com`). Production deploys from the `production` branch, so a change reaches it only when released:
+
+```
+git push origin main:production
+```
+
+Render then deploys the API (migrations first) and rebuilds both production cron jobs from that commit. The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
