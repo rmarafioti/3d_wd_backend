@@ -28,7 +28,7 @@ The goal is to be ready for a SOC 2 audit if the business grows into needing one
 The numbers and routes are in `docs/endpoints.md` → Middleware Stack. They are a few times what real use of each route looks like, not a published standard, and each is one line in `lib/rateLimit.js`. After launch, compare them with the audit log and tune them.
 
 - Counts are in memory, per instance. A shared store is needed before running more than one instance (`docs/scaling.md` §7).
-- The client's address comes through one trusted proxy (`app.set('trust proxy', 1)`). If Render puts more than one proxy in front of the API, every client would look like the proxy and share one limit, so confirm the hop count when the deploy is set up.
+- The client's address comes through two trusted proxies, Cloudflare and then Render's load balancer (`app.set('trust proxy', 2)`, `docs/endpoints.md` → Middleware Stack). Staging showed the count matters: with 1, every request looked like it came from a Cloudflare address, so visitors would have shared one limit and the audit log recorded Cloudflare. Check that the `ip` in a fresh `audit_event` row is your real address after each first deploy and after any change to Render's network (`docs/deploy.md`).
 
 ## Session revocation
 
@@ -61,6 +61,8 @@ What is recorded is in `docs/endpoints.md` → Audit Log; the table is `audit_ev
 | R2 API token            | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in Render (production) , 1Password (3DWD Production) | Create a new token scoped to the bucket in Cloudflare, update Render, delete the old token.                                                                                          | Not needed: a lost token is just replaced.                                                               |
 
 1Password holds every secret outside the running systems, in three vaults: **3DWD Dev** (both repos' local `.env` values), **3DWD Production** (the production values, added as they are generated at deploy) and **3DWD Clients** (each client website's credentials from the one-time reveal, and the Vercel project that serves it). Every secret, id and password is saved as a hidden password field. A secret is copied from 1Password straight into `.env`, Render or Vercel, never through a chat, an issue or a commit.
+
+Both Cloudinary keys (dev and production) have Cloudinary's Master Admin role, a deliberate choice: of the roles Cloudinary offers a key (Master admin, Media Library user, Reports, User), only Master Admin can upload, list and delete through the API, as signing and the cleanup need. So a leaked `CLOUDINARY_API_SECRET` controls the whole Cloudinary environment, which is why it is kept only in `.env`, Render and 1Password and rotated as above (decided 2026-10-27).
 
 `GOOGLE_CLIENT_ID`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and the backup public key are public identifiers, not secrets. No secret is ever logged, returned outside its one creation response, or pasted into a chat, an issue or a commit.
 
@@ -103,6 +105,7 @@ When something looks wrong (a leaked secret, an unknown sign-in, unexpected chan
 
 - **Revalidation URL:** the backend sends a request to whatever URL a website has stored, which could in principle be aimed at an internal address (server-side request forgery, SSRF). Only the administrator enters it, and it must be `https://`. Accepted while the administrator is the only one who can set it.
 - **Upload signatures:** one signature allows any number of uploads into the website's folder for an hour, a window Cloudinary fixes. The sign limit (10 per 15 minutes) limits signatures, not uploads. Abusing it needs a signed-in site owner, and the daily cleanup deletes every upload no post uses.
+- **The proxy count depends on Render:** `trust proxy` counts Render's two proxies, which Render doesn't document. If Render added a proxy, `req.ip` would become a proxy's address again: limits shared, but nobody gets round them. If it removed one, a client could set its own address and get round the IP limits. Caught by the `ip` check above. Reading Cloudflare's `CF-Connecting-IP` instead was set aside: Render doesn't guarantee it either (2026-10-27).
 - **In-memory rate limits:** they reset when the server restarts, and each instance counts on its own (Rate limits).
 - **Backups beyond 3 days are nightly:** Render's point-in-time recovery covers the past 3 days on the Hobby workspace (7 on Pro). Past that, our own nightly dump is the backup: encrypted with a public key, kept 30 days in a private R2 bucket (`docs/deploy.md` → Render services). Restoring from it loses the changes made since the night before. Revisit if the workspace moves to Pro (`docs/deploy.md` → Hosting and plans).
 - **Admins can bypass branch protection:** kept on purpose as an escape hatch for an emergency fix (decided 2026-10-24). A bypass is used only in an incident and written in its incident notes (Incident response).

@@ -12,11 +12,12 @@ const { errorHandler, ServerError } = require('./errors');
 
 const app = express();
 
-// One proxy sits in front of the API (Render's load balancer when deployed, Next's dev rewrite
-// locally), so req.ip is the client's address from X-Forwarded-For, as the rate limits and audit
-// log need.
-// Recheck the hop count on staging (docs/deploy.md → Deployment checklist step 19).
-app.set('trust proxy', 1);
+// On Render, two proxies sit in front of the API: Cloudflare, then Render's load balancer. Each
+// appends to X-Forwarded-For, so req.ip (the rate limits' key and the audit log's ip) is the entry
+// two from the end. A count, never `true`: Render keeps whatever X-Forwarded-For a client sends,
+// so entries further left can be faked. Locally there is one proxy (Next's dev rewrite), and
+// Express stops at the leftmost entry. Checked on staging (docs/deploy.md → checklist step 19).
+app.set('trust proxy', 2);
 
 app.use(helmet());
 // Exact origin, never a wildcard: browsers refuse credentialed responses with `*`.

@@ -228,6 +228,17 @@ describe('POST /api/auth/login', () => {
     assert.deepEqual(event.metadata, { reason: 'inactive' });
   });
 
+  it('records the client address two proxies back, ignoring addresses a client adds', async () => {
+    mockGoogle(mock, { error: new Error('Invalid token signature') });
+
+    // A faked address, then the client (written by Cloudflare), then Cloudflare (written by
+    // Render's load balancer), as X-Forwarded-For arrives on Render.
+    await login().set('X-Forwarded-For', '203.0.113.9, 198.51.100.7, 172.69.0.1');
+
+    const { ip } = await prisma.auditEvent.findFirstOrThrow({ select: { ip: true } });
+    assert.equal(ip, '198.51.100.7');
+  });
+
   it('returns 429 for the sixth login from one address within 15 minutes', async () => {
     mockGoogle(mock, { error: new Error('Invalid token signature') });
     for (let attempt = 0; attempt < 5; attempt += 1) {

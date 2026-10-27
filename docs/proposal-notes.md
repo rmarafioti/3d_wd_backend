@@ -18,7 +18,7 @@ The evidence that would answer the review's questions 1 and 3 with real numbers:
 
 The Proposal's "What I'm validating next" list is ordered by what can be gathered soonest: the client and Rich's own numbers first, then the clients posting on their own, a feature one client wants reused by another, and last, whether clients move to Hosting or Partner after the Portal's first year.
 
-Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $300 a year in total, so two clients on Hosting cover them." It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
+Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $425 a year in total, so two clients on Hosting cover them." (Updated 2026-10-27 from Render's prices, Pricing → Fixed costs.) It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
 
 ## Feedback on v1 (Mark, 2026-10-26)
 
@@ -100,7 +100,7 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 
 ### Pricing
 
-- **Fixed costs:** Hosting covers them, about $300 a year for the Client Portal's servers (Vercel Pro $240 and Railway Hobby about $60), shared by every client. At $240 a year per client, four clients bring in $960.
+- **Fixed costs:** Hosting covers them, about $425 a year for the Client Portal's servers (Vercel Pro $240 and Render about $184: production's API $7, Postgres and its disk $6.30 and two cron jobs at their $1 minimum, about $15.30 a month, from Render's review screen on 2026-10-26), shared by every client. Staging adds $13.30 a month while it is kept (`docs/deploy.md` → Hosting and plans). At $240 a year per client, four clients bring in $960.
 - **Market figures behind the ranges (2026):** small business builds mostly $1,500 to $8,000 with a freelancer; mid-level US freelance rates about $60 to $100 an hour; freelance care plans about $50 to $300 a month. Most sources are agencies and vendors, so the figures are estimates. Sources: [Upwork](https://www.upwork.com/resources/how-much-does-it-cost-to-build-website), [Project Cost Estimator](https://projectcostestimator.com/freelance-website-cost), [FatLab](https://fatlabwebsupport.com/blog/website-maintenance/website-maintenance-packages-compared-your-complete-buyers-guide/), [goLance](https://golance.com/hiring/best-freelance-web-developers-hourly-rate).
 - **How Pricing is laid out (Rich, 2026-10-25):** three parts, matching how a client is billed: Website builds (Starter, Business site, Full build; fixed quotes), Changes after launch (hourly, a sentence, not a one-row table), and Hosting plans (Hosting, Partner; recurring, on top of the build). Every site on a hosting plan gets the 3DWD Client Portal, so it isn't a Full build feature. Hosting plans are billed yearly only, with no monthly price: $640 a year for Partner would be an awkward $53.33 a month.
 - **How the prices were set (2026-10-25):** Starter and Business were set a little under the market ranges. Partner is four quarterly one-hour check-ins at $100 on top of Hosting ($240 + $400 = $640).

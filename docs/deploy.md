@@ -14,7 +14,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 | Cloudflare R2 | Free (10 GB)                         | Encrypted nightly database backups                        | Backups outgrow 10 GB                                             |
 
 - **Vercel is Pro from launch.** Vercel's fair use rules allow Hobby for non-commercial personal use only, and "commercial" includes being paid to host a site. Client websites pay a hosting fee, so the frontend and every client website live in a Vercel Pro team.
-- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. About $28/mo while staging and production both run, about $15/mo once staging is deleted (checklist step 30). These figures were checked on 2026-10-26 from third-party summaries of Render's pricing; the Blueprint's review screen shows Render's own (step 15).
+- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. Render's review screen (step 15, 2026-10-26) priced staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the two cron jobs, about $15.30/mo. About $28.60/mo while staging and production both run, about $15.30/mo once staging is deleted (checklist step 30).
 - **No free Postgres:** Render's free databases expire after 30 days and have no backups, so both environments use the smallest paid plan.
 - **Database backups:** a paid Render Postgres has point-in-time recovery for the past 3 days on the Hobby workspace (7 on Pro), plus logical exports kept 7 days. The backend also makes its own, kept 30 days outside Render: `backup-database` (Render services). `docs/security.md` → Accepted risks.
 - **Hobby includes 2 custom domains:** `api.3dwebdev.com` and `api-staging.3dwebdev.com`.
@@ -63,9 +63,9 @@ Every variable the backend reads, per deployed environment. The values that aren
 
 ## Render services
 
-One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a `production` environment. Everything in it is defined in `render.yaml` at the repo root (a Render Blueprint): Render creates the services from it and applies every later change to it, so the configuration is reviewed in PRs like code. Every service runs in the `virginia` region, next to Vercel's default functions region. The Node version comes from `.nvmrc` (24), the same file CI reads.
+One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a `production` environment. Everything in it is defined in `render.yaml` at the repo root (a Render Blueprint): Render creates the services from it, so the configuration is reviewed in PRs like code. The Blueprint uses **Manual Sync**: after a merge that changes `render.yaml`, click Manual Sync in Render to apply it. Code deploys and the pre-deploy migration don't wait for it; they run on every merge to `main`. Every service runs in the `virginia` region, next to Vercel's default functions region. The Node version comes from `.nvmrc` (24), the same file CI reads.
 
-- **API** (`3dwd-api-staging`, and the production one at step 21): a Starter web service, deployed from `main` once CI's check has passed on the commit.
+- **API** (`3dwd-api-staging`, and the production one at step 21): a Starter web service, deployed from `main` once CI's check has passed on the commit. Besides its custom domain, staging's is also served at `https://threedwd-api-staging.onrender.com` (Render prefixes `threedwd-`, since a hostname can't start with a digit).
   - Build: `npm ci --include=dev`. `NODE_ENV=production` is set at build time too, which makes npm omit devDependencies, and the Prisma CLI is one.
   - Pre-deploy: `npx prisma migrate deploy`, run once per deploy before the new version takes traffic (`docs/scaling.md` §7). If it fails, the deploy fails and the previous version keeps running.
   - Start: `npm start`. Health check: `GET /api/health`, which gates the switch to the new version (zero-downtime deploys).
@@ -88,9 +88,9 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 
 ### Phase 1: Before anything is hosted
 
-5. [x] **[Rich]** Vercel: upgrade to a Pro team and move the frontend and every client website project (Stevie The Dog today) into it. Update Vercel's row in the Access table (`docs/security.md`).
+5. [x] **[Rich]** Vercel: upgrade to a Pro team and move every client website project (Stevie The Dog today) into it. Update Vercel's row in the Access table (`docs/security.md`). The frontend wasn't on Vercel yet; it was imported into the Pro team at step 16.
 6. [x] **[Rich]** Branch protection on `main` in both repos: changes only through a PR, CI's `check` must pass (2026-10-23).
-7. [x] **[Rich]** Cloudinary: generate two new key pairs, one for production and one for local dev and staging. Put the dev pair in the local `.env` and 1Password (3DWD Dev), keep the production pair for step 22, then delete the pair that was shared in a Claude session.
+7. [x] **[Rich]** Cloudinary: generate two new key pairs, one for production and one for local dev and staging. Put the dev pair in the local `.env` and 1Password (3DWD Dev), keep the production pair for step 22, then delete the pair that was shared in a Claude session. Each key needs Cloudinary's **Master Admin** role: the other roles (Media Library user, Reports, User) can't upload, list and delete through the API, and a Media Library user key fails uploads with "Request forbidden due to missing permissions" (found at step 18, `docs/security.md` → Secrets).
 8. [x] **[Rich]** Cloudflare: an account with 2FA (add it to the Access table), a private R2 bucket `3dwd-backups`, a lifecycle rule deleting objects after 30 days, and an R2 API token scoped to that bucket (object read and write), saved in 1Password (3DWD Production). Cloudflare may ask for a card even on the free tier. Then a bucket lock rule on the whole bucket, retaining objects 30 days, so a leaked token can't delete or overwrite a backup (added on `feat/database-backup`).
 9. [x] **[Claude]** `feat/database-backup`, with its own plan: the backup and restore scripts, the Backups row in `docs/security.md` → Controls in place, the encryption in `lib/crypto.js` (a random AES-256-GCM key per dump, wrapped with the RSA public key), a key pair generator, the new env vars (`docs/scaling.md` §8) and tests. Tested against a local dump and the real bucket.
 10. [x] **[Rich]** Generate the backup key pair. The private key goes into 1Password (3DWD Production) only; the public key goes to Render in step 22.
@@ -98,32 +98,42 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 ### Phase 2: Staging
 
 11. [x] **[Rich]** Render: an account that signs in with GitHub, 2FA with Google Authenticator, recovery codes printed and kept offline, a 3D Web Dev workspace on Hobby, and Render's row in the Access table (2026-10-26; Railway had closed sign-ups).
-12. [ ] **[Claude]** `deploy/staging`: `render.yaml` with the staging environment (the API and its Postgres 17), `.nvmrc` (Node 24, also used by CI), and the docs moved from Railway to Render. The build installs the Prisma CLI for the pre-deploy migration (`npm ci --include=dev`), and `docs/scaling.md` §7's migration rule is confirmed as Render's pre-deploy command.
-13. [ ] **[Rich]** Staging's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY`, freshly generated with the commands in `.env.example` and saved in 1Password (3DWD Production).
-14. [ ] **[Rich]** Create the Blueprint once `deploy/staging` is merged: Render → New → Blueprint, connect GitHub with access to **only `3d_wd_backend`**, pick the repo and `render.yaml`, and enter staging's secret values when asked (Environment variables).
-15. [ ] **[Rich + Claude]** On the Blueprint's review screen, check the services, plans and monthly price against Hosting and plans before applying, and correct Hosting and plans if they differ. Then update the server costs in `docs/proposal-notes.md` (Pricing → Fixed costs, and the server-cost line held back from v1), which still show Railway's $300 a year. Once the database exists, check its Recovery page shows point-in-time recovery.
-16. [ ] **[Rich]** Staging's domains:
+12. [x] **[Claude]** `deploy/staging`: `render.yaml` with the staging environment (the API and its Postgres 17), `.nvmrc` (Node 24, also used by CI), and the docs moved from Railway to Render. The build installs the Prisma CLI for the pre-deploy migration (`npm ci --include=dev`), and `docs/scaling.md` §7's migration rule is confirmed as Render's pre-deploy command.
+13. [x] **[Rich]** Staging's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY`, freshly generated with the commands in `.env.example` and saved in 1Password (3DWD Production).
+14. [x] **[Rich]** Create the Blueprint once `deploy/staging` is merged: Render → New → Blueprint, connect GitHub with access to **only `3d_wd_backend`**, pick the repo and `render.yaml`, and enter staging's secret values when asked (Environment variables).
+15. [x] **[Rich + Claude]** On the Blueprint's review screen, check the services, plans and monthly price against Hosting and plans before applying, and correct Hosting and plans if they differ. Then update the server costs in `docs/proposal-notes.md` (Pricing → Fixed costs, and the server-cost line held back from v1), which still show Railway's $300 a year. Once the database exists, check its Recovery page shows point-in-time recovery. (2026-10-26: $13.30/mo, Hosting and plans; 3 days of point-in-time recovery shown; the Blueprint is `3DWD-Backend`, on Manual Sync.)
+16. [x] **[Rich]** Staging's domains:
     - Render custom domain `api-staging.3dwebdev.com` on `3dwd-api-staging`, with its CNAME at Namecheap
     - Vercel: `staging.3dwebdev.com` on the frontend's `staging` branch, with that branch's env vars pointing at `https://api-staging.3dwebdev.com`, and preview deployment protection on
     - Google Cloud: `https://staging.3dwebdev.com` added to the OAuth client's authorized JavaScript origins
-17. [ ] **[Rich]** The first staging deploy of both repos. `GET https://api-staging.3dwebdev.com/api/health` returns `{ "data": { "ok": true } }`. Seed the admin: `npm run seed -- --confirm-production`, run from the API service's Render Shell.
+
+    Done 2026-10-27. The frontend was imported into the Vercel Pro team first. Its staging env vars are Preview, scoped to the `staging` branch, and set before the first build (the `NEXT_PUBLIC_*` values are built in). Vercel skipped the first push of `staging`, which was the same commit as `main`, so its first deployment was created by hand (Deployments → Create Deployment). With Standard Protection on, `staging.3dwebdev.com` also asks for a Vercel sign-in.
+
+17. [x] **[Rich]** The first staging deploy of both repos. `GET https://api-staging.3dwebdev.com/api/health` returns `{ "data": { "ok": true } }`. Seed the admin: `npm run seed -- --confirm-production`, run from the API service's Render Shell. (2026-10-27: the admin signed in on staging.)
 18. [ ] **[Rich + Claude]** The staging test, in a separate browser profile:
     - admin sign-in, create the site owner account with the Stevie The Dog website
     - site owner sign-in, a post with an uploaded image, an edit, archive and make active
     - sign-out ends the session, and a sixth sign-in attempt within 15 minutes gets the 429
     - client-website Tests A–C (`docs/client-website-test.md`), with Stevie's Vercel env pointed at staging for the test, then restored
-19. [ ] **[Rich + Claude]** The proxy hop count: the `ip` in a staging `audit_event` row is your real address, not Render's. If it isn't, `app.set('trust proxy', 1)` is fixed on a branch.
+
+    2026-10-27: everything passed except the 429, which waits for step 19. Found on the way: staging's `CLOUDINARY_API_SECRET` was mistyped, and both Cloudinary keys needed the Master Admin role (step 7). Stevie's Tests A–C passed against staging: posts and the uploaded image render, a wrong webhook secret gets 401, and create, edit, archive and make active each show after one refresh. Stevie's `HEADLESS_CMS_*` variables were unset on Vercel before the test and are unset again.
+
+19. [ ] **[Rich + Claude]** The proxy hop count: the `ip` in a staging `audit_event` row is your real address, not Render's. On 2026-10-27 it was a Cloudflare address (Render runs Cloudflare in front of its load balancer), so `fix/trust-proxy` set `app.set('trust proxy', 2)`. To tick this step, check on staging after that deploy:
+    - sign in; the newest `audit_event` row's `ip` is your real address (`psql "$DATABASE_URL" -c "SELECT action, ip, created_at FROM audit_event ORDER BY created_at DESC LIMIT 3;"` in the Render Shell)
+    - a failed login with a faked `X-Forwarded-For: 203.0.113.9` still records your real address
+    - then step 18's six sign-in attempts, the sixth getting the 429
+    - if the `ip` is still Cloudflare's, there is a third proxy: the count goes to 3 on a branch
 20. [ ] **[Frontend]** The header checks on staging (`docs/security.md` → Frontend), and `Cross-Origin-Opener-Policy: same-origin-allow-popups` added and Google sign-in re-tested.
 
 ### Phase 3: Production
 
 21. [ ] **[Claude]** `deploy/production`, with its own plan: the production environment in `render.yaml` (the API, its own Postgres 17, the `sweep-uploads` cron job daily and the `backup-database` cron job nightly) and the backup cron job's Dockerfile (Render services).
-22. [ ] **[Rich]** Once it is merged, the Blueprint syncs the new services. Set production's secrets on each service by hand, since later syncs don't ask: new `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` (into 1Password first), the production Cloudinary pair, and the backup variables (Environment variables).
+22. [ ] **[Rich]** Once it is merged, click Manual Sync on the Blueprint to create the new services. Set production's secrets on each service by hand, since later syncs don't ask: new `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` (into 1Password first), the production Cloudinary pair, and the backup variables (Environment variables).
 23. [ ] **[Rich]** Production's domains:
     - Render custom domain `api.3dwebdev.com` at Namecheap
     - Vercel: `3dwebdev.com`, with `www.3dwebdev.com` redirecting to it (the frontend must always be served from the one origin in `CORS_ORIGIN`), and the Production env vars pointing at `https://api.3dwebdev.com`
     - Google Cloud: `https://3dwebdev.com` in the OAuth client's authorized JavaScript origins
-24. [ ] **[Rich]** The first production deploy. Check the health route, seed the admin, sign in.
+24. [ ] **[Rich]** The first production deploy. Check the health route, seed the admin, sign in, and check the `ip` in that sign-in's `audit_event` row is your real address (step 19).
 25. [ ] **[Rich + Claude]** Backups: run `backup-database` once by hand, confirm the encrypted dump is in R2, restore it into a throwaway local database with the private key and check the rows. `SECRET_ENCRYPTION_KEY`, `CLOUDINARY_API_SECRET` and the backup private key are in 1Password (3DWD Production).
 26. [ ] **[Frontend]** The production header checks and the HSTS preload decision (`docs/security.md` → Frontend).
 
@@ -157,6 +167,7 @@ Restoring over production is never done by this script. If it is ever needed, it
 3. A contract change deploys the backend first, accepting both the old and the new shape, then the frontend (`docs/scaling.md` §4).
 4. Before a migration that drops or rewrites data, take a backup by hand (`backup-database`) and confirm it is in R2 (`docs/scaling.md` §8).
 5. Before the first breaking change after launch, staging exists again and the change is deployed there first.
+6. After Render announces a change to its network or load balancers, sign in and check the `ip` in the newest `audit_event` row is still your real address (step 19, `docs/security.md` → Rate limits).
 
 ## Onboarding a client website
 

@@ -181,7 +181,7 @@ Rejected examples (`400` on `body.N.text`):
 
 ## Middleware Stack
 
-`app.js` first sets `app.set('trust proxy', 1)`: one proxy sits in front of the API (Render's load balancer in staging and production, Next's dev rewrite locally), so `req.ip` is the client's address, as the rate limits and the audit log need. Recheck the hop count on staging (`docs/deploy.md` → Deployment checklist step 19).
+`app.js` first sets `app.set('trust proxy', 2)`: on Render (staging and production) two proxies sit in front of the API, Cloudflare and then Render's load balancer, and each appends to `X-Forwarded-For`. So `req.ip`, which the rate limits and the audit log need, is the client's address two entries from the end. It is a count, never `true`, because Render keeps an `X-Forwarded-For` the client sends, so the entries further left can be faked. Locally there is one proxy (Next's dev rewrite) and Express stops at the leftmost entry. Found on staging, where a count of 1 recorded Cloudflare's address (`docs/deploy.md` → Deployment checklist step 19).
 
 Applied in `app.js` / `api/index.js`, in this order:
 
