@@ -1,10 +1,13 @@
-# Render Blueprint: the API and its Postgres per environment (docs/deploy.md → Render services).
+# Render Blueprint: the API and its Postgres per environment, plus production's two cron jobs
+# (docs/deploy.md → Render services).
 # Render creates the services from this file (New → Blueprint). The Blueprint uses Manual Sync:
 # after a merge that changes this file, click Manual Sync in Render to apply it.
+# Staging deploys from main. Production deploys from the production branch, so a change reaches it
+# only when it is released with `git push origin main:production` (docs/deploy.md → Every deploy
+# after launch).
 # Values here are public and reviewed in PRs. Secrets are `sync: false`: Render asks for each one
-# once, when the Blueprint is created, and they never enter the repo. Later syncs never ask again,
-# so a secret added after creation is set on the service by hand. Production (its own Postgres
-# and the two cron jobs) is added on deploy/production (Deployment checklist step 21).
+# once, when its service is created, and they never enter the repo. Later syncs never ask again,
+# so a secret added after creation is set on the service by hand.
 projects:
   - name: 3dwd
     environments:
@@ -65,4 +68,112 @@ projects:
             diskSizeGB: 1
             # No connections from outside Render: the API and the Render Shell reach it on the
             # private network.
+            ipAllowList: []
+
+      - name: production
+        services:
+          - type: web
+            name: 3dwd-api-production
+            runtime: node
+            plan: 0.5c-512mb
+            region: virginia
+            branch: production
+            # The production branch only ever receives commits that already passed CI on main.
+            autoDeployTrigger: checksPass
+            buildCommand: npm ci --include=dev
+            preDeployCommand: npx prisma migrate deploy
+            startCommand: npm start
+            healthCheckPath: /api/health
+            envVars:
+              - key: NODE_ENV
+                value: production
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: 3dwd-db-production
+                  property: connectionString
+              - key: CORS_ORIGIN
+                value: https://3dwebdev.com
+              - key: COOKIE_DOMAIN
+                value: .3dwebdev.com
+              - key: CLOUDINARY_FOLDER
+                value: 3dwd
+              - key: GOOGLE_CLIENT_ID
+                sync: false
+              - key: JWT_SECRET
+                sync: false
+              - key: SECRET_ENCRYPTION_KEY
+                sync: false
+              - key: CLOUDINARY_CLOUD_NAME
+                sync: false
+              - key: CLOUDINARY_API_KEY
+                sync: false
+              - key: CLOUDINARY_API_SECRET
+                sync: false
+              - key: SEED_ADMIN_EMAIL
+                sync: false
+
+          # npm run sweep:uploads: deletes Cloudinary uploads under 3dwd/ that no image row uses,
+          # once they are over 24 hours old (docs/setup.md → Upload cleanup). Schedules are UTC.
+          - type: cron
+            name: 3dwd-sweep-uploads
+            runtime: node
+            plan: 0.5c-512mb
+            region: virginia
+            branch: production
+            autoDeployTrigger: checksPass
+            schedule: '0 9 * * *'
+            # The Prisma CLI (a devDependency) generates the client the sweep reads image rows with.
+            buildCommand: npm ci --include=dev
+            startCommand: npm run sweep:uploads
+            envVars:
+              - key: NODE_ENV
+                value: production
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: 3dwd-db-production
+                  property: connectionString
+              - key: CLOUDINARY_FOLDER
+                value: 3dwd
+              - key: CLOUDINARY_CLOUD_NAME
+                sync: false
+              - key: CLOUDINARY_API_KEY
+                sync: false
+              - key: CLOUDINARY_API_SECRET
+                sync: false
+
+          # npm run backup:database: an encrypted pg_dump uploaded to R2, nightly. In Docker for
+          # pg_dump 17 (Dockerfile.backup). An hour before the sweep, so the two never overlap.
+          - type: cron
+            name: 3dwd-backup-database
+            runtime: docker
+            dockerfilePath: ./Dockerfile.backup
+            plan: 0.5c-512mb
+            region: virginia
+            branch: production
+            autoDeployTrigger: checksPass
+            schedule: '0 8 * * *'
+            envVars:
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: 3dwd-db-production
+                  property: connectionString
+              - key: R2_BUCKET
+                value: 3dwd-backups
+              # The backup public key's PEM, base64 on one line. Public, but kept with the secrets
+              # so a key rotation needs no PR.
+              - key: BACKUP_PUBLIC_KEY
+                sync: false
+              - key: R2_ACCOUNT_ID
+                sync: false
+              - key: R2_ACCESS_KEY_ID
+                sync: false
+              - key: R2_SECRET_ACCESS_KEY
+                sync: false
+        databases:
+          - name: 3dwd-db-production
+            databaseName: headless_cms
+            postgresMajorVersion: '17'
+            plan: 0.1c-256mb
+            region: virginia
+            diskSizeGB: 1
             ipAllowList: []
