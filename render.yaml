@@ -1,5 +1,6 @@
 # Render Blueprint: the API and its Postgres per environment (docs/deploy.md → Render services).
-# Render creates the services from this file (New → Blueprint) and syncs every later change to it.
+# Render creates the services from this file (New → Blueprint). The Blueprint uses Manual Sync:
+# after a merge that changes this file, click Manual Sync in Render to apply it.
 # Values here are public and reviewed in PRs. Secrets are `sync: false`: Render asks for each one
 # once, when the Blueprint is created, and they never enter the repo. Later syncs never ask again,
 # so a secret added after creation is set on the service by hand. Production (its own Postgres
