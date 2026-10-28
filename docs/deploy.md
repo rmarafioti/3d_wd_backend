@@ -1,6 +1,6 @@
 # Deploy
 
-How the backend is hosted, the checklist for the first production deploy (staging first), how every later deploy runs, and how a client website is onboarded. Imported from `CLAUDE.md` via `@docs/deploy.md`. The frontend keeps its own `docs/deploy.md`; the master doc's Deployment tab copies both.
+How the backend is hosted, the checklist the first production deploy followed (staging first, launched 2026-10-28; kept as the record), how every later deploy runs, and how a client website is onboarded. Imported from `CLAUDE.md` via `@docs/deploy.md`. The frontend keeps its own `docs/deploy.md`; the master doc's Deployment tab copies both.
 
 The decisions here were made on 2026-10-24. The backend was first planned on Railway; on 2026-10-26 Railway had closed new sign-ups, so it moved to Render, the other host considered. `docs/security.md` holds the controls, secrets and access this file relies on; `docs/scaling.md` holds the rules for changing the system once it is live.
 
@@ -14,7 +14,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 | Cloudflare R2 | Free (10 GB)                         | Encrypted nightly database backups                        | Backups outgrow 10 GB                                             |
 
 - **Vercel is Pro from launch.** Vercel's fair use rules allow Hobby for non-commercial personal use only, and "commercial" includes being paid to host a site. Client websites pay a hosting fee, so the frontend and every client website live in a Vercel Pro team.
-- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. Render's review screen (step 15, 2026-10-26) priced staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the two cron jobs, about $15.30/mo. About $28.60/mo while staging and production both run, about $15.30/mo once staging is deleted (checklist step 30). Keeping staging after launch is tabled until the business is validated (step 30).
+- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. Render's review screen (step 15, 2026-10-26) priced staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the two cron jobs, about $15.30/mo. About $28.60/mo while staging and production both run, as they do since launch, and about $15.30/mo if staging is deleted. Staging is kept for now and reassessed once its cost can be justified (checklist step 30).
 - **No free Postgres:** Render's free databases expire after 30 days and have no backups, so both environments use the smallest paid plan.
 - **Database backups:** a paid Render Postgres has point-in-time recovery for the past 3 days on the Hobby workspace (7 on Pro), plus logical exports kept 7 days. The backend also makes its own, kept 30 days outside Render: `backup-database` (Render services). `docs/security.md` → Accepted risks.
 - **Hobby includes 2 custom domains:** `api.3dwebdev.com` and `api-staging.3dwebdev.com`.
@@ -31,7 +31,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 | Cron jobs           | none (`sweep:uploads` by hand) | none                               | `3dwd-sweep-uploads`, `3dwd-backup-database` |
 
 - **Staging is a rehearsal of production,** set up and tested first (the checklist, Phase 2). Production is then added to `render.yaml` beside it, with its own database and secrets (Phase 3).
-- **Releases:** staging deploys every merge to `main`; production deploys only from the `production` branch, which receives `main` when it is released (`git push origin main:production`, Every deploy after launch). So a change runs on staging before it reaches production. Once staging is deleted (step 30), the push is still the deliberate release step. The frontend still deploys production from `main` on every merge, with `staging` pushed by hand; whether it gets a `production` branch too is a frontend decision (`docs/security.md` → Change control).
+- **Releases:** staging deploys every merge to `main`; production deploys only from the `production` branch, which receives `main` when it is released (`git push origin main:production`, Every deploy after launch). So a change runs on staging before it reaches production. If staging is ever deleted (step 30), the push is still the deliberate release step. The frontend releases the same way (2026-10-27): Vercel's Production Branch is its `production` branch, which receives `main` by the same push, and its `staging` branch is pushed by hand. For a contract change the backend is released first (Every deploy after launch).
 - **Staging shares `3dwd-dev` with local,** so client websites need no extra `remotePatterns` entry to show staging images. Staging runs no sweep. A local `npm run sweep:uploads` deletes staging uploads more than 24 hours old, which is fine: staging data is throwaway.
 - **Staging and production share the cookie** (`session`, `Domain=.3dwebdev.com`), so a browser signed into both would send both cookies to both. Staging is always tested in a **separate browser profile**.
 
@@ -134,29 +134,35 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 ### Phase 3: Production
 
 21. [x] **[Claude]** `deploy/production`, with its own plan: the production environment in `render.yaml` (the API, its own Postgres 17, the `sweep-uploads` cron job daily and the `backup-database` cron job nightly) and the backup cron job's Dockerfile (Render services). Production deploys from a `production` branch, so staging is checked first (Environments → Releases). Done on `deploy/production`: `Dockerfile.backup` built locally with `pg_dump` 17.11 and dumped the local database inside the image, and `render.yaml` validated against Render's schema.
-22. [ ] **[Rich]** Once it is merged:
-    - create the `production` branch: `git push origin main:production`, and protect it on GitHub (no deletion, no force push), so it only ever moves forward to `main`
-    - generate production's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` (commands in `.env.example`) into 1Password (3DWD Production) first
-    - click Manual Sync on the Blueprint to create production's services, and enter the secrets per service (Environment variables): the API's seven, the sweep's three Cloudinary values, and the backup's four (`BACKUP_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`). Any the sync doesn't ask for are set on the service by hand.
+22. [x] **[Rich]** Once it is merged, in this order:
+    - create the `production` branch: `git push origin main:production`, and protect it on GitHub ("Allow force pushes" and "Allow deletions" left off), so it only ever moves forward to `main`. Push it before the Manual Sync: a sync without it fails with "branch production could not be found".
+    - generate production's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` (commands in `.env.example`) into 1Password (3DWD Production)
+    - click Manual Sync on the Blueprint to create production's services, and enter the secrets per service (Environment variables): the API's seven, the sweep's three Cloudinary values, and the backup's four (`BACKUP_PUBLIC_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`). Any the sync doesn't ask for are set on the service by hand, before the first deploy: a deploy without them fails the config check.
     - check the review screen's price against Hosting and plans
     - watch that the push to `production` starts the deploys. Production uses `autoDeployTrigger: checksPass`, and CI runs only on `main`; GitHub keeps a commit's check results, so Render should see them. If nothing deploys, switch production's services to `autoDeployTrigger: commit` on a branch.
-23. [ ] **[Rich]** Production's domains:
+
+    Done 2026-10-27. The first sync ran before the branch existed and the first API deploy before its secrets were entered, so both failed; with the secrets in, a Manual Deploy went live. That first deploy was manual, so whether a push to `production` deploys by itself is still to be seen on the first release (`CLAUDE.md` → Pending notes).
+
+23. [x] **[Rich]** Production's domains:
     - Render custom domain `api.3dwebdev.com` at Namecheap
     - Vercel: `3dwebdev.com`, with `www.3dwebdev.com` redirecting to it (the frontend must always be served from the one origin in `CORS_ORIGIN`), and the Production env vars pointing at `https://api.3dwebdev.com`
     - Google Cloud: `https://3dwebdev.com` in the OAuth client's authorized JavaScript origins
-24. [ ] **[Rich]** The first production deploy. Check the health route, seed the admin, sign in, and check the `ip` in that sign-in's `audit_event` row is your real address (step 19).
-25. [ ] **[Rich + Claude]** Backups: run `3dwd-backup-database` once by hand (Trigger Run in Render), confirm the encrypted dump is in R2, restore it into a throwaway local database with the private key and check the rows. `SECRET_ENCRYPTION_KEY`, `CLOUDINARY_API_SECRET` and the backup private key are in 1Password (3DWD Production).
-26. [ ] **[Frontend]** The production header checks, including the securityheaders.com and Mozilla Observatory scans moved from step 20, and the HSTS preload decision (`docs/security.md` → Frontend).
+
+    Done 2026-10-27. Vercel first made `www` the primary domain and redirected the apex to it; it was flipped so `3dwebdev.com` serves production and `www` redirects to it (308). The frontend's `NEXT_PUBLIC_*` variables existed only for Preview (staging), so Google sign-in failed with "Missing required parameter: client_id" until they were added for Production and the frontend redeployed.
+
+24. [x] **[Rich]** The first production deploy. Check the health route, seed the admin, sign in, and check the `ip` in that sign-in's `audit_event` row is your real address (step 19). Done 2026-10-27: the `ip` was Rich's real address, so `trust proxy` 2 holds in production too.
+25. [x] **[Rich + Claude]** Backups: run `3dwd-backup-database` once by hand (Trigger Run in Render), confirm the encrypted dump is in R2, restore it into a throwaway local database with the private key and check the rows. `SECRET_ENCRYPTION_KEY`, `CLOUDINARY_API_SECRET` and the backup private key are in 1Password (3DWD Production). Done 2026-10-27: `backups/2026-10-28T00-15-48-612Z.dump.enc` (19,410 bytes) restored with `pg_restore` 17 into a throwaway database, matching production (1 admin, 1 audit row, 8 migrations). The throwaway database, the key file and the dump were then deleted.
+26. [x] **[Frontend]** The production header checks, including the securityheaders.com and Mozilla Observatory scans moved from step 20, and the HSTS preload decision (`docs/security.md` → Frontend). Done 2026-10-27 (frontend PR #33).
 
 ### Phase 4: Stevie The Dog, the first onboarding
 
-27. [ ] **[Rich]** Onboard Stevie The Dog by the flow in Onboarding a client website. The production database starts empty, so this is a new account and website: a new API key and webhook secret, and the folder `3dwd/steviethedog`. Its `remotePatterns` already allow that folder.
-28. [ ] **[Rich]** Write "First Post!" again, with an uploaded image. Run client-website Tests A–C against production and check the audit log rows.
+27. [x] **[Rich]** Onboard Stevie The Dog by the flow in Onboarding a client website. The production database starts empty, so this is a new account and website: a new API key and webhook secret, and the folder `3dwd/steviethedog`. Its `remotePatterns` already allow that folder. Done 2026-10-28: `media_folder` is `steviethedog`, the credentials are in 1Password (3DWD Clients), and Stevie's Vercel Production variables point at `https://api.3dwebdev.com`.
+28. [x] **[Rich]** Write a first post with an uploaded image. Run client-website Tests A–C against production and check the audit log rows. Done 2026-10-28: a post with an image was created, archived, made active, then edited (image removed, formatted paragraphs added), and each change showed on the live site after one refresh. A wrong webhook secret gets `401`. The audit log holds every sign-in, sign-out and change, each with Rich's real `ip`.
 
 ### Phase 5: After launch
 
-29. [ ] **[Claude]** `docs/launch`: retire `docs/scaling.md` §0 (breaking changes now go through expand → migrate → contract) and the "until the first production deploy" lines in `CLAUDE.md`, add a production baseline beside the local one, and hand off so the frontend retires its own §0. In the master doc, mark the one-time sections as the record of the launch (the Runbook's build order, this checklist) and retire what no longer applies.
-30. [ ] **[Rich + Claude]** Delete staging to save its cost: remove its environment from `render.yaml` on a branch, then delete its services and database in Render. Production stays on the `production` branch. Keeping staging (+$13.30/mo) was tabled on 2026-10-27, to be revisited once go-to-market is finished and more clients sign on, or existing clients sign on to the pricing tiers. Until then it is added back before the first breaking change (`docs/scaling.md` §8).
+29. [ ] **[Claude]** `docs/launch`: retire `docs/scaling.md` §0 (breaking changes now go through expand → migrate → contract) and the "until the first production deploy" lines in `CLAUDE.md`, add a production baseline beside the local one, and hand off so the frontend retires its own §0. In the master doc, mark the one-time sections as the record of the launch (the Runbook's build order, this checklist) and retire what no longer applies. The repo side was done 2026-10-28; the master doc is refreshed in a full Documentation Sync after the merge, since its copy tabs still describe Railway throughout.
+30. [ ] **[Rich + Claude]** Reassess staging. It is kept for now (Rich, 2026-10-28), at $13.30/mo, until its cost can be justified: once go-to-market is finished and more clients sign on, or existing clients sign on to the pricing tiers. If it is deleted: remove its environment from `render.yaml` on a branch, then delete its services and database in Render. Production stays on the `production` branch either way, and a deleted staging is added back before the first breaking change (`docs/scaling.md` §8).
 31. [ ] **[Rich]** Onboard the VIP clients one at a time.
 
 ## Restoring a backup
@@ -174,11 +180,11 @@ Restoring over production is never done by this script. If it is ever needed, it
 ## Every deploy after launch
 
 1. A change merges to `main` through a PR with CI green (branch protection). Render deploys it to staging, running `npx prisma migrate deploy` before the new version takes traffic.
-2. Check it on staging (while staging exists).
+2. Check it on staging.
 3. Before a migration that drops or rewrites data, take a backup by hand (run `3dwd-backup-database` in Render) and confirm it is in R2 (`docs/scaling.md` §8).
-4. Release: `git push origin main:production`. Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. Vercel deploys the frontend.
+4. Release: `git push origin main:production`. Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. The frontend is released by the same push in its own repo, which Vercel deploys.
 5. A contract change releases the backend first, accepting both the old and the new shape, then the frontend (`docs/scaling.md` §4).
-6. Before the first breaking change after launch, staging exists again and the change is deployed there first.
+6. If staging has been deleted (step 30), it is added back before the first breaking change, and the change is deployed there first.
 7. After Render announces a change to its network or load balancers, sign in and check the `ip` in the newest `audit_event` row is still your real address (step 19, `docs/security.md` → Rate limits).
 
 ## Onboarding a client website
