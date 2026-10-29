@@ -1,7 +1,7 @@
 // Request tests for the admin routes (api/admin/index.js): the account list, the website picker,
-// Create an Account and Link a Website. Covers the role guard, every documented 400/404/409,
-// credentials only on a new website, the audit events each change writes, and that no secret
-// ever reaches a response.
+// Create an Account, Link a Website and the audit event list. Covers the role guard, every
+// documented 400/404/409, credentials only on a new website, the audit events each change writes,
+// the audit list's months and pages, the months that have events, and that no secret ever reaches a response.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -20,6 +20,7 @@ const {
   sessionCookie,
   assertNoSecrets,
   auditEvents,
+  createAuditEvent,
 } = require('../../testing/helpers');
 
 const VALIDATION_FAILED = 'Please fix the highlighted fields.';
@@ -54,6 +55,8 @@ describe('admin route guards', () => {
     ['get', '/api/admin/websites'],
     ['post', '/api/admin/accounts'],
     ['post', '/api/admin/accounts/some-id/websites'],
+    ['get', '/api/admin/auditEvents'],
+    ['get', '/api/admin/auditEvents/months'],
   ];
 
   for (const [method, path] of routes) {
@@ -515,5 +518,180 @@ describe('POST /api/admin/accounts/:id/websites', () => {
     assert.equal(res.status, 409);
     assert.deepEqual(res.body, { error: { message: URL_TAKEN } });
     assert.equal(await prisma.website.count(), 1);
+  });
+});
+
+describe('GET /api/admin/auditEvents', () => {
+  const AUDIT_EVENT_FIELDS = [
+    'action',
+    'actorEmail',
+    'createdAt',
+    'id',
+    'ip',
+    'metadata',
+    'targetId',
+    'targetType',
+  ];
+
+  it("returns the current month's events newest first, without actorId", async () => {
+    const admin = await createAdmin();
+    const older = await createAuditEvent({ actorId: admin.id, targetType: 'post', targetId: 'p1' });
+    const newer = await createAuditEvent({ action: 'auth.logout', metadata: { websiteId: 'w1' } });
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      res.body.data.map((event) => event.id),
+      [newer.id, older.id],
+    );
+    assert.deepEqual(Object.keys(res.body.data[1]).sort(), AUDIT_EVENT_FIELDS);
+    assert.deepEqual(res.body.data[1], {
+      id: older.id,
+      action: 'auth.login_succeeded',
+      actorEmail: 'admin@example.com',
+      targetType: 'post',
+      targetId: 'p1',
+      metadata: null,
+      ip: '203.0.113.1',
+      createdAt: older.createdAt.toISOString(),
+    });
+    assert.deepEqual(res.body.data[0].metadata, { websiteId: 'w1' });
+    assert.equal(res.body.nextCursor, null);
+  });
+
+  it('returns only the requested month, bounded in UTC', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent({ createdAt: new Date('2026-09-30T23:59:59.999Z') });
+    const first = await createAuditEvent({ createdAt: new Date('2026-10-01T00:00:00.000Z') });
+    const last = await createAuditEvent({ createdAt: new Date('2026-10-31T23:59:59.999Z') });
+    await createAuditEvent({ createdAt: new Date('2026-11-01T00:00:00.000Z') });
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents?month=2026-10');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      res.body.data.map((event) => event.id),
+      [last.id, first.id],
+    );
+  });
+
+  it('returns an empty list for a month with no events', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent();
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents?month=2020-01');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { data: [], nextCursor: null });
+  });
+
+  it('pages through a month with limit and the returned cursor', async () => {
+    const admin = await createAdmin();
+    const first = await createAuditEvent();
+    const second = await createAuditEvent();
+    const third = await createAuditEvent();
+
+    const page1 = await as(admin, 'get', '/api/admin/auditEvents?limit=2');
+    const page2 = await as(
+      admin,
+      'get',
+      `/api/admin/auditEvents?limit=2&cursor=${page1.body.nextCursor}`,
+    );
+
+    assert.deepEqual(
+      page1.body.data.map((event) => event.id),
+      [third.id, second.id],
+    );
+    assert.equal(page1.body.nextCursor, second.id);
+    assert.deepEqual(
+      page2.body.data.map((event) => event.id),
+      [first.id],
+    );
+    assert.equal(page2.body.nextCursor, null);
+  });
+
+  it('returns 50 events per page by default', async () => {
+    const admin = await createAdmin();
+    for (let i = 0; i < 51; i += 1) await createAuditEvent();
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents');
+
+    assert.equal(res.body.data.length, 50);
+    assert.equal(res.body.nextCursor, res.body.data[49].id);
+  });
+
+  const invalidQueries = [
+    ['month=2026-13', 'month', 'Enter a month as YYYY-MM.'],
+    ['month=2026-1', 'month', 'Enter a month as YYYY-MM.'],
+    ['month=2026-10&month=2026-11', 'month', 'Enter a month as YYYY-MM.'],
+    ['limit=0', 'limit', 'Limit must be a whole number from 1 to 100.'],
+    ['limit=101', 'limit', 'Limit must be a whole number from 1 to 100.'],
+    ['limit=1.5', 'limit', 'Limit must be a whole number from 1 to 100.'],
+    ['limit=abc', 'limit', 'Limit must be a whole number from 1 to 100.'],
+    ['cursor=not-a-uuid', 'cursor', 'Invalid cursor.'],
+  ];
+
+  for (const [query, field, message] of invalidQueries) {
+    it(`returns 400 on ${field} for ?${query}`, async () => {
+      const admin = await createAdmin();
+
+      const res = await as(admin, 'get', `/api/admin/auditEvents?${query}`);
+
+      assert.equal(res.status, 400);
+      assert.deepEqual(res.body, {
+        error: { message: VALIDATION_FAILED, fields: { [field]: message } },
+      });
+    });
+  }
+
+  it('writes no audit event of its own', async () => {
+    const admin = await createAdmin();
+
+    await as(admin, 'get', '/api/admin/auditEvents');
+
+    assert.deepEqual(await auditEvents(), []);
+  });
+});
+
+describe('GET /api/admin/auditEvents/months', () => {
+  it('returns each month with events once, newest first', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent({ createdAt: new Date('2026-09-15T12:00:00.000Z') });
+    await createAuditEvent({ createdAt: new Date('2026-10-02T12:00:00.000Z') });
+    await createAuditEvent({ createdAt: new Date('2026-10-20T12:00:00.000Z') });
+    await createAuditEvent({ createdAt: new Date('2026-12-01T12:00:00.000Z') });
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents/months');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { data: ['2026-12', '2026-10', '2026-09'] });
+  });
+
+  it('places events in their UTC month', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent({ createdAt: new Date('2026-10-31T23:59:59.999Z') });
+    await createAuditEvent({ createdAt: new Date('2026-11-01T00:00:00.000Z') });
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents/months');
+
+    assert.deepEqual(res.body, { data: ['2026-11', '2026-10'] });
+  });
+
+  it('returns an empty list when there are no events', async () => {
+    const admin = await createAdmin();
+
+    const res = await as(admin, 'get', '/api/admin/auditEvents/months');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { data: [] });
+  });
+
+  it('writes no audit event of its own', async () => {
+    const admin = await createAdmin();
+
+    await as(admin, 'get', '/api/admin/auditEvents/months');
+
+    assert.deepEqual(await auditEvents(), []);
   });
 });

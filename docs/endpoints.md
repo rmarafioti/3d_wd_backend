@@ -45,6 +45,7 @@ UploadSignature { uploadUrl, fields }               // fields: Cloudinary form f
 Image          { id, src, width, height, altText }
 Element        { type: 'paragraph', text } | { type: 'image', image: Image }
 PostSummary    { id, postName, postDate, active, createdAt }
+AuditEvent     { id, action, actorEmail, targetType, targetId, metadata, ip, createdAt }
 Post           { id, websiteId, websiteName, postName, header, subHeader,
                  postDate, active, createdAt, updatedAt, body: Element[] }
 ```
@@ -55,26 +56,30 @@ A post's `body` is its content as an ordered list of elements: each element is a
 
 ### Endpoints
 
-| Method & path                           | Who                                               | Request body                                                                                                                                                         | Success                                             |
-| --------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `POST /api/auth/login`                  | anyone                                            | `{ credential }` (Google ID token)                                                                                                                                   | `200 { role }` + sets session cookie                |
-| `POST /api/auth/logout`                 | anyone                                            | —                                                                                                                                                                    | `204`, ends every session of the account            |
-| `GET /api/auth/me`                      | signed in                                         | —                                                                                                                                                                    | `200 { id, name, email, role }`                     |
-| `GET /api/admin/accounts`               | admin                                             | —                                                                                                                                                                    | `200 [ Account + { websites: WebsiteSummary[] } ]`  |
-| `GET /api/admin/websites`               | admin                                             | —                                                                                                                                                                    | `200 WebsiteSummary[]` (active only)                |
-| `POST /api/admin/accounts`              | admin                                             | `{ name, email, websiteId }` **or** `{ name, email, websiteName, websiteUrl }`                                                                                       | `201 { account, website, credentials? }`            |
-| `POST /api/admin/accounts/:id/websites` | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                 | `201 { website, credentials? }`                     |
-| `GET /api/siteOwner/websites`           | site owner                                        | —                                                                                                                                                                    | `200 [ WebsiteSummary + { posts: PostSummary[] } ]` |
-| `POST /api/siteOwner/posts`             | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, active?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }] }` | `201 Post`                                          |
-| `GET /api/siteOwner/posts/:id`          | site owner                                        | —                                                                                                                                                                    | `200 Post`                                          |
-| `PATCH /api/siteOwner/posts/:id`        | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }] }`                   | `200 Post`                                          |
-| `PATCH /api/siteOwner/posts/:id/status` | site owner                                        | `{ active }`                                                                                                                                                         | `200 Post`                                          |
-| `POST /api/siteOwner/uploads/sign`      | site owner                                        | `{ websiteId }`                                                                                                                                                      | `200 UploadSignature`                               |
-| `GET /api/public/posts`                 | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                    | `200 PublicPost[]`                                  |
-| `GET /api/health`                       | anyone                                            | —                                                                                                                                                                    | `200 { ok: true }`                                  |
+| Method & path                                      | Who                                               | Request body                                                                                                                                                         | Success                                             |
+| -------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `POST /api/auth/login`                             | anyone                                            | `{ credential }` (Google ID token)                                                                                                                                   | `200 { role }` + sets session cookie                |
+| `POST /api/auth/logout`                            | anyone                                            | —                                                                                                                                                                    | `204`, ends every session of the account            |
+| `GET /api/auth/me`                                 | signed in                                         | —                                                                                                                                                                    | `200 { id, name, email, role }`                     |
+| `GET /api/admin/accounts`                          | admin                                             | —                                                                                                                                                                    | `200 [ Account + { websites: WebsiteSummary[] } ]`  |
+| `GET /api/admin/websites`                          | admin                                             | —                                                                                                                                                                    | `200 WebsiteSummary[]` (active only)                |
+| `GET /api/admin/auditEvents?month=&limit=&cursor=` | admin                                             | —                                                                                                                                                                    | `200 { data: AuditEvent[], nextCursor }`            |
+| `GET /api/admin/auditEvents/months`                | admin                                             | —                                                                                                                                                                    | `200 string[]` (`YYYY-MM`, newest first)            |
+| `POST /api/admin/accounts`                         | admin                                             | `{ name, email, websiteId }` **or** `{ name, email, websiteName, websiteUrl }`                                                                                       | `201 { account, website, credentials? }`            |
+| `POST /api/admin/accounts/:id/websites`            | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                 | `201 { website, credentials? }`                     |
+| `GET /api/siteOwner/websites`                      | site owner                                        | —                                                                                                                                                                    | `200 [ WebsiteSummary + { posts: PostSummary[] } ]` |
+| `POST /api/siteOwner/posts`                        | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, active?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }] }` | `201 Post`                                          |
+| `GET /api/siteOwner/posts/:id`                     | site owner                                        | —                                                                                                                                                                    | `200 Post`                                          |
+| `PATCH /api/siteOwner/posts/:id`                   | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }] }`                   | `200 Post`                                          |
+| `PATCH /api/siteOwner/posts/:id/status`            | site owner                                        | `{ active }`                                                                                                                                                         | `200 Post`                                          |
+| `POST /api/siteOwner/uploads/sign`                 | site owner                                        | `{ websiteId }`                                                                                                                                                      | `200 UploadSignature`                               |
+| `GET /api/public/posts`                            | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                    | `200 PublicPost[]`                                  |
+| `GET /api/health`                                  | anyone                                            | —                                                                                                                                                                    | `200 { ok: true }`                                  |
 
 Notes:
 
+- `GET /api/admin/auditEvents` lists one month of audit events, newest first, a page at a time. `month` is `YYYY-MM`, a UTC calendar month, and defaults to the current one. `limit` is 1–100, default 50. `nextCursor` sits beside `data` in the success body: send it as `cursor` to get the next page of the same month; it is `null` on the last page. All three query parameters are optional. `AuditEvent`'s `actorEmail`, `targetType`, `targetId`, `metadata` and `ip` are `null` when the row has none; `metadata` holds only ids and short facts (`{ websiteId }`, or a failed login's `{ reason }`). Read-only: no route edits or deletes an audit event.
+- `GET /api/admin/auditEvents/months` lists every UTC month that has at least one audit event, as `YYYY-MM`, newest first, so the page's month controls reach only months with events. An empty log returns `[]`. It is not paginated: there is one item per month, so years of history stay a few dozen strings.
 - `credentials` is only present when a **new** website was created. Its presence is what tells the frontend to open the one-time reveal dialog. When an existing website was linked, it is absent.
 - On `POST /api/admin/accounts` and `POST /api/admin/accounts/:id/websites` the body must contain **either** `websiteId` **or** both `websiteName` and `websiteUrl` — never both, never neither (400).
 - `PATCH /api/siteOwner/posts/:id` is a full submission of the edit form: all fields are sent every time. Send `null` to clear an optional field. `body` is the complete current list, in order. An existing image carries its `image.id`, a new one has none, and any image stored but missing from the body is deleted. Paragraphs carry no id. `websiteId` and `active` cannot be changed here.
@@ -118,6 +123,7 @@ Notes:
 - `body`: a list of elements, each with `type` `paragraph` or `image`. At least 1 paragraph, max 5 paragraphs and max 5 images per post. Paragraph `text`: required, max 10000 (trimmed at the ends; line breaks inside are kept). Image element: `image` required, with `src`, `width`, `height`, `altText` all required; `width`/`height` whole numbers 1–10000; `altText` max 200.
 - Paragraph links: every `[text](url)` in a paragraph's `text` (see Paragraph formatting) must have link text (max 100, after trimming) and a valid URL starting with `https://`. A failing link reports on that paragraph's `body.N.text`, with the message for the first failing link in the text (a link's text is checked before its URL).
 - `active` (create / status): boolean.
+- Audit events query: `month` matches `YYYY-MM` with a month from 01 to 12 ("Enter a month as YYYY-MM."); `limit` is a whole number from 1 to 100 ("Limit must be a whole number from 1 to 100."); `cursor` is a UUID ("Invalid cursor."). A parameter sent twice fails its rule.
 
 ### Paragraph formatting
 
@@ -264,6 +270,23 @@ Every account where `role = site_owner` (active and inactive), sorted by `name`,
 
 Every **active** website, sorted by `websiteName`: `[{ id, websiteName, url, active }]`. Powers the website picker in Create an Account and Link a Website.
 
+### Get Audit Events — `GET /api/admin/auditEvents`
+
+The read-only audit log view, so the administrator can answer "who changed this?" without the Render Shell. Query `?month=YYYY-MM&limit=&cursor=`, all optional.
+
+1. Validate the query with `validation/auditEvent.js` → `400` with `fields.month`, `fields.limit` or `fields.cursor`.
+2. Read the `audit_event` rows created in that UTC month (from the 1st at 00:00 UTC up to, not including, the next month's), or in the current UTC month when `month` is absent. With a `cursor`, only rows whose `id` is below it. Ordered by `id` descending: UUIDv7 ids are time-ordered, so this is newest first.
+3. Read `limit` + 1 rows (default 50); the extra row only tells whether another page follows.
+4. Return `200 { data: AuditEvent[], nextCursor }`: every column but `actorId` (`actorEmail` already names the actor), and `nextCursor` the id of the page's last event when another page follows, else `null`.
+
+Reading the log writes no audit event.
+
+### Get Audit Event Months — `GET /api/admin/auditEvents/months`
+
+Every UTC month with at least one `audit_event` row, as `YYYY-MM`, newest first: `200 { data: ["2026-10", "2026-09"] }`, or `[]` for an empty log. The Audit Events page's Previous / Next month controls step only through these months. No query parameters. `created_at` is a timestamp without time zone holding UTC, so its month is read with `to_char(created_at, 'YYYY-MM')`. Not paginated, because the list is bounded by the calendar, not by use (`docs/scaling.md` §6). Reading it writes no audit event.
+
+Get Audit Events and Get Audit Event Months are the only routes that read `audit_event`.
+
 ### Create an Account — `POST /api/admin/accounts`
 
 Body: `{ name, email, websiteId }` (link an existing website) **or** `{ name, email, websiteName, websiteUrl }` (create a new website).
@@ -366,7 +389,7 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 `lib/audit.js` writes one append-only `audit_event` row per sign-in, sign-out and change: who (`actorId`, plus `actorEmail` so a row reads at a glance), what (`action`), to what (`targetType`, `targetId`), from where (`ip`) and when. The schema is in `docs/setup.md`; retention and how it is used are in `docs/security.md`.
 
 - An event for a database change is written with the transaction client, **inside the same `$transaction`** as the change, so a saved change always has its event and a rolled-back one leaves none. Routes that would otherwise do a single write (Link a Website's existing-website path, Archive / Make Active) use a transaction for this.
-- Nothing reads, edits or deletes audit rows through the API.
+- The only routes that read audit rows are the admin's Get Audit Events and Get Audit Event Months. Nothing edits or deletes them through the API.
 - `metadata` never holds a key, secret, token, Google credential, header or post content.
 
 | `action`                           | Written by                                           | `actorId`                     | `actorEmail`                                           | Target    | `metadata`      |
