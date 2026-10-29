@@ -1,6 +1,6 @@
 // Shared test helpers: the reset every test starts from, builders that write real rows to the test
 // database, the session cookie and CSRF header a request needs, the no-secrets assertion, the
-// audit log reader, and mocks for the two external
+// audit log reader and builder, and mocks for the two external
 // edges (Google ID-token verification and the outbound revalidation fetch).
 const assert = require('node:assert/strict');
 const { OAuth2Client } = require('google-auth-library');
@@ -166,6 +166,19 @@ function auditEvents() {
   });
 }
 
+// Writes one audit event. Pass createdAt to place it in a month; ids follow insertion order, so
+// a test inserts events oldest first.
+function createAuditEvent(overrides = {}) {
+  return prisma.auditEvent.create({
+    data: {
+      action: 'auth.login_succeeded',
+      actorEmail: 'admin@example.com',
+      ip: '203.0.113.1',
+      ...overrides,
+    },
+  });
+}
+
 // Replaces Google's ID-token verification: resolves with a ticket carrying `payload`, or rejects
 // with `error`. `tracker` is node:test's `mock` (or a test's `t.mock`), which restores it.
 function mockGoogle(tracker, { payload, error }) {
@@ -214,6 +227,7 @@ module.exports = {
   sessionCookie,
   assertNoSecrets,
   auditEvents,
+  createAuditEvent,
   mockGoogle,
   mockFetch,
   waitFor,

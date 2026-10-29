@@ -1,5 +1,6 @@
 // Admin routes, mounted at /api/admin: the site owner account list, the active website picker,
-// Create an Account and Link a Website. Every route requires a signed-in administrator.
+// Create an Account, Link a Website, and the read-only audit event list and its months. Every route
+// requires a signed-in administrator.
 // api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
 // secret exist only in the one response that creates the new website they belong to.
 // Every change writes its audit events (lib/audit.js) inside the same transaction.
@@ -11,6 +12,7 @@ const requireRole = require('../../middleware/requireRole');
 const { validate } = require('../../validation/validate');
 const { createAccountSchema } = require('../../validation/account');
 const { websiteChoiceSchema } = require('../../validation/website');
+const { listAuditEventsSchema } = require('../../validation/auditEvent');
 const { normalizeUrl, urlVariants } = require('../../lib/normalizeUrl');
 const { findFreeMediaFolder } = require('../../lib/mediaFolder');
 const {
@@ -33,6 +35,18 @@ const ACCOUNT_SELECT = {
   createdAt: true,
 };
 const WEBSITE_SUMMARY_SELECT = { id: true, websiteName: true, url: true, active: true };
+// Every audit_event column but actorId: actorEmail already names the actor.
+const AUDIT_EVENT_SELECT = {
+  id: true,
+  action: true,
+  actorEmail: true,
+  targetType: true,
+  targetId: true,
+  metadata: true,
+  ip: true,
+  createdAt: true,
+};
+const DEFAULT_PAGE_SIZE = 50;
 
 const EMAIL_TAKEN = 'An account with this email already exists.';
 const URL_TAKEN = 'A website with this URL already exists. Select it from the dropdown.';
@@ -124,6 +138,19 @@ function recordWebsiteLinked(tx, req, accountId, websiteId) {
   });
 }
 
+// The start (inclusive) and end (exclusive) of a UTC calendar month given as "YYYY-MM", or of the
+// current UTC month when none is given.
+function toMonthRange(month) {
+  const now = new Date();
+  const [year, monthNumber] = month
+    ? month.split('-').map(Number)
+    : [now.getUTCFullYear(), now.getUTCMonth() + 1];
+  return {
+    start: new Date(Date.UTC(year, monthNumber - 1, 1)),
+    end: new Date(Date.UTC(year, monthNumber, 1)),
+  };
+}
+
 // Returns 'email', 'url' or 'link' when err is a Prisma unique constraint violation (P2002) on
 // that column / pair, otherwise null. With the pg driver adapter the Postgres constraint name
 // sits nested in err.meta.driverAdapterError, so the meta object is searched for it as a string.
@@ -166,6 +193,43 @@ router.get('/websites', async (req, res) => {
     select: WEBSITE_SUMMARY_SELECT,
   });
   res.json({ data: websites });
+});
+
+// GET /api/admin/auditEvents — one UTC month of audit events, newest first, a page at a time.
+// Query: month (YYYY-MM, default the current month), limit (default 50, max 100) and cursor (the
+// previous page's nextCursor). Read-only: nothing edits or deletes audit rows.
+router.get('/auditEvents', async (req, res) => {
+  const input = validate(listAuditEventsSchema, req.query);
+  const { start, end } = toMonthRange(input.month);
+  const limit = input.limit ?? DEFAULT_PAGE_SIZE;
+
+  // UUIDv7 ids are time-ordered, so id order is creation order and the cursor is the last id seen.
+  // One row more than the page is read to tell whether another page follows.
+  const events = await prisma.auditEvent.findMany({
+    where: {
+      createdAt: { gte: start, lt: end },
+      ...(input.cursor && { id: { lt: input.cursor } }),
+    },
+    orderBy: { id: 'desc' },
+    take: limit + 1,
+    select: AUDIT_EVENT_SELECT,
+  });
+
+  const hasNextPage = events.length > limit;
+  const data = hasNextPage ? events.slice(0, limit) : events;
+  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+});
+
+// GET /api/admin/auditEvents/months — every UTC month with at least one audit event, as YYYY-MM,
+// newest first, so the page's month controls reach only months with events. created_at is a
+// timestamp without time zone holding UTC, so to_char gives the UTC month. Prisma can't group by an
+// expression, hence the raw query (a tagged template: nothing is interpolated).
+router.get('/auditEvents/months', async (req, res) => {
+  const rows = await prisma.$queryRaw`
+    SELECT DISTINCT to_char(created_at, 'YYYY-MM') AS month
+    FROM audit_event
+    ORDER BY month DESC`;
+  res.json({ data: rows.map((row) => row.month) });
 });
 
 // POST /api/admin/accounts — body { name, email, websiteId } or { name, email, websiteName, websiteUrl }.
