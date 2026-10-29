@@ -34,6 +34,7 @@
     "backup:database": "node scripts/backupDatabase.js",
     "backup:keygen": "node scripts/generateBackupKeys.js",
     "backup:restore": "node scripts/restoreBackup.js",
+    "release": "node scripts/release.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "prisma generate",

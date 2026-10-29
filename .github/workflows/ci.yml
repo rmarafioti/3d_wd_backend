@@ -1,12 +1,14 @@
 # CI: the Code Review checklist's tooling checks (item 9) on every pull request and every push to
-# main, so branch protection can require them before a merge. The tests run against a throwaway
-# Postgres service; testing/migrate.js (pretest) creates and migrates the _test database on it.
+# main or production. Branch protection requires them before a merge, and Render deploys production
+# only once a run on the production branch passes (autoDeployTrigger: checksPass; a run on main
+# alone doesn't count). The tests run against a throwaway Postgres service; testing/migrate.js
+# (pretest) creates and migrates the _test database on it.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, production]
 
 permissions:
   contents: read
