@@ -31,7 +31,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 | Cron jobs           | none (`sweep:uploads` by hand) | none                               | `3dwd-sweep-uploads`, `3dwd-backup-database` |
 
 - **Staging is a rehearsal of production,** set up and tested first (the checklist, Phase 2). Production is then added to `render.yaml` beside it, with its own database and secrets (Phase 3).
-- **Releases:** staging deploys every merge to `main`; production deploys only from the `production` branch, which receives `main` when it is released (`git push origin main:production`, Every deploy after launch). So a change runs on staging before it reaches production. If staging is ever deleted (step 30), the push is still the deliberate release step. The frontend releases the same way (2026-10-27): Vercel's Production Branch is its `production` branch, which receives `main` by the same push, and its `staging` branch is pushed by hand. For a contract change the backend is released first (Every deploy after launch).
+- **Releases:** staging deploys every merge to `main`, in both repos (the frontend's `staging.3dwebdev.com` follows its `main` branch). Production deploys only from each repo's `production` branch, which receives `main` when `npm run release` runs (`scripts/release.js`, Every deploy after launch): the backend first, then the frontend once Render reports the backend live. So a change runs on staging before it reaches production. If staging is ever deleted (step 30), the release is still the deliberate step.
 - **Staging shares `3dwd-dev` with local,** so client websites need no extra `remotePatterns` entry to show staging images. Staging runs no sweep. A local `npm run sweep:uploads` deletes staging uploads more than 24 hours old, which is fine: staging data is throwaway.
 - **Staging and production share the cookie** (`session`, `Domain=.3dwebdev.com`), so a browser signed into both would send both cookies to both. Staging is always tested in a **separate browser profile**.
 
@@ -68,7 +68,7 @@ Production's three services each read only their own variables (`render.yaml`): 
 
 One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a `production` environment. Everything in it is defined in `render.yaml` at the repo root (a Render Blueprint): Render creates the services from it, so the configuration is reviewed in PRs like code. The Blueprint uses **Manual Sync**: after a merge that changes `render.yaml`, click Manual Sync in Render to apply it. Code deploys and the pre-deploy migration don't wait for it: staging's run on every merge to `main`, production's on every push to `production`. Every service runs in the `virginia` region, next to Vercel's default functions region. The Node version comes from `.nvmrc` (24), the same file CI reads.
 
-- **API** (`3dwd-api-staging` and `3dwd-api-production`): a Starter web service. Staging deploys from `main`, production from `production`, each once CI's check has passed on the commit (`autoDeployTrigger: checksPass`; a commit pushed to `production` already passed on `main`). Besides its custom domain, staging's is also served at `https://threedwd-api-staging.onrender.com` (Render prefixes `threedwd-`, since a hostname can't start with a digit).
+- **API** (`3dwd-api-staging` and `3dwd-api-production`): a Starter web service. Staging deploys from `main`, production from `production`, each once CI's check has passed on that branch (`autoDeployTrigger: checksPass`). CI runs on pushes to `main` and `production` for this reason: on the first release (2026-10-29) a commit that had passed only on `main` didn't start the production deploy. Besides its custom domain, staging's is also served at `https://threedwd-api-staging.onrender.com` (Render prefixes `threedwd-`, since a hostname can't start with a digit).
   - Build: `npm ci --include=dev`. `NODE_ENV=production` is set at build time too, which makes npm omit devDependencies, and the Prisma CLI is one.
   - Pre-deploy: `npx prisma migrate deploy`, run once per deploy before the new version takes traffic (`docs/scaling.md` §7). If it fails, the deploy fails and the previous version keeps running.
   - Start: `npm start`. Health check: `GET /api/health`, which gates the switch to the new version (zero-downtime deploys).
@@ -141,7 +141,7 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
     - check the review screen's price against Hosting and plans
     - watch that the push to `production` starts the deploys. Production uses `autoDeployTrigger: checksPass`, and CI runs only on `main`; GitHub keeps a commit's check results, so Render should see them. If nothing deploys, switch production's services to `autoDeployTrigger: commit` on a branch.
 
-    Done 2026-10-27. The first sync ran before the branch existed and the first API deploy before its secrets were entered, so both failed; with the secrets in, a Manual Deploy went live. That first deploy was manual, so whether a push to `production` deploys by itself is still to be seen on the first release (`CLAUDE.md` → Pending notes).
+    Done 2026-10-27. The first sync ran before the branch existed and the first API deploy before its secrets were entered, so both failed; with the secrets in, a Manual Deploy went live. On the first release (2026-10-29) the push didn't deploy either: Render waits for a CI run on `production` itself. So CI now also runs on pushes to `production` (`chore/streamline-release`), and `checksPass` stays.
 
 23. [x] **[Rich]** Production's domains:
     - Render custom domain `api.3dwebdev.com` at Namecheap
@@ -179,13 +179,19 @@ Restoring over production is never done by this script. If it is ever needed, it
 
 ## Every deploy after launch
 
-1. A change merges to `main` through a PR with CI green (branch protection). Render deploys it to staging, running `npx prisma migrate deploy` before the new version takes traffic.
-2. Check it on staging.
-3. Before a migration that drops or rewrites data, take a backup by hand (run `3dwd-backup-database` in Render) and confirm it is in R2 (`docs/scaling.md` §8).
-4. Release: `git push origin main:production`. Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. The frontend is released by the same push in its own repo, which Vercel deploys.
-5. A contract change releases the backend first, accepting both the old and the new shape, then the frontend (`docs/scaling.md` §4).
-6. If staging has been deleted (step 30), it is added back before the first breaking change, and the change is deployed there first.
-7. After Render announces a change to its network or load balancers, sign in and check the `ip` in the newest `audit_event` row is still your real address (step 19, `docs/security.md` → Rate limits).
+1. **Merge.** Each PR merges to `main` with CI green (branch protection). Both staging sites deploy by themselves: Render runs `npx prisma migrate deploy`, then the new backend takes traffic; Vercel builds the frontend's `main` at `staging.3dwebdev.com`.
+2. **Check staging,** in a separate browser profile (Environments).
+3. **Release:** `npm run release` in this repo (`npm run release -- --dry-run` shows what it would do). It releases each repo's `origin/main`, never the local working tree:
+   - stops unless the backend's `main` commit is already live on staging;
+   - lists any new migrations and asks before going on. Before a migration that drops or rewrites data, take a backup first: Trigger Run on `3dwd-backup-database`, and confirm the dump is in R2 (`docs/scaling.md` §8);
+   - pushes the backend's `main` to `production`. CI runs on it, then Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. It waits until Render reports the API live, up to 20 minutes;
+   - then pushes the frontend's `main` to its `production` branch and waits for Vercel.
+
+   If CI or the Render deploy fails, it stops before the frontend, and production keeps the previous version. Backend first is what a contract change needs: the backend accepts both the old and the new shape before the frontend uses the new one (`docs/scaling.md` §4).
+
+4. **Check production.**
+
+If staging has been deleted (step 30), it is added back before the first breaking change, and the change is deployed there first. After Render announces a change to its network or load balancers, sign in and check the `ip` in the newest `audit_event` row is still your real address (step 19, `docs/security.md` → Rate limits).
 
 ## Onboarding a client website
 

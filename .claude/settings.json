@@ -5,7 +5,11 @@
       "Bash(gh api *merge*)",
       "Bash(git push origin main)",
       "Bash(git push -u origin main)",
-      "Bash(git push origin HEAD:main)"
+      "Bash(git push origin HEAD:main)",
+      "Bash(npm run release:*)",
+      "Bash(node scripts/release.js:*)",
+      "Bash(git push origin *:production)",
+      "Bash(git push origin *:refs/heads/production)"
     ]
   }
 }

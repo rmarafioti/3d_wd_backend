@@ -105,7 +105,7 @@ npm audit --omit=dev       # no high or critical advisories
 npm test                   # test suite
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every pull request and every push to `main`.
+CI (`.github/workflows/ci.yml`) runs the same checks on every pull request and every push to `main` or `production`.
 
 Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true } }`.
 
@@ -113,10 +113,11 @@ When testing in Postman, every POST/PATCH/DELETE needs the header `X-CSRF-Protec
 
 ## Releasing
 
-Staging deploys every merge to `main` (`https://api-staging.3dwebdev.com`). Production deploys from the `production` branch, so a change reaches it only when released:
+Staging deploys every merge to `main` (`https://api-staging.3dwebdev.com`). Production deploys from the `production` branch, so a change reaches it only when released, once staging looks right:
 
 ```
-git push origin main:production
+npm run release -- --dry-run   # shows what would be released, pushes nothing
+npm run release                # backend to Render, then the frontend to Vercel
 ```
 
-Render then deploys the API (migrations first) and rebuilds both production cron jobs from that commit. The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
+It needs the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR` set, and `gh` signed in. It pushes the backend's `main` to `production`, waits until Render reports the API live (CI, migrations, then the deploy, which also rebuilds both cron jobs), then pushes the frontend's `main` to its `production` branch. The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
