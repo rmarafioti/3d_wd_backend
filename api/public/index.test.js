@@ -1,5 +1,5 @@
 // Request tests for the public route (api/public/index.js): a client website fetching its posts
-// with its API key. Covers every 401, that only this website's active posts come back, newest
+// with its API key. Covers every 401, that only this website's published posts come back, newest
 // first, each body in order, that the PublicPost shape never carries postName, item ids or
 // secrets, and both rate limits (per website for a valid key, per address for a refused one).
 require('../../testing/setup');
@@ -33,7 +33,7 @@ function fetchPosts(apiKey) {
 }
 
 describe('GET /api/public/posts', () => {
-  it("returns the website's active, undeleted posts, newest first, as PublicPost without postName", async () => {
+  it("returns the website's published, undeleted posts, newest first, as PublicPost without postName", async () => {
     const { website, apiKey } = await createWebsite();
     const older = await createPost(website, {
       header: 'Older',
@@ -46,7 +46,7 @@ describe('GET /api/public/posts', () => {
       ],
     });
     const newer = await createPost(website, { header: 'Newer' });
-    await createPost(website, { header: 'Archived', active: false });
+    await createPost(website, { header: 'Draft', status: 'draft' });
     await createPost(website, { header: 'Deleted', deletedAt: new Date() });
     const { website: otherWebsite } = await createWebsite();
     await createPost(otherWebsite, { header: 'Not this website' });

@@ -27,6 +27,15 @@ enum ElementType {
   @@map("element_type")
 }
 
+// Whether a post is live on its client website. Replaces post.active (expand → migrate → contract,
+// docs/scaling.md §3).
+enum PostStatus {
+  draft
+  published
+
+  @@map("post_status")
+}
+
 model Account {
   id             String   @id @default(uuid(7))
   name           String
@@ -76,16 +85,18 @@ model AccountWebsite {
 }
 
 model Post {
-  id        String    @id @default(uuid(7))
-  websiteId String    @map("website_id")
-  postName  String    @map("post_name") // internal label, shown on the dashboard only, never public
-  postDate  DateTime? @map("post_date") @db.Date // optional date shown on the website
+  id        String     @id @default(uuid(7))
+  websiteId String     @map("website_id")
+  postName  String     @map("post_name") // internal label, shown on the dashboard only, never public
+  postDate  DateTime?  @map("post_date") @db.Date // optional date shown on the website
   header    String? // optional public headline
-  subHeader String?   @map("sub_header")
-  active    Boolean   @default(true)
-  deletedAt DateTime? @map("deleted_at") // set by Delete a Post; the post is gone from every route
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  subHeader String?    @map("sub_header")
+  // Being retired for status: every write sets the two in step until active is dropped.
+  active    Boolean    @default(true)
+  status    PostStatus @default(published)
+  deletedAt DateTime?  @map("deleted_at") // set by Delete a Post; the post is gone from every route
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
   website  Website   @relation(fields: [websiteId], references: [id])
   elements Element[]

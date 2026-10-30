@@ -25,13 +25,13 @@ The client website fetches from the local backend. Nothing leaves the machine.
    - paragraphs and images interleaved, the images uploaded from the post form
    - formatting: bold, italic, bold-italic, a link, and a link inside bold, plus markup left as typed (`5 * 3 * 2`)
    - header, sub header and post date all left empty
-   - an archived post (archive it after creating it)
+   - a draft post (set it to draft after creating it)
 4. Check the page:
    - posts appear newest first, each body in the order it was arranged
    - line breaks show, and images load from `res.cloudinary.com` under the website's folder (`3dwd-dev/steviethedog/` locally) at their stored size
    - formatting renders as in the Paragraph formatting examples (`docs/endpoints.md`), and no raw HTML is rendered
    - empty optional fields don't render
-   - the archived post does not appear
+   - the draft post does not appear
 5. Change `HEADLESS_CMS_API_KEY` to a wrong value and restart. The backend returns `401` "Invalid API key." and the website must handle it without crashing. Restore the key.
 6. Run `next build && next start -p 3001` and confirm every page that renders posts builds as static and still shows the posts.
 
@@ -57,8 +57,8 @@ A tunnel gives the local backend a public https URL for the length of the test, 
 3. In the local dashboard, as the test site owner, then refresh the live site after each step:
    - create a post: it appears
    - edit it: the change appears
-   - archive it: it disappears
-   - make it active: it returns
+   - set it to draft: it disappears
+   - publish it: it returns
 4. Each change should show on the first refresh after saving. If one only shows after a second refresh, the route is serving stale data first; check the `revalidateTag` profile in the client's `docs/client-website.md` → Check the installed Next.js version.
 
 ## Restore and clean up
@@ -71,5 +71,5 @@ A tunnel gives the local backend a public https URL for the length of the test, 
 
 - [ ] Test A: every post case renders correctly locally, a wrong key is handled, and every page that renders posts builds as static
 - [ ] Test B: a wrong secret gets `401`, and a post edit produces `POST /api/revalidate 200` on Vercel with no failure in the backend log
-- [ ] Test C: create, edit, archive and make active each show on the live site after one refresh
+- [ ] Test C: create, edit, draft and publish each show on the live site after one refresh
 - [ ] Vercel's `HEADLESS_CMS_API_URL` restored, the tunnel stopped, and the test rows deleted

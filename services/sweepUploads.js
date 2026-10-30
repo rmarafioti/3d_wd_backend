@@ -1,8 +1,9 @@
 // The upload cleanup (docs/setup.md → Upload cleanup), run by `npm run sweep:uploads`. The
 // database is the record of which images are kept: an upload under this environment's root folder
 // that is more than 24 hours old and that no kept image row refers to is deleted from Cloudinary.
-// An image row is kept while its post is active, archived, or deleted less than 30 days ago. That
-// covers images removed in an edit, uploads whose save failed, and the images of deleted posts.
+// An image row is kept while its post is published, a draft, or deleted less than 30 days ago.
+// That covers images removed in an edit, uploads whose save failed, and the images of deleted
+// posts.
 // Image rows are never deleted here. Safe to re-run; it never touches anything outside
 // CLOUDINARY_FOLDER.
 const prisma = require('../prisma');

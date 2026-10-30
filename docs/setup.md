@@ -9,7 +9,7 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - An administrator can link another website (new or existing) to an existing site owner account.
 - The administrator receives one-time access to a **new** website's API key and webhook secret.
 - A site owner can log in.
-- A site owner can create, edit, archive (soft delete) and reactivate a post.
+- A site owner can create, edit and delete a post, and set it to draft or published.
 - The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post changes.
 
 Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), photo galleries, business hours.
@@ -59,7 +59,8 @@ Table post {
   post_date  date     [null]       // optional date shown on the website so readers know how recent the post is
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
-  active     bool     [not null, default: true]
+  active     bool     [not null, default: true]   // being retired for status (Feature 8); written to match it
+  status     post_status [not null, default: 'published']  // draft or published; only published posts are public
   deleted_at datetime [null]       // set by Delete a Post: the post is gone from every route, the row stays
   created_at datetime [not null, default: now()]
   updated_at datetime [not null]
@@ -117,6 +118,11 @@ Table audit_event {
 Enum role {
   admin
   site_owner
+}
+
+Enum post_status {
+  draft
+  published
 }
 
 Enum element_type {
@@ -219,7 +225,7 @@ The database is the record of which images are kept. Post saves never call Cloud
 `npm run sweep:uploads` (`scripts/sweepUploads.js`, running `services/sweepUploads.js`):
 
 - lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
-- deletes each one that no kept `image.src` refers to. An image row is kept while its post is active or archived (archived posts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's images are deleted, unless a post that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
+- deletes each one that no kept `image.src` refers to. An image row is kept while its post is published or a draft (drafts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's images are deleted, unless a post that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
 Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_POST_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.

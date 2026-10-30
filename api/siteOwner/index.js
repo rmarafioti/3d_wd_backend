@@ -1,5 +1,5 @@
 // Site owner routes, mounted at /api/siteOwner: the site owner's websites with post summaries,
-// post create / read / edit / archive / make active / delete, and the signature for uploading a
+// post create / read / edit / draft or publish / delete, and the signature for uploading a
 // website's images to Cloudinary. Every route requires a signed-in site owner. Every post change writes its
 // audit event (lib/audit.js) inside the same transaction.
 //
@@ -38,6 +38,7 @@ const POST_SELECT = {
   subHeader: true,
   postDate: true,
   active: true,
+  status: true,
   createdAt: true,
   updatedAt: true,
   website: { select: { websiteName: true } },
@@ -74,6 +75,7 @@ function toPost(post) {
     subHeader: post.subHeader,
     postDate: toDateOnly(post.postDate),
     active: post.active,
+    status: post.status,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
     body: toBody(post.elements),
@@ -151,7 +153,14 @@ router.get('/websites', async (req, res) => {
       posts: {
         where: { deletedAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        select: { id: true, postName: true, postDate: true, active: true, createdAt: true },
+        select: {
+          id: true,
+          postName: true,
+          postDate: true,
+          active: true,
+          status: true,
+          createdAt: true,
+        },
       },
     },
   });
@@ -184,7 +193,8 @@ router.post('/posts', async (req, res) => {
         header: input.header,
         subHeader: input.subHeader,
         postDate: fromDateOnly(input.postDate),
-        active: input.active,
+        status: input.status,
+        active: input.status === 'published',
       },
       select: { id: true },
     });
@@ -209,7 +219,7 @@ router.get('/posts/:id', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/posts/:id — full edit form: the post's fields plus the complete body.
-// websiteId and active can't be changed here.
+// websiteId and status can't be changed here.
 router.patch('/posts/:id', async (req, res) => {
   const input = validate(updatePostSchema, req.body ?? {});
 
@@ -251,18 +261,22 @@ router.patch('/posts/:id', async (req, res) => {
   revalidate(post.websiteId, post.id);
 });
 
-// PATCH /api/siteOwner/posts/:id/status — archive ({ active: false }) or make active. Archiving
-// hides a post from the client website; the site owner still sees it.
+// PATCH /api/siteOwner/posts/:id/status — set a post to draft or published ({ status }, or the
+// legacy { active }). A draft is hidden from the client website; the site owner still sees it.
 router.patch('/posts/:id/status', async (req, res) => {
-  const { active } = validate(postStatusSchema, req.body ?? {});
+  const { status } = validate(postStatusSchema, req.body ?? {});
 
   const post = await findOwnedPost(req.user.id, req.params.id, { id: true, websiteId: true });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
-  const action = active ? AUDIT_ACTIONS.POST_ACTIVATED : AUDIT_ACTIONS.POST_ARCHIVED;
+  const action = status === 'published' ? AUDIT_ACTIONS.POST_PUBLISHED : AUDIT_ACTIONS.POST_DRAFTED;
   const updated = await prisma.$transaction(async (tx) => {
     await recordPostEvent(tx, req, action, post);
-    return tx.post.update({ where: { id: post.id }, data: { active }, select: POST_SELECT });
+    return tx.post.update({
+      where: { id: post.id },
+      data: { status, active: status === 'published' },
+      select: POST_SELECT,
+    });
   });
 
   res.json({ data: toPost(updated) });
