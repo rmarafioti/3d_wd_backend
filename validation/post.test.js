@@ -155,10 +155,23 @@ describe('createPostSchema', () => {
     assert.equal(input.postDate, null);
   });
 
-  it('defaults active to true when it is not sent', () => {
+  it('defaults status to published when neither status nor active is sent', () => {
     const input = validate(createPostSchema, createBody());
 
-    assert.equal(input.active, true);
+    assert.equal(input.status, 'published');
+    assert.equal('active' in input, false);
+  });
+
+  it('accepts status and active together when they agree', () => {
+    const input = validate(createPostSchema, createBody({ status: 'draft', active: false }));
+
+    assert.equal(input.status, 'draft');
+  });
+
+  it('rejects a status that is not draft or published', () => {
+    const fields = fieldErrors(createPostSchema, createBody({ status: 'archived' }));
+
+    assert.deepEqual(fields, { status: 'Status must be draft or published.' });
   });
 
   it('rejects an active value that is not a boolean', () => {

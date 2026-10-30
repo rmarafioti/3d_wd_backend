@@ -101,11 +101,18 @@ function imageElement(image) {
 }
 
 // Creates a post with its body, inserted in list order, in one transaction. `body` is a list of
-// paragraph() / imageElement() items. Returns the post with its images (in body order).
-function createPost(website, { body = [paragraph()], ...overrides } = {}) {
+// paragraph() / imageElement() items. `status` sets the legacy active in step, as the routes do.
+// Returns the post with its images (in body order).
+function createPost(website, { body = [paragraph()], status = 'published', ...overrides } = {}) {
   return prisma.$transaction(async (tx) => {
     const post = await tx.post.create({
-      data: { websiteId: website.id, postName: 'Post', ...overrides },
+      data: {
+        websiteId: website.id,
+        postName: 'Post',
+        status,
+        active: status === 'published',
+        ...overrides,
+      },
     });
     const images = [];
     for (const [position, element] of body.entries()) {

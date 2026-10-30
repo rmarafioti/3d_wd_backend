@@ -41,10 +41,10 @@ function uploadedAgo(publicId, ms) {
 }
 
 describe('sweepUploads', () => {
-  it('deletes only old uploads that no image refers to, keeping archived posts images', async () => {
+  it("deletes only old uploads that no image refers to, keeping draft posts' images", async () => {
     const { website } = await createWebsite({ mediaFolder: 'stevie' });
     await createPost(website, {
-      active: false,
+      status: 'draft',
       body: [
         paragraph(),
         imageElement({ src: imageSrc(website, 'kept'), width: 1, height: 1, altText: 'A' }),

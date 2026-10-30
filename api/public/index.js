@@ -12,11 +12,11 @@ const { toBody } = require('../../lib/postBody');
 const router = express.Router();
 router.use(invalidApiKeyRateLimit, requireApiKey, publicPostsRateLimit);
 
-// GET /api/public/posts — the website's active posts (never a deleted one), newest first, each body in reading order.
+// GET /api/public/posts — the website's published posts (never a deleted one), newest first, each body in reading order.
 // postName is internal and is never returned here; neither are image ids.
 router.get('/posts', async (req, res) => {
   const posts = await prisma.post.findMany({
-    where: { websiteId: req.website.id, active: true, deletedAt: null },
+    where: { websiteId: req.website.id, status: 'published', deletedAt: null },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     select: {
       id: true,

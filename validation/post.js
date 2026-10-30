@@ -1,4 +1,7 @@
-// Zod schemas for posts: create, edit (full form submission) and status (archive / make active).
+// Zod schemas for posts: create, edit (full form submission) and status (draft / published).
+// A post's status is `status` ('draft' or 'published'). The older boolean `active` is still
+// accepted until it is retired (Feature 8, expand → migrate → contract); both schemas turn either
+// one into `status`, and a request whose two values disagree is a 400 on `status`.
 // A post's body is an ordered list of elements, each a paragraph or an image. Paragraph text is
 // stored as typed; every [text](url) link in it is checked (docs/endpoints.md → Paragraph formatting).
 // Optional text fields and postDate come out as null when blank, null or missing, so they are
@@ -149,21 +152,65 @@ const postFields = {
     .transform((value) => value ?? null),
 };
 
-const createPostSchema = z.object({
-  websiteId: z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' })),
-  ...postFields,
-  active: z.boolean({ error: 'Active must be true or false.' }).default(true),
-  body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
-});
+// Status, plus the legacy active it replaces. Both are optional here; each schema decides what
+// happens when neither is sent.
+const statusShape = {
+  active: z.boolean({ error: 'Active must be true or false.' }).optional(),
+  status: z
+    .enum(['draft', 'published'], { error: 'Status must be draft or published.' })
+    .optional(),
+};
 
-// websiteId and active are not part of the edit form; zod strips them if sent.
+function statusFromActive(active) {
+  return active ? 'published' : 'draft';
+}
+
+// A request may send status, active or both, but both must say the same thing.
+function refineStatusChoice(data, ctx) {
+  const hasBoth = data.status !== undefined && data.active !== undefined;
+  if (hasBoth && data.status !== statusFromActive(data.active)) {
+    ctx.addIssue({ code: 'custom', path: ['status'], message: "Status and active don't match." });
+  }
+}
+
+// Collapses status and active into status alone: status when sent, else from active, else
+// `fallback`.
+function toStatusInput({ active, status, ...input }, fallback) {
+  const resolved = status ?? (active === undefined ? fallback : statusFromActive(active));
+  return { ...input, status: resolved };
+}
+
+// A new post is published unless the request says otherwise.
+const createPostSchema = z
+  .object({
+    websiteId: z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' })),
+    ...postFields,
+    ...statusShape,
+    body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
+  })
+  .superRefine(refineStatusChoice)
+  .transform((input) => toStatusInput(input, 'published'));
+
+// websiteId, status and active are not part of the edit form; zod strips them if sent.
 const updatePostSchema = z.object({
   ...postFields,
   body: bodyList(z.object({ id: itemId, ...imageShape }, { error: 'Image is required.' })),
 });
 
-const postStatusSchema = z.object({
-  active: z.boolean({ error: 'Active must be true or false.' }),
-});
+// The status route needs one of the two.
+const postStatusSchema = z
+  .object(statusShape)
+  .superRefine((data, ctx) => {
+    if (data.status === undefined && data.active === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['status'],
+        message: 'Status must be draft or published.',
+      });
+      return;
+    }
+    refineStatusChoice(data, ctx);
+  })
+  .transform((input) => toStatusInput(input));
 
 module.exports = { createPostSchema, updatePostSchema, postStatusSchema };
