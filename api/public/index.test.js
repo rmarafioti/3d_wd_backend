@@ -33,7 +33,7 @@ function fetchPosts(apiKey) {
 }
 
 describe('GET /api/public/posts', () => {
-  it("returns the website's active posts, newest first, as PublicPost without postName", async () => {
+  it("returns the website's active, undeleted posts, newest first, as PublicPost without postName", async () => {
     const { website, apiKey } = await createWebsite();
     const older = await createPost(website, {
       header: 'Older',
@@ -47,6 +47,7 @@ describe('GET /api/public/posts', () => {
     });
     const newer = await createPost(website, { header: 'Newer' });
     await createPost(website, { header: 'Archived', active: false });
+    await createPost(website, { header: 'Deleted', deletedAt: new Date() });
     const { website: otherWebsite } = await createWebsite();
     await createPost(otherWebsite, { header: 'Not this website' });
 

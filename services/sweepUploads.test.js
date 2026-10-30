@@ -1,6 +1,7 @@
 // Tests for the upload cleanup (services/sweepUploads.js). Cloudinary's Admin API is played by a
 // mocked fetch; the database is the real test database. Only uploads more than 24 hours old that
-// no image row refers to are deleted, and only under this environment's root folder.
+// no kept image row refers to are deleted, and only under this environment's root folder. A
+// deleted post's images are kept for 30 days after its deletion.
 require('../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
@@ -59,6 +60,47 @@ describe('sweepUploads', () => {
 
     assert.deepEqual(result, { checked: 3, deleted: 1 });
     assert.deepEqual(deletedIds(fetchMock), ['3dwd-test/stevie/removed']);
+  });
+
+  it('keeps a deleted post images for 30 days, then deletes them', async () => {
+    const { website } = await createWebsite({ mediaFolder: 'stevie' });
+    for (const [name, deletedAgo] of [
+      ['recent', 29 * DAY_MS],
+      ['expired', 31 * DAY_MS],
+    ]) {
+      await createPost(website, {
+        deletedAt: new Date(Date.now() - deletedAgo),
+        body: [
+          paragraph(),
+          imageElement({ src: imageSrc(website, name), width: 1, height: 1, altText: 'A' }),
+        ],
+      });
+    }
+    const fetchMock = mockAdminApi([
+      uploadedAgo('3dwd-test/stevie/recent', 40 * DAY_MS),
+      uploadedAgo('3dwd-test/stevie/expired', 40 * DAY_MS),
+    ]);
+
+    const result = await sweepUploads();
+
+    assert.deepEqual(result, { checked: 2, deleted: 1 });
+    assert.deepEqual(deletedIds(fetchMock), ['3dwd-test/stevie/expired']);
+  });
+
+  it('keeps an image a deleted post shares with a post that is not deleted', async () => {
+    const { website } = await createWebsite({ mediaFolder: 'stevie' });
+    const shared = { src: imageSrc(website, 'shared'), width: 1, height: 1, altText: 'A' };
+    await createPost(website, {
+      deletedAt: new Date(Date.now() - 31 * DAY_MS),
+      body: [paragraph(), imageElement(shared)],
+    });
+    await createPost(website, { body: [paragraph(), imageElement(shared)] });
+    const fetchMock = mockAdminApi([uploadedAgo('3dwd-test/stevie/shared', 40 * DAY_MS)]);
+
+    const result = await sweepUploads();
+
+    assert.deepEqual(result, { checked: 1, deleted: 0 });
+    assert.deepEqual(deletedIds(fetchMock), []);
   });
 
   it("lists only under this environment's root folder", async () => {

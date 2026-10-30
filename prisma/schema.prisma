@@ -83,6 +83,7 @@ model Post {
   header    String? // optional public headline
   subHeader String?   @map("sub_header")
   active    Boolean   @default(true)
+  deletedAt DateTime? @map("deleted_at") // set by Delete a Post; the post is gone from every route
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 

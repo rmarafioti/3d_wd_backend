@@ -1,5 +1,5 @@
 // Request tests for the site owner routes (api/siteOwner/index.js): websites with post summaries,
-// post create / read / edit / status, and Sign an Upload. Covers the role guard, the ownership rule
+// post create / read / edit / status / delete, and Sign an Upload. Covers the role guard, the ownership rule
 // (another owner's or an inactive website's data is a 404), validation, the image src folder rule,
 // the body order and the edit reconcile, the audit event and revalidation call after every change,
 // and the upload sign rate limit. fetch is mocked in every test, so no call leaves the machine.
@@ -101,6 +101,7 @@ describe('site owner route guards', () => {
     ['get', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id/status'],
+    ['delete', '/api/siteOwner/posts/some-id'],
     ['post', '/api/siteOwner/uploads/sign'],
   ];
 
@@ -751,6 +752,92 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     assert.deepEqual(res.body, POST_NOT_FOUND);
     const stored = await prisma.post.findUnique({ where: { id: post.id } });
     assert.equal(stored.active, true);
+  });
+});
+
+describe('DELETE /api/siteOwner/posts/:id', () => {
+  it('stamps deletedAt, returns 204 with no body and records post.deleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+
+    const res = await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    assert.equal(res.status, 204);
+    assert.equal(res.text, '');
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.ok(stored.deletedAt instanceof Date);
+    assert.deepEqual(await auditEvents(), [postEvent(owner, 'post.deleted', post.id, website.id)]);
+  });
+
+  it('calls the revalidation webhook for the post after a delete', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    const { url, options } = await revalidationCall();
+    assert.equal(url, `${website.url}/api/revalidate`);
+    assert.deepEqual(JSON.parse(options.body), { websiteId: website.id, postId: post.id });
+  });
+
+  it('returns 404 on every post route once a post is deleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+    const path = `/api/siteOwner/posts/${post.id}`;
+    await as(owner, 'delete', path);
+
+    const responses = [
+      await as(owner, 'get', path),
+      await as(owner, 'patch', path).send(editPost()),
+      await as(owner, 'patch', `${path}/status`).send({ active: false }),
+      await as(owner, 'delete', path),
+    ];
+
+    for (const res of responses) {
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, POST_NOT_FOUND);
+    }
+  });
+
+  it("leaves a deleted post out of the website's post summaries", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const kept = await createPost(website, { postName: 'Kept' });
+    const deleted = await createPost(website, { postName: 'Deleted' });
+    await as(owner, 'delete', `/api/siteOwner/posts/${deleted.id}`);
+
+    const res = await as(owner, 'get', '/api/siteOwner/websites');
+
+    assert.deepEqual(
+      res.body.data[0].posts.map((post) => post.id),
+      [kept.id],
+    );
+  });
+
+  it("returns 404 for another site owner's post and leaves it undeleted", async () => {
+    const { owner } = await createOwnerWithWebsite();
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+    const post = await createPost(otherWebsite);
+
+    const res = await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, POST_NOT_FOUND);
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.deletedAt, null);
+  });
+
+  it('returns 403 without the CSRF header and leaves the post undeleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+
+    const res = await request(app)
+      .delete(`/api/siteOwner/posts/${post.id}`)
+      .set('Cookie', sessionCookie(owner));
+
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.body, { error: { message: 'Request blocked.' } });
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.deletedAt, null);
   });
 });
 
