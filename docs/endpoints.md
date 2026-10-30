@@ -25,7 +25,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 | ---- | ------------------------------------------------------------------------------------------------------------------------------- |
 | 200  | OK                                                                                                                              |
 | 201  | Created                                                                                                                         |
-| 204  | OK, no body (logout)                                                                                                            |
+| 204  | OK, no body (logout, delete a post)                                                                                             |
 | 400  | Invalid input (validation failed, an image id that doesn't belong to the post, or an image not uploaded for the post's website) |
 | 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key                                             |
 | 403  | Signed in but wrong role, or missing CSRF header                                                                                |
@@ -72,6 +72,7 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `GET /api/siteOwner/posts/:id`                     | site owner                                        | —                                                                                                                                                                    | `200 Post`                                          |
 | `PATCH /api/siteOwner/posts/:id`                   | site owner                                        | `{ postName, header, subHeader, postDate, body: [{ type: 'paragraph', text } \| { type: 'image', image: { id?, src, width, height, altText } }] }`                   | `200 Post`                                          |
 | `PATCH /api/siteOwner/posts/:id/status`            | site owner                                        | `{ active }`                                                                                                                                                         | `200 Post`                                          |
+| `DELETE /api/siteOwner/posts/:id`                  | site owner                                        | —                                                                                                                                                                    | `204`                                               |
 | `POST /api/siteOwner/uploads/sign`                 | site owner                                        | `{ websiteId }`                                                                                                                                                      | `200 UploadSignature`                               |
 | `GET /api/public/posts`                            | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                    | `200 PublicPost[]`                                  |
 | `GET /api/health`                                  | anyone                                            | —                                                                                                                                                                    | `200 { ok: true }`                                  |
@@ -84,6 +85,7 @@ Notes:
 - On `POST /api/admin/accounts` and `POST /api/admin/accounts/:id/websites` the body must contain **either** `websiteId` **or** both `websiteName` and `websiteUrl` — never both, never neither (400).
 - `PATCH /api/siteOwner/posts/:id` is a full submission of the edit form: all fields are sent every time. Send `null` to clear an optional field. `body` is the complete current list, in order. An existing image carries its `image.id`, a new one has none, and any image stored but missing from the body is deleted. Paragraphs carry no id. `websiteId` and `active` cannot be changed here.
 - `PublicPost` is `{ id, header, subHeader, postDate, createdAt, updatedAt, body: [{ type: 'paragraph', text } | { type: 'image', image: { src, width, height, altText } }] }` — `postName` is internal and is **never** returned publicly, and neither are image ids. Only active posts, newest `createdAt` first.
+- `DELETE /api/siteOwner/posts/:id` deletes a post for good, as far as the site owner and the client website can tell: from then on every site owner post route returns `404` "Post not found." for it, `GET /api/siteOwner/websites` leaves it out, and `GET /api/public/posts` never returns it. There is no undelete. Archiving (`active: false`) is different: it hides a post from the client website while the site owner still sees it and can make it active again.
 - Images are uploaded to 3DWD's Cloudinary account from the post form; nobody types or pastes an image URL. A picked image stays in the browser until Publish. On Publish, when the body has new images, the frontend:
   1. requests one `UploadSignature` for the post's website (`POST /api/siteOwner/uploads/sign`);
   2. uploads each new image to `uploadUrl` as `multipart/form-data`: every entry of `fields`, plus the image as `file`. One signature covers every upload in that Publish. It expires after one hour, so it is requested at Publish, never when the form opens;
@@ -313,7 +315,7 @@ Gives an existing site owner another website. Body: `{ websiteId }` **or** `{ we
 
 All site-owner routes: `requireAuth` + `requireRole('site_owner')`.
 
-**Ownership check (every route below):** the account comes from `req.user` (the session), never from anything the client sends. A website belongs to the site owner when an `account_website` row links `req.user.id` to it **and** `website.active = true`. A post belongs to the site owner when its website does. Anything that fails the check returns `404` — identical to "doesn't exist".
+**Ownership check (every route below):** the account comes from `req.user` (the session), never from anything the client sends. A website belongs to the site owner when an `account_website` row links `req.user.id` to it **and** `website.active = true`. A post belongs to the site owner when its website does **and** it is not deleted (`deletedAt` null). Anything that fails the check returns `404` — identical to "doesn't exist".
 
 ### Get All Websites Tied To the Account — `GET /api/siteOwner/websites`
 
@@ -348,7 +350,17 @@ Request body: the full edit form — `{ postName, header, subHeader, postDate, b
 
 ### Archive / Make Active — `PATCH /api/siteOwner/posts/:id/status`
 
-Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. This is the soft delete — a post is never removed from the database, so it can be reactivated and its history kept. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
+Body `{ active: boolean }`. Ownership check → `404`. Set `post.active`. Archiving hides a post from the client website; the site owner still sees it on the dashboard and can make it active again. Return `200 { data: Post }`, then call `revalidate(post.websiteId, post.id)` after commit.
+
+### Delete a Post — `DELETE /api/siteOwner/posts/:id`
+
+The site owner removes a post they no longer want. It is a soft delete, like every delete in this app: the row stays in the database with `deleted_at` stamped.
+
+1. Ownership check → `404` "Post not found." A post already deleted fails it too (every site owner post route reads only posts whose `deletedAt` is null).
+2. One transaction: write `post.deleted` to the audit log and set `post.deletedAt` to now.
+3. Return `204`, then call `revalidate(post.websiteId, post.id)` after commit, so the post leaves the client website.
+
+No request body. The post's elements and image rows are kept. The upload cleanup deletes its images from Cloudinary 30 days after `deleted_at` (`docs/setup.md` → Upload cleanup), so until then a post deleted by mistake can be recovered, with its images, by clearing `deleted_at` with SQL from the Render Shell.
 
 ### Sign an Upload — `POST /api/siteOwner/uploads/sign`
 
@@ -402,6 +414,7 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 | `website.linked`                   | Create an Account, Link a Website (both paths)       | the admin                     | the admin's email                                      | `account` | `{ websiteId }` |
 | `post.created` / `post.updated`    | Create a Post, Edit a Post                           | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }` |
 | `post.archived` / `post.activated` | Archive / Make Active                                | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }` |
+| `post.deleted`                     | Delete a Post                                        | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }` |
 
 `actorEmail` is a copy of the email at the time of the event, and only ever a verified one: a Google token that fails verification records none.
 

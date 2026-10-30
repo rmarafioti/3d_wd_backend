@@ -60,6 +60,7 @@ Table post {
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
   active     bool     [not null, default: true]
+  deleted_at datetime [null]       // set by Delete a Post: the post is gone from every route, the row stays
   created_at datetime [not null, default: now()]
   updated_at datetime [not null]
 
@@ -143,7 +144,7 @@ Ref: image.post_id > post.id        // a post can have many images
 - `createdAt DateTime @default(now()) @map("created_at")`, `updatedAt DateTime @updatedAt @map("updated_at")`.
 - `postDate DateTime? @db.Date @map("post_date")`.
 - `Element.text` is `@db.Text`.
-- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted. The only deletes are elements and images removed in Edit a Post. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
+- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted (a deleted post keeps its row, with `deleted_at` set). The only deletes are elements and images removed in Edit a Post. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
 - Prisma client is a single shared instance exported from `prisma/index.js`.
 
 ### Prisma 7 notes
@@ -213,15 +214,15 @@ The migration that adds the column backfills every existing website by the same 
 
 ### Upload cleanup
 
-The database is the record of which images are kept. Post saves never call Cloudinary: an image removed in an edit, or uploaded for a Publish whose save then failed, is left for the cleanup.
+The database is the record of which images are kept. Post saves never call Cloudinary: an image removed in an edit, uploaded for a Publish whose save then failed, or on a deleted post, is left for the cleanup.
 
 `npm run sweep:uploads` (`scripts/sweepUploads.js`, running `services/sweepUploads.js`):
 
 - lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
-- deletes each one that no `image.src` refers to, whether its post is active or archived (archived posts keep their images);
+- deletes each one that no kept `image.src` refers to. An image row is kept while its post is active or archived (archived posts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's images are deleted, unless a post that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_POST_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Client websites
 

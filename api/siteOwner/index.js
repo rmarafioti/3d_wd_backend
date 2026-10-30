@@ -1,12 +1,12 @@
 // Site owner routes, mounted at /api/siteOwner: the site owner's websites with post summaries,
-// post create / read / edit / archive / make active, and the signature for uploading a website's
-// images to Cloudinary. Every route requires a signed-in site owner. Every post change writes its
+// post create / read / edit / archive / make active / delete, and the signature for uploading a
+// website's images to Cloudinary. Every route requires a signed-in site owner. Every post change writes its
 // audit event (lib/audit.js) inside the same transaction.
 //
 // Ownership: the account always comes from req.user (the session), never from the request.
 // A website belongs to the site owner when an account_website row links them AND the website is
 // active; a post belongs to them when its website does. Anything else is a 404, identical to
-// "doesn't exist", so ids can't be probed.
+// "doesn't exist", so ids can't be probed. A deleted post (deletedAt set) is a 404 on every route.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -58,7 +58,7 @@ function ownedWebsiteWhere(accountId) {
 
 function findOwnedPost(accountId, postId, select) {
   return prisma.post.findFirst({
-    where: { id: postId, website: ownedWebsiteWhere(accountId) },
+    where: { id: postId, deletedAt: null, website: ownedWebsiteWhere(accountId) },
     select,
   });
 }
@@ -149,6 +149,7 @@ router.get('/websites', async (req, res) => {
       url: true,
       active: true,
       posts: {
+        where: { deletedAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: { id: true, postName: true, postDate: true, active: true, createdAt: true },
       },
@@ -250,8 +251,8 @@ router.patch('/posts/:id', async (req, res) => {
   revalidate(post.websiteId, post.id);
 });
 
-// PATCH /api/siteOwner/posts/:id/status — archive ({ active: false }) or make active. This is the
-// soft delete: posts are never removed from the database.
+// PATCH /api/siteOwner/posts/:id/status — archive ({ active: false }) or make active. Archiving
+// hides a post from the client website; the site owner still sees it.
 router.patch('/posts/:id/status', async (req, res) => {
   const { active } = validate(postStatusSchema, req.body ?? {});
 
@@ -265,6 +266,22 @@ router.patch('/posts/:id/status', async (req, res) => {
   });
 
   res.json({ data: toPost(updated) });
+  revalidate(post.websiteId, post.id);
+});
+
+// DELETE /api/siteOwner/posts/:id — soft delete: stamps deletedAt, so the post is gone from the
+// site owner's view and the client website but stays in the database. The upload cleanup wipes
+// its images 30 days later (services/sweepUploads.js).
+router.delete('/posts/:id', async (req, res) => {
+  const post = await findOwnedPost(req.user.id, req.params.id, { id: true, websiteId: true });
+  if (!post) throw new ServerError(404, POST_NOT_FOUND);
+
+  await prisma.$transaction(async (tx) => {
+    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_DELETED, post);
+    await tx.post.update({ where: { id: post.id }, data: { deletedAt: new Date() } });
+  });
+
+  res.status(204).end();
   revalidate(post.websiteId, post.id);
 });
 
