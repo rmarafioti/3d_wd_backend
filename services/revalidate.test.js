@@ -21,7 +21,7 @@ describe('revalidate', () => {
     const post = await createPost(website);
     const fetchMock = mockFetch(t.mock);
 
-    await revalidate(website.id, post.id);
+    await revalidate(website.id, { postId: post.id });
 
     assert.equal(fetchMock.mock.callCount(), 0);
   });
@@ -29,7 +29,7 @@ describe('revalidate', () => {
   it('makes no call for a website that does not exist', async (t) => {
     const fetchMock = mockFetch(t.mock);
 
-    await revalidate('019a0000-0000-7000-8000-000000000000', 'post-id');
+    await revalidate('019a0000-0000-7000-8000-000000000000', { postId: 'post-id' });
 
     assert.equal(fetchMock.mock.callCount(), 0);
   });
@@ -39,7 +39,7 @@ describe('revalidate', () => {
     mockFetch(t.mock, 500);
     const errorLog = t.mock.method(console, 'error', () => {});
 
-    await revalidate(website.id, 'post-id');
+    await revalidate(website.id, { postId: 'post-id' });
 
     assert.equal(errorLog.mock.callCount(), 1);
     const logged = errorLog.mock.calls[0].arguments.join(' ');
@@ -52,7 +52,7 @@ describe('revalidate', () => {
     mockFetch(t.mock, new TypeError('fetch failed'));
     const errorLog = t.mock.method(console, 'error', () => {});
 
-    await assert.doesNotReject(revalidate(website.id, 'post-id'));
+    await assert.doesNotReject(revalidate(website.id, { postId: 'post-id' }));
 
     const logged = errorLog.mock.calls[0].arguments.join(' ');
     assert.equal(logged, `Revalidation failed for website ${website.id}: TypeError: fetch failed`);
@@ -64,7 +64,7 @@ describe('revalidate', () => {
     mockFetch(t.mock, 200);
     const errorLog = t.mock.method(console, 'error', () => {});
 
-    await revalidate(website.id, 'post-id');
+    await revalidate(website.id, { postId: 'post-id' });
 
     assert.equal(errorLog.mock.callCount(), 0);
   });

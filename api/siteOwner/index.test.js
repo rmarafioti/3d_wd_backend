@@ -1,4 +1,5 @@
-// Request tests for the site owner routes (api/siteOwner/index.js): websites with post summaries,
+// Request tests for the site owner routes (api/siteOwner/index.js): websites with post and gallery
+// summaries,
 // post create / read / edit / status / delete, and Sign an Upload. Covers the role guard, the ownership rule
 // (another owner's or an inactive website's data is a 404), validation, the image src folder rule,
 // the body order and the edit reconcile, the audit event and revalidation call after every change,
@@ -21,6 +22,7 @@ const {
   imageSrc,
   imageElement,
   createPost,
+  createGallery,
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,
@@ -127,7 +129,7 @@ describe('site owner route guards', () => {
 });
 
 describe('GET /api/siteOwner/websites', () => {
-  it("returns only the owner's active websites, sorted, with post summaries newest first", async () => {
+  it("returns only the owner's active websites, sorted, with post and gallery summaries newest first", async () => {
     const owner = await createSiteOwner();
     const { website: beta } = await createWebsite({ websiteName: 'Beta' });
     const { website: alpha } = await createWebsite({ websiteName: 'Alpha' });
@@ -141,6 +143,13 @@ describe('GET /api/siteOwner/websites', () => {
       postName: 'Newer',
       postDate: new Date('2026-10-01T00:00:00.000Z'),
     });
+    const olderGallery = await createGallery(alpha, {
+      galleryName: 'Interior',
+      slug: 'interior',
+      status: 'draft',
+    });
+    const newerGallery = await createGallery(alpha, { galleryName: 'Art', slug: 'art' });
+    await createGallery(alpha, { galleryName: 'Deleted', deletedAt: new Date() });
 
     const res = await as(owner, 'get', '/api/siteOwner/websites');
 
@@ -170,8 +179,31 @@ describe('GET /api/siteOwner/websites', () => {
               createdAt: older.createdAt.toISOString(),
             },
           ],
+          galleries: [
+            {
+              id: newerGallery.id,
+              galleryName: 'Art',
+              slug: 'art',
+              status: 'published',
+              createdAt: newerGallery.createdAt.toISOString(),
+            },
+            {
+              id: olderGallery.id,
+              galleryName: 'Interior',
+              slug: 'interior',
+              status: 'draft',
+              createdAt: olderGallery.createdAt.toISOString(),
+            },
+          ],
         },
-        { id: beta.id, websiteName: 'Beta', url: beta.url, active: true, posts: [] },
+        {
+          id: beta.id,
+          websiteName: 'Beta',
+          url: beta.url,
+          active: true,
+          posts: [],
+          galleries: [],
+        },
       ],
     });
     await assertNoSecrets(res.body);

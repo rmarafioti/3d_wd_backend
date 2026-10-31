@@ -1,5 +1,5 @@
 // Shared test helpers: the reset every test starts from, builders that write real rows to the test
-// database, the session cookie and CSRF header a request needs, the no-secrets assertion, the
+// database (accounts, websites, posts, galleries), the session cookie and CSRF header a request needs, the no-secrets assertion, the
 // audit log reader and builder, and mocks for the two external
 // edges (Google ID-token verification and the outbound revalidation fetch).
 const assert = require('node:assert/strict');
@@ -34,7 +34,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database and empty rate limit counts.
 async function resetState() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE element, image, post, account_website, website, account, audit_event CASCADE',
+    'TRUNCATE TABLE gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
   );
   await resetRateLimits();
 }
@@ -127,6 +127,29 @@ function createPost(website, { body = [paragraph()], status = 'published', ...ov
       images.push(image);
     }
     return { ...post, images };
+  });
+}
+
+// Creates a gallery with its images (rows of gallery_image's columns, without galleryId and
+// position), inserted in list order. The slug is unique unless one is passed.
+// Returns the gallery with its images in order.
+function createGallery(website, { images = [], ...overrides } = {}) {
+  return prisma.$transaction(async (tx) => {
+    const gallery = await tx.gallery.create({
+      data: {
+        websiteId: website.id,
+        galleryName: 'Gallery',
+        slug: `gallery-${unique()}`,
+        ...overrides,
+      },
+    });
+    const created = [];
+    for (const [position, image] of images.entries()) {
+      created.push(
+        await tx.galleryImage.create({ data: { ...image, galleryId: gallery.id, position } }),
+      );
+    }
+    return { ...gallery, images: created };
   });
 }
 
@@ -230,6 +253,7 @@ module.exports = {
   paragraph,
   imageElement,
   createPost,
+  createGallery,
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,

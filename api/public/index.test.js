@@ -1,7 +1,8 @@
-// Request tests for the public route (api/public/index.js): a client website fetching its posts
-// with its API key. Covers every 401, that only this website's published posts come back, newest
-// first, each body in order, that the PublicPost shape never carries postName, item ids or
-// secrets, and both rate limits (per website for a valid key, per address for a refused one).
+// Request tests for the public routes (api/public/index.js): a client website fetching its posts
+// and its galleries by slug with its API key. Covers every 401, that only this website's published
+// posts come back, newest first, each body in order, that the PublicPost shape never carries
+// postName, item ids or secrets, a gallery's images with their cropped versions and its 404s, and
+// both rate limits (per website for a valid key, per address for a refused one).
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -15,9 +16,12 @@ const {
   imageSrc,
   imageElement,
   createPost,
+  createGallery,
+  assertNoSecrets,
 } = require('../../testing/helpers');
 
 const INVALID_KEY = { error: { message: 'Invalid API key.' } };
+const GALLERY_NOT_FOUND = { error: { message: 'Gallery not found.' } };
 const TOO_MANY_REQUESTS = { error: { message: 'Too many requests. Please try again later.' } };
 
 // An image in the website's upload folder; override any field.
@@ -154,5 +158,114 @@ describe('GET /api/public/posts', () => {
     const res = await fetchPosts('not-a-real-key');
 
     assert.equal(res.status, 401);
+  });
+});
+
+function fetchGallery(apiKey, slug) {
+  return request(app).get(`/api/public/galleries/${slug}`).set('Authorization', `Bearer ${apiKey}`);
+}
+
+describe('GET /api/public/galleries/:slug', () => {
+  it('returns the published gallery as PublicGallery, with cropped versions and no internal fields', async () => {
+    const { website, apiKey } = await createWebsite();
+    const gallery = await createGallery(website, {
+      galleryName: 'Internal name',
+      slug: 'interior',
+      title: 'Inside',
+      copy: 'Our shop',
+      images: [
+        {
+          src: imageSrc(website, 'a'),
+          width: 1200,
+          height: 800,
+          altText: 'A',
+          caption: 'Front room',
+          thumbnailX: 200,
+          thumbnailY: 0,
+          thumbnailWidth: 800,
+          thumbnailHeight: 800,
+          mobileX: 400,
+          mobileY: 0,
+          mobileWidth: 400,
+          mobileHeight: 800,
+        },
+        { src: imageSrc(website, 'b'), width: 600, height: 900, altText: 'B' },
+      ],
+    });
+    const cropped = (transformation) =>
+      imageSrc(website, 'a').replace('/image/upload/', `/image/upload/${transformation}/`);
+
+    const res = await fetchGallery(apiKey, 'interior');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, {
+      data: {
+        id: gallery.id,
+        slug: 'interior',
+        title: 'Inside',
+        copy: 'Our shop',
+        createdAt: gallery.createdAt.toISOString(),
+        updatedAt: gallery.updatedAt.toISOString(),
+        images: [
+          {
+            src: imageSrc(website, 'a'),
+            width: 1200,
+            height: 800,
+            altText: 'A',
+            caption: 'Front room',
+            thumbnail: { src: cropped('c_crop,x_200,y_0,w_800,h_800'), width: 800, height: 800 },
+            mobile: { src: cropped('c_crop,x_400,y_0,w_400,h_800'), width: 400, height: 800 },
+          },
+          {
+            src: imageSrc(website, 'b'),
+            width: 600,
+            height: 900,
+            altText: 'B',
+            caption: null,
+            thumbnail: null,
+            mobile: null,
+          },
+        ],
+      },
+    });
+    await assertNoSecrets(res.body);
+  });
+
+  it("returns 404 for a draft, a deleted, another website's or an unknown slug", async () => {
+    const { website, apiKey } = await createWebsite();
+    await createGallery(website, { slug: 'draft', status: 'draft' });
+    await createGallery(website, { slug: 'deleted', deletedAt: new Date() });
+    const { website: other } = await createWebsite();
+    await createGallery(other, { slug: 'theirs' });
+
+    for (const slug of ['draft', 'deleted', 'theirs', 'unknown']) {
+      const res = await fetchGallery(apiKey, slug);
+
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, GALLERY_NOT_FOUND);
+    }
+  });
+
+  it('returns 401 without a valid key', async () => {
+    const { website } = await createWebsite();
+    await createGallery(website, { slug: 'interior' });
+
+    const res = await fetchGallery('not-a-real-key', 'interior');
+
+    assert.equal(res.status, 401);
+    assert.deepEqual(res.body, INVALID_KEY);
+  });
+
+  it('shares the per website limit with the posts route', async () => {
+    const { website, apiKey } = await createWebsite();
+    await createGallery(website, { slug: 'interior' });
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      assert.equal((await fetchPosts(apiKey)).status, 200);
+    }
+
+    const res = await fetchGallery(apiKey, 'interior');
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, TOO_MANY_REQUESTS);
   });
 });

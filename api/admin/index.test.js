@@ -1,7 +1,8 @@
 // Request tests for the admin routes (api/admin/index.js): the account list, the website picker,
-// Create an Account, Link a Website and the audit event list. Covers the role guard, every
-// documented 400/404/409, credentials only on a new website, the audit events each change writes,
-// the audit list's months and pages, the months that have events, and that no secret ever reaches a response.
+// Create an Account, Link a Website and the audit event list. Covers the role guard, each website's
+// gallery summaries in the account list, every documented 400/404/409, credentials only on a new
+// website, the audit events each change writes, the audit list's months and pages, the months that
+// have events, and that no secret ever reaches a response.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -17,6 +18,8 @@ const {
   createSiteOwner,
   createWebsite,
   linkWebsite,
+  createGallery,
+  imageSrc,
   sessionCookie,
   assertNoSecrets,
   auditEvents,
@@ -103,8 +106,8 @@ describe('GET /api/admin/accounts', () => {
           active: true,
           createdAt: amy.createdAt.toISOString(),
           websites: [
-            { id: alpha.id, websiteName: 'Alpha', url: alpha.url, active: false },
-            { id: beta.id, websiteName: 'Beta', url: beta.url, active: true },
+            { id: alpha.id, websiteName: 'Alpha', url: alpha.url, active: false, galleries: [] },
+            { id: beta.id, websiteName: 'Beta', url: beta.url, active: true, galleries: [] },
           ],
         },
         {
@@ -119,6 +122,77 @@ describe('GET /api/admin/accounts', () => {
       ],
     });
     await assertNoSecrets(res.body);
+  });
+
+  it("returns each website's galleries, not deleted, newest first, with a crop flag only when every image has that crop", async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const { website } = await createWebsite();
+    await linkWebsite(owner, website);
+    const image = (name, crops = {}) => ({
+      src: imageSrc(website, name),
+      width: 1200,
+      height: 800,
+      altText: 'A',
+      caption: 'A caption',
+      ...crops,
+    });
+    const crops = {
+      thumbnailX: 0,
+      thumbnailY: 0,
+      thumbnailWidth: 800,
+      thumbnailHeight: 800,
+      mobileX: 0,
+      mobileY: 0,
+      mobileWidth: 400,
+      mobileHeight: 800,
+    };
+    const cropped = await createGallery(website, {
+      galleryName: 'Cropped',
+      title: 'A title',
+      copy: 'Some copy',
+      images: [image('a', crops), image('b', crops), image('c', crops)],
+    });
+    const mixed = await createGallery(website, {
+      galleryName: 'Mixed',
+      images: [image('m1', crops), image('m2')],
+    });
+    await createGallery(website, { galleryName: 'Deleted', deletedAt: new Date() });
+    const plain = await createGallery(website, {
+      galleryName: 'Plain',
+      status: 'draft',
+      images: [image('d')],
+    });
+
+    const res = await as(admin, 'get', '/api/admin/accounts');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data[0].websites[0].galleries, [
+      {
+        id: plain.id,
+        galleryName: 'Plain',
+        status: 'draft',
+        imageCount: 1,
+        hasThumbnails: false,
+        hasMobileCrops: false,
+      },
+      {
+        id: mixed.id,
+        galleryName: 'Mixed',
+        status: 'published',
+        imageCount: 2,
+        hasThumbnails: false,
+        hasMobileCrops: false,
+      },
+      {
+        id: cropped.id,
+        galleryName: 'Cropped',
+        status: 'published',
+        imageCount: 3,
+        hasThumbnails: true,
+        hasMobileCrops: true,
+      },
+    ]);
   });
 });
 

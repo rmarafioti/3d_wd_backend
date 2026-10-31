@@ -1,4 +1,5 @@
-// Admin routes, mounted at /api/admin: the site owner account list, the active website picker,
+// Admin routes, mounted at /api/admin: the site owner account list (with each website's gallery
+// summaries: counts and crop flags, never content), the active website picker,
 // Create an Account, Link a Website, and the read-only audit event list and its months. Every route
 // requires a signed-in administrator.
 // api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
@@ -35,6 +36,15 @@ const ACCOUNT_SELECT = {
   createdAt: true,
 };
 const WEBSITE_SUMMARY_SELECT = { id: true, websiteName: true, url: true, active: true };
+// A gallery's name and status, plus one crop column per kind from each of its images (at most 30),
+// enough for toAdminGallerySummary's counts and flags. Crops aren't files, so the admin can't see
+// them in Cloudinary; this is how the admin knows a site owner cropped a gallery.
+const ADMIN_GALLERY_SELECT = {
+  id: true,
+  galleryName: true,
+  status: true,
+  images: { select: { thumbnailX: true, mobileX: true } },
+};
 // Every audit_event column but actorId: actorEmail already names the actor.
 const AUDIT_EVENT_SELECT = {
   id: true,
@@ -163,7 +173,23 @@ function uniqueConflict(err) {
   return null;
 }
 
-// GET /api/admin/accounts — every site owner (active and inactive) with their linked websites.
+// A gallery row (selected with ADMIN_GALLERY_SELECT) → the contract's AdminGallerySummary. A
+// crop's columns are all set or all null, so its x tells whether the image has that crop. A flag
+// is true only when every image has the crop (Rich, 2026-10-31): saves already refuse a mix, and
+// this keeps a row written any other way from reading as cropped.
+function toAdminGallerySummary({ images, ...gallery }) {
+  const everyImageHas = (column) =>
+    images.length > 0 && images.every((image) => image[column] !== null);
+  return {
+    ...gallery,
+    imageCount: images.length,
+    hasThumbnails: everyImageHas('thumbnailX'),
+    hasMobileCrops: everyImageHas('mobileX'),
+  };
+}
+
+// GET /api/admin/accounts — every site owner (active and inactive) with their linked websites,
+// each with its gallery summaries (not deleted, newest first).
 router.get('/accounts', async (req, res) => {
   const accounts = await prisma.account.findMany({
     where: { role: 'site_owner' },
@@ -172,7 +198,18 @@ router.get('/accounts', async (req, res) => {
       ...ACCOUNT_SELECT,
       accountWebsites: {
         orderBy: { website: { websiteName: 'asc' } },
-        select: { website: { select: WEBSITE_SUMMARY_SELECT } },
+        select: {
+          website: {
+            select: {
+              ...WEBSITE_SUMMARY_SELECT,
+              galleries: {
+                where: { deletedAt: null },
+                orderBy: { createdAt: 'desc' },
+                select: ADMIN_GALLERY_SELECT,
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -180,7 +217,10 @@ router.get('/accounts', async (req, res) => {
   // Flatten the join rows into the contract's `websites` array.
   const data = accounts.map(({ accountWebsites, ...account }) => ({
     ...account,
-    websites: accountWebsites.map((link) => link.website),
+    websites: accountWebsites.map(({ website }) => ({
+      ...website,
+      galleries: website.galleries.map(toAdminGallerySummary),
+    })),
   }));
   res.json({ data });
 });

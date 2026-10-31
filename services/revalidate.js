@@ -1,5 +1,6 @@
-// Tells a client website to regenerate its pages after one of its posts changed, by calling
-// POST {website.url}/api/revalidate with the website's webhook secret as a Bearer token.
+// Tells a client website to regenerate its pages after one of its posts or galleries changed, by
+// calling POST {website.url}/api/revalidate with the website's webhook secret as a Bearer token.
+// The body names what changed: { websiteId, postId } or { websiteId, galleryId }.
 //
 // Fire-and-forget: routes call revalidate() after their transaction has committed and after
 // responding, without awaiting it. It catches every error itself and never rejects, so a client
@@ -10,7 +11,8 @@ const { decryptSecret } = require('../lib/crypto');
 
 const TIMEOUT_MS = 5000;
 
-async function revalidate(websiteId, postId) {
+// `changed` is { postId } or { galleryId }.
+async function revalidate(websiteId, changed) {
   try {
     const website = await prisma.website.findUnique({
       where: { id: websiteId },
@@ -25,7 +27,7 @@ async function revalidate(websiteId, postId) {
         Authorization: `Bearer ${decryptSecret(website.webhookSecretEncrypted)}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ websiteId: website.id, postId }),
+      body: JSON.stringify({ websiteId: website.id, ...changed }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 

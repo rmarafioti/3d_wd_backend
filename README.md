@@ -4,7 +4,7 @@
 
 Headless CMS project. Two repos for frontend and backend.
 
-The frontend serves a public, static landing page and sign-in for two separate authenticated dashboards. Two roles to account for, an Administrator and a Site Owner, each with their own dashboard view, auth and API routes. The Administrator uses the frontend to see a summary of site owner accounts and their websites, create new site owner accounts and link websites to them. The Site Owner uses the frontend to view, create, edit, archive and reactivate posts.
+The frontend serves a public, static landing page and sign-in for two separate authenticated dashboards. Two roles to account for, an Administrator and a Site Owner, each with their own dashboard view, auth and API routes. The Administrator uses the frontend to see a summary of site owner accounts and their websites, create new site owner accounts and link websites to them. The Site Owner uses the frontend to view, create, edit and delete posts and photo galleries, and set them to draft or published.
 
 This backend stores everything in PostgreSQL, serves the dashboards through an authenticated API, serves published post content to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post changes.
 
