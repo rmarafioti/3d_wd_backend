@@ -185,13 +185,24 @@ Restoring over production is never done by this script. If it is ever needed, it
    - stops unless the backend's `main` commit is already live on staging;
    - lists any new migrations and asks before going on. Before a migration that drops or rewrites data, take a backup first: Trigger Run on `3dwd-backup-database`, and confirm the dump is in R2 (`docs/scaling.md` §8);
    - pushes the backend's `main` to `production`. CI runs on it, then Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. It waits until Render reports the API live, up to 20 minutes;
-   - then pushes the frontend's `main` to its `production` branch and waits for Vercel.
+   - then pushes the frontend's `main` to its `production` branch and waits for Vercel;
+   - then tags each repo that went live with the run's release tag (`CLAUDE.md` → Releases), even after a stop, so a backend that went live before the frontend failed is still tagged. A repo with nothing new is skipped and not tagged.
 
    If CI or the Render deploy fails, it stops before the frontend, and production keeps the previous version. Backend first is what a contract change needs: the backend accepts both the old and the new shape before the frontend uses the new one (`docs/scaling.md` §4).
 
 4. **Check production.**
 
 If staging has been deleted (step 30), it is added back before the first breaking change, and the change is deployed there first. After Render announces a change to its network or load balancers, sign in and check the `ip` in the newest `audit_event` row is still your real address (step 19, `docs/security.md` → Rate limits).
+
+## Rolling back
+
+For a release that broke production. A rollback puts back earlier code; it never undoes a migration (`docs/scaling.md` §8). A dependency that needs replacing isn't a rollback: it is fixed forward on a branch like any change.
+
+1. **Find the pair that was live before.** The release tags record it: `git tag -n99 --list 'release-*'` in either repo, or GitHub's Tags page. Each tag message names the other repo's live release and the backend's migrations.
+2. **Roll back only the repo that broke**, where possible. The frontend can always roll back alone: expand → migrate → contract keeps the backend accepting what the previous frontend sends. The backend can roll back only to a release at or after its newest migration, since older code may read a column that no longer exists; past one, fix forward instead.
+3. **Roll back in the dashboards.** Render: `3dwd-api-production` → Events → the earlier deploy → Rollback. Vercel: the frontend project → Deployments → the earlier production deployment → Instant Rollback. The cron jobs follow their own last deploy; roll them back too if the bad release changed them.
+4. **Fix forward on `main`.** The `production` branches stay where they are (force pushes are blocked). The fix goes through a PR and the next `npm run release`, which deploys `main` again and tags it.
+5. **Record it** in the incident notes if it was an incident (`docs/security.md` → Incident response).
 
 ## Onboarding a client website
 

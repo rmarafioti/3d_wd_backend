@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.js"]
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "deny": [
       "Bash(gh pr merge:*)",
@@ -9,7 +23,25 @@
       "Bash(npm run release:*)",
       "Bash(node scripts/release.js:*)",
       "Bash(git push origin *:production)",
-      "Bash(git push origin *:refs/heads/production)"
+      "Bash(git push origin *:refs/heads/production)",
+      "Bash(git push *--force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push *--delete*)",
+      "Bash(git push * :*)",
+      "Bash(git push * +*)",
+      "Bash(git branch -D*)",
+      "Bash(git branch * -D*)",
+      "Bash(git commit *--no-verify*)",
+      "Bash(git push *--no-verify*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)"
+    ],
+    "ask": [
+      "Bash(git reset --hard*)",
+      "Bash(git clean *-f*)",
+      "Bash(npx prisma migrate reset*)",
+      "Bash(dropdb *)",
+      "Bash(docker compose down *-v*)"
     ]
   }
 }
