@@ -120,4 +120,4 @@ npm run release -- --dry-run   # shows what would be released, pushes nothing
 npm run release                # backend to Render, then the frontend to Vercel
 ```
 
-It needs the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR` set, and `gh` signed in. It pushes the backend's `main` to `production`, waits until Render reports the API live (CI, migrations, then the deploy, which also rebuilds both cron jobs), then pushes the frontend's `main` to its `production` branch. The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
+It needs the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR` set, and `gh` signed in. It pushes the backend's `main` to `production`, waits until Render reports the API live (CI, migrations, then the deploy, which also rebuilds both cron jobs), then pushes the frontend's `main` to its `production` branch, and tags each repo that went live (`release-YYYY-MM-DD`, `CLAUDE.md` → Releases). The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
