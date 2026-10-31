@@ -8,53 +8,7 @@
 // stored and returned as null. Limits match the Validation rules in docs/endpoints.md.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
-
-function requiredText(label, max) {
-  return z.preprocess(
-    blankToUndefined,
-    z
-      .string({ error: `${label} is required.` })
-      .max(max, `${label} must be ${max} characters or fewer.`),
-  );
-}
-
-function optionalText(label, max) {
-  return z
-    .preprocess(
-      blankToUndefined,
-      z.string().max(max, `${label} must be ${max} characters or fewer.`).optional(),
-    )
-    .transform((value) => value ?? null);
-}
-
-function httpsUrl(label) {
-  return z.preprocess(
-    blankToUndefined,
-    z.url({
-      protocol: /^https$/,
-      error: (issue) =>
-        issue.input === undefined
-          ? `${label} is required.`
-          : 'Must be a valid URL starting with https://',
-    }),
-  );
-}
-
-// Image width/height: whole numbers 1–10000 (next/image on the client website needs them).
-function dimension(label) {
-  const message = `${label} must be a whole number between 1 and 10000.`;
-  return z.number({ error: message }).int(message).min(1, message).max(10000, message);
-}
-
-// Optional on edit: existing images carry their id, new ones have none.
-const itemId = z.preprocess(blankToUndefined, z.string().optional());
-
-const imageShape = {
-  src: httpsUrl('Image URL'),
-  width: dimension('Width'),
-  height: dimension('Height'),
-  altText: requiredText('Alt text', 200),
-};
+const { requiredText, optionalText, httpsUrl, itemId, imageShape } = require('./fields');
 
 // Link URLs follow the same https rule as image URLs.
 const LINK_URL = httpsUrl('Link URL');

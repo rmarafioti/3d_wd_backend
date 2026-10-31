@@ -10,9 +10,10 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - The administrator receives one-time access to a **new** website's API key and webhook secret.
 - A site owner can log in.
 - A site owner can create, edit and delete a post, and set it to draft or published.
-- The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post changes.
+- A site owner can create, edit and delete a photo gallery, and set it to draft or published (Feature 10, after launch).
+- The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post or gallery changes.
 
-Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), photo galleries, business hours.
+Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), business hours. Photo galleries were added after launch (Feature 10).
 
 ## Schema
 
@@ -96,12 +97,52 @@ Table image {
   }
 }
 
+Table gallery {
+  id           string   [primary key, default: uuid v7]
+  website_id   string   [not null]
+  gallery_name string   [not null]   // internal label, shown on the dashboard only, never public
+  slug         string   [not null]   // how the client website asks for it; set once (Gallery slugs)
+  title        string   [null]       // optional public headline
+  copy         string   [null]       // optional public description; line breaks kept
+  status       gallery_status [not null, default: 'published']  // only published galleries are public
+  deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays
+  created_at   datetime [not null, default: now()]
+  updated_at   datetime [not null]
+
+  indexes {
+    (website_id, slug) [unique]  // a slug is unique within its website, deleted galleries included
+  }
+}
+
+Table gallery_image {
+  id               string  [primary key, default: uuid v7]
+  gallery_id       string  [not null]
+  position         integer [not null]   // order within the gallery: 0, 1, 2…
+  src              string  [not null]   // Cloudinary secure_url in 3DWD's account, in the website's folder
+  width            integer [not null]   // the stored image's size, for next/image
+  height           integer [not null]
+  alt_text         string  [not null]
+  caption          string  [null]
+  thumbnail_x      integer [null]       // the thumbnail crop (a square), in the stored image's pixels:
+  thumbnail_y      integer [null]       //   all four set, or none
+  thumbnail_width  integer [null]
+  thumbnail_height integer [null]
+  mobile_x         integer [null]       // the mobile crop (at least as tall as wide), the same way
+  mobile_y         integer [null]
+  mobile_width     integer [null]
+  mobile_height    integer [null]
+
+  indexes {
+    (gallery_id, position)
+  }
+}
+
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
   actor_id    string   [null]      // the signed-in account; null for a failed login with no account
   actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
-  target_type string   [null]      // account, website or post
+  target_type string   [null]      // account, website, post or gallery
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
   ip          string   [null]
@@ -125,6 +166,11 @@ Enum post_status {
   published
 }
 
+Enum gallery_status {
+  draft
+  published
+}
+
 Enum element_type {
   paragraph
   image
@@ -138,19 +184,21 @@ Ref: post.website_id > website.id   // a website can have many posts
 Ref: element.post_id > post.id      // a post's body is many elements (paragraphs and images)
 Ref: element.image_id - image.id    // an image element shows exactly one image
 Ref: image.post_id > post.id        // a post can have many images
+Ref: gallery.website_id > website.id         // a website can have many galleries
+Ref: gallery_image.gallery_id > gallery.id   // a gallery can have many images
 // audit_event has no references on purpose: an event never blocks or depends on another row
 ```
 
 ### Prisma conventions
 
-- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `AuditEvent`) mapped to the snake_case tables above with `@@map`.
+- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Gallery`, `GalleryImage`, `AuditEvent`) mapped to the snake_case tables above with `@@map`.
 - Every snake_case column has a camelCase field with `@map` (e.g. `apiKeyHash String @unique @map("api_key_hash")`), so nothing snake_case ever reaches an API response.
 - Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created.
-- A post's body is its `element` rows, read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.
+- A post's body is its `element` rows, and a gallery's images its `gallery_image` rows, both read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.
 - `createdAt DateTime @default(now()) @map("created_at")`, `updatedAt DateTime @updatedAt @map("updated_at")`.
 - `postDate DateTime? @db.Date @map("post_date")`.
 - `Element.text` is `@db.Text`.
-- No `onDelete: Cascade` anywhere — accounts, websites and posts are never hard-deleted (a deleted post keeps its row, with `deleted_at` set). The only deletes are elements and images removed in Edit a Post. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
+- No `onDelete: Cascade` anywhere — accounts, websites, posts and galleries are never hard-deleted (a deleted post or gallery keeps its row, with `deleted_at` set). The only deletes are elements and images removed in Edit a Post, and gallery images removed in Edit a Gallery. `Element.image` is `onDelete: Restrict` (Prisma's default for an optional relation would be `SetNull`), so an image can't be deleted while an element still shows it.
 - Prisma client is a single shared instance exported from `prisma/index.js`.
 
 ### Prisma 7 notes
@@ -218,29 +266,55 @@ Set once, when a website is created (Create an Account or Link a Website, new-we
 
 The migration that adds the column backfills every existing website by the same rule (locally, Stevie The Dog → `steviethedog`).
 
+### Gallery crops
+
+A gallery image is uploaded once. Its thumbnail and mobile versions are not separate uploads: the site owner picks a rectangle of the stored image for each, saved as four numbers (`thumbnail_x`, `thumbnail_y`, `thumbnail_width`, `thumbnail_height`, and the same for mobile), and the public API turns each into a Cloudinary delivery URL that cuts that rectangle out (`lib/cloudinary.js` → `croppedSrc`). A gallery's crops are consistent: all of its images have a thumbnail crop or none do, the same for mobile crops, and every mobile crop has one shape (`docs/endpoints.md` → Validation rules):
+
+```
+https://res.cloudinary.com/<cloud name>/image/upload/c_crop,x_200,y_0,w_800,h_800/v1760000000/3dwd/steviethedog/abc123.jpg
+```
+
+Cloudinary builds the cropped version the first time the URL is requested and caches it, so nothing extra is stored and a changed crop costs nothing. This needs Cloudinary's "strict transformations" setting off, which it is in 3DWD's account (checked 2026-10-31); turning it on would break every cropped URL. The crop is in the stored image's pixels, so the cropped version is exactly the crop's `width` × `height`, which is what the public API returns for `<Image>`. A cropped URL has one more path segment than a stored `src` (the crop, before the version), so a client website that shows gallery crops needs the two extra `remotePatterns` entries in Client websites, below.
+
+### Gallery slugs
+
+A gallery's `slug` is how a client website asks for it (`GET /api/public/galleries/:slug`). Set once, when the gallery is created, and never changed, so renaming a gallery never breaks the website showing it (`lib/slug.js`):
+
+1. Take the gallery name, remove accents, and lowercase it.
+2. Turn every run of characters other than `a`–`z` and `0`–`9` into one hyphen, keep the first 60 characters, and drop hyphens at either end. A name with nothing left becomes `gallery`.
+3. If another gallery on the same website already has that slug, deleted ones included, add `-2`, then `-3`, and so on. Other websites' galleries don't count.
+
+| Gallery name                                  | `slug`           |
+| --------------------------------------------- | ---------------- |
+| `Our Interior!`                               | `our-interior`   |
+| `Café Art`                                    | `cafe-art`       |
+| `Our Interior` (when `our-interior` is taken) | `our-interior-2` |
+
 ### Upload cleanup
 
-The database is the record of which images are kept. Post saves never call Cloudinary: an image removed in an edit, uploaded for a Publish whose save then failed, or on a deleted post, is left for the cleanup.
+The database is the record of which images are kept. Post and gallery saves never call Cloudinary: an image removed in an edit, uploaded for a save that then failed, or on a deleted post or gallery, is left for the cleanup.
 
 `npm run sweep:uploads` (`scripts/sweepUploads.js`, running `services/sweepUploads.js`):
 
 - lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
-- deletes each one that no kept `image.src` refers to. An image row is kept while its post is published or a draft (drafts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's images are deleted, unless a post that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
+- deletes each one that no kept `image.src` or `gallery_image.src` refers to. An image row is kept while its post or gallery is published or a draft (drafts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's or gallery's images are deleted, unless a post or gallery that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_POST_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_POST_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Client websites
 
-A client website shows its images with `next/image`, so its `next.config` must allow their host. It allows only its own images in 3DWD's account, never all of `res.cloudinary.com`: three `remotePatterns` entries, each with `protocol: "https"` and `hostname: "res.cloudinary.com"` (checked against Next.js 16.3.4's matcher, 2026-10-21):
+A client website shows its images with `next/image`, so its `next.config` must allow their host. It allows only its own images in 3DWD's account, never all of `res.cloudinary.com`: three `remotePatterns` entries (five once it shows a gallery's crops), each with `protocol: "https"` and `hostname: "res.cloudinary.com"` (checked against Next.js 16.3.4's matcher, 2026-10-21):
 
-| `pathname`                                                | Allows                                           |
-| --------------------------------------------------------- | ------------------------------------------------ |
-| `/<cloud name>/image/upload/*/3dwd/<media_folder>/**`     | its uploads, production                          |
-| `/<cloud name>/image/upload/*/3dwd-dev/<media_folder>/**` | its uploads, local testing                       |
-| `/<cloud name>/image/upload/**/<static folder>/**`        | its own static images (Stevie: `stevie_the_dog`) |
+| `pathname`                                                  | Allows                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| `/<cloud name>/image/upload/*/3dwd/<media_folder>/**`       | its uploads, production                                |
+| `/<cloud name>/image/upload/*/3dwd-dev/<media_folder>/**`   | its uploads, local testing                             |
+| `/<cloud name>/image/upload/**/<static folder>/**`          | its own static images (Stevie: `stevie_the_dog`)       |
+| `/<cloud name>/image/upload/*/*/3dwd/<media_folder>/**`     | its gallery crops, production (only with a gallery)    |
+| `/<cloud name>/image/upload/*/*/3dwd-dev/<media_folder>/**` | its gallery crops, local testing (only with a gallery) |
 
-Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The master doc's "Client to Website" tab carries the same rule.
+In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (checked against Next.js 16.4.3's matcher, 2026-10-31: the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The master doc's "Client to Website" tab carries the same rule.
 
 ## Seed Users
 
