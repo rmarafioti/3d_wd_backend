@@ -1,9 +1,9 @@
 // Request tests for the site owner routes (api/siteOwner/index.js): websites with post and gallery
-// summaries,
-// post create / read / edit / status / delete, and Sign an Upload. Covers the role guard, the ownership rule
-// (another owner's or an inactive website's data is a 404), validation, the image src folder rule,
-// the body order and the edit reconcile, the audit event and revalidation call after every change,
-// and the upload sign rate limit. fetch is mocked in every test, so no call leaves the machine.
+// summaries, post create / read / edit / status / delete, and Sign an Upload. Covers the role
+// guard, the ownership rule (another owner's or an inactive website's data is a 404), validation,
+// the image src folder rule, the body order and the edit reconcile, the audit event and
+// revalidation call after every change, and the upload sign rate limit. fetch is mocked in every
+// test, so no call leaves the machine.
 require('../../testing/setup');
 const crypto = require('node:crypto');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');

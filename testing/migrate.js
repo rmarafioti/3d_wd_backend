@@ -2,7 +2,7 @@
 // then applies every migration to it with `prisma migrate deploy`. testing/setup.js has already
 // checked that DATABASE_URL points at a "_test" database.
 require('./setup');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('node:child_process');
 const { Client } = require('pg');
 
 async function createDatabaseIfMissing() {

@@ -4,9 +4,9 @@
 // Every object key is timestamped, so a run never overwrites an earlier backup.
 // The dump is held in memory, which is fine while it is small: switch to a multipart upload once
 // it passes 100 MB (docs/scaling.md §6, Backup size).
-const childProcess = require('child_process');
-const { Writable } = require('stream');
-const { pipeline } = require('stream/promises');
+const childProcess = require('node:child_process');
+const { Writable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { backupPublicKey, createBackupEncryptor } = require('../lib/crypto');
 const { putObject } = require('../lib/r2');
 

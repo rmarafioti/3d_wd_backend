@@ -1,5 +1,6 @@
-// Zod field builders shared by the post and gallery schemas, so a rule both use (a required or
-// optional text field, an https URL, an item id, an uploaded image's fields) can't drift between them.
+// Zod field builders shared by the post and gallery schemas (and the upload sign body), so a rule
+// more than one uses (a required or optional text field, an https URL, an item id, the website id,
+// an uploaded image's fields) can't drift between them.
 // Text is trimmed and blank counts as empty (blankToUndefined); optional text comes out as null.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
@@ -44,6 +45,9 @@ function dimension(label) {
 // Optional on edit: existing items carry their id, new ones have none.
 const itemId = z.preprocess(blankToUndefined, z.string().optional());
 
+// The website a post or gallery is created for, or an upload is signed for.
+const websiteId = z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' }));
+
 // An uploaded image's fields, the same in a post body and a gallery.
 const imageShape = {
   src: httpsUrl('Image URL'),
@@ -52,4 +56,4 @@ const imageShape = {
   altText: requiredText('Alt text', 200),
 };
 
-module.exports = { requiredText, optionalText, httpsUrl, itemId, imageShape };
+module.exports = { requiredText, optionalText, httpsUrl, itemId, websiteId, imageShape };

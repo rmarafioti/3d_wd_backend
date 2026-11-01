@@ -14,13 +14,13 @@ const MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
 // A deleted post or gallery keeps its images as long as database backups are kept (30 days), so a
 // restored backup, or one recovered after a mistaken delete, still has them.
-const DELETED_POST_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+const DELETED_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function sweepUploads() {
   // The trailing "/" keeps 3dwd from matching 3dwd-dev/… and the reverse.
   const uploads = await listUploads(`${process.env.CLOUDINARY_FOLDER}/`);
 
-  const graceCutoff = new Date(Date.now() - DELETED_POST_GRACE_MS);
+  const graceCutoff = new Date(Date.now() - DELETED_GRACE_MS);
   const isKept = { OR: [{ deletedAt: null }, { deletedAt: { gt: graceCutoff } }] };
   const [postImages, galleryImages] = await Promise.all([
     prisma.image.findMany({ where: { post: isKept }, select: { src: true } }),

@@ -4,12 +4,12 @@
 require('../testing/setup');
 const { describe, it, before, after, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
-const childProcess = require('child_process');
-const EventEmitter = require('events');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { Readable, PassThrough } = require('stream');
+const childProcess = require('node:child_process');
+const EventEmitter = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { Readable, PassThrough } = require('node:stream');
 const backupDatabase = require('./backupDatabase');
 const { generateBackupKeyPair, decryptBackup } = require('../lib/crypto');
 const { mockFetch } = require('../testing/helpers');

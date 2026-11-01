@@ -3,7 +3,8 @@
 // before a migration that drops or rewrites data. `-- --label test` marks a backup that isn't the
 // nightly one. Logs the object key and size only. Exits 1 on any failure, so Render shows it.
 require('dotenv/config');
-const { parseArgs } = require('util');
+const { parseArgs } = require('node:util');
+const { missingEnv } = require('../lib/config');
 const { backupPublicKey } = require('../lib/crypto');
 
 const REQUIRED_ENV = [
@@ -14,7 +15,7 @@ const REQUIRED_ENV = [
   'R2_SECRET_ACCESS_KEY',
   'R2_BUCKET',
 ];
-const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
+const missing = missingEnv(REQUIRED_ENV, process.env);
 if (missing.length) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);

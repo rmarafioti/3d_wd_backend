@@ -272,8 +272,9 @@ router.get('/auditEvents/months', async (req, res) => {
   res.json({ data: rows.map((row) => row.month) });
 });
 
-// POST /api/admin/accounts — body { name, email, websiteId } or { name, email, websiteName, websiteUrl }.
-// Returns 201 { account, website, credentials? }; credentials only when a new website was created.
+// POST /api/admin/accounts — body { name, email, websiteId } or { name, email, websiteName,
+// websiteUrl }. Returns 201 { account, website, credentials? }; credentials only when a new website
+// was created.
 router.post('/accounts', async (req, res) => {
   const input = validate(createAccountSchema, req.body ?? {});
 

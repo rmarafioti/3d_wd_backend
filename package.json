@@ -38,8 +38,6 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio",
     "lint": "eslint .",
     "pretest": "node testing/migrate.js",
     "test": "node --test --test-concurrency=1 \"**/*.test.js\" \".claude/hooks/*.test.js\"",

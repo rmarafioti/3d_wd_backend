@@ -6,8 +6,7 @@
 // every mobile crop has one shape. Optional text fields come out as null when blank, null or
 // missing. Limits match the Validation rules in docs/endpoints.md.
 const { z } = require('zod');
-const { blankToUndefined } = require('./validate');
-const { requiredText, optionalText, itemId, imageShape } = require('./fields');
+const { requiredText, optionalText, itemId, websiteId, imageShape } = require('./fields');
 
 const MAX_IMAGES = 30;
 const THUMBNAIL_CROP_MESSAGE = 'Thumbnail crop must be a square inside the image.';
@@ -94,7 +93,7 @@ const status = z.enum(['draft', 'published'], { error: 'Status must be draft or 
 
 // A new gallery is published unless the request says otherwise.
 const createGallerySchema = z.object({
-  websiteId: z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' })),
+  websiteId,
   ...galleryFields,
   status: status.default('published'),
   images: imageList(galleryImageShape),

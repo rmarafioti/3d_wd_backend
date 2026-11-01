@@ -1,11 +1,12 @@
-// Tests for the restore script's safety refusals (scripts/restoreBackup.js), run as the real script.
+// Tests for the restore script's safety refusals (scripts/restoreBackup.js), run as the real
+// script.
 // Both refusals happen before the backup or key is read, so no pg_restore or backup file is needed.
 // The test database always has tables (pretest migrates it), so it plays a live database.
 require('../testing/setup');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('child_process');
-const path = require('path');
+const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 const SCRIPT = path.join(__dirname, 'restoreBackup.js');
 
