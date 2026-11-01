@@ -167,7 +167,7 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 
 ## Restoring a backup
 
-Used for the test restore (step 25) and in an incident (`docs/security.md` → Incident response). Needs `pg_restore` of the database's major version.
+Used for the test restore (step 25), the quarterly restore drill (recorded in `docs/security.md` → Restore drills) and in an incident (`docs/security.md` → Incident response). Needs `pg_restore` of the database's major version.
 
 1. Download the dump from the R2 dashboard (`3dwd-backups` → `backups/`).
 2. Save the private key from 1Password (3DWD Production) to a file outside the repo.

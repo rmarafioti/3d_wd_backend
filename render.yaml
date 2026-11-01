@@ -3,8 +3,8 @@
 # Render creates the services from this file (New → Blueprint). The Blueprint uses Manual Sync:
 # after a merge that changes this file, click Manual Sync in Render to apply it.
 # Staging deploys from main. Production deploys from the production branch, so a change reaches it
-# only when it is released with `git push origin main:production` (docs/deploy.md → Every deploy
-# after launch).
+# only when it is released with `npm run release`, which pushes main to production (docs/deploy.md →
+# Every deploy after launch).
 # Values here are public and reviewed in PRs. Secrets are `sync: false`: Render asks for each one
 # once, when its service is created, and they never enter the repo. Later syncs never ask again,
 # so a secret added after creation is set on the service by hand.

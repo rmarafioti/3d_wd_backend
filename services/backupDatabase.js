@@ -2,8 +2,8 @@
 // pg_dump writes the whole database in its compressed custom format, the dump is encrypted with
 // the backup public key (lib/crypto.js) and uploaded to the R2 bucket (lib/r2.js) under backups/.
 // Every object key is timestamped, so a run never overwrites an earlier backup.
-// The dump is held in memory: it is a few MB today. Move to a multipart upload before it nears
-// a few hundred MB.
+// The dump is held in memory, which is fine while it is small: switch to a multipart upload once
+// it passes 100 MB (docs/scaling.md §6, Backup size).
 const childProcess = require('child_process');
 const { Writable } = require('stream');
 const { pipeline } = require('stream/promises');
