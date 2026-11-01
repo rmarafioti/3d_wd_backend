@@ -116,6 +116,18 @@ async function assertNameAvailable(tx, websiteId, galleryName, exceptId) {
   if (taken) throw new ServerError(409, GALLERY_NAME_TAKEN);
 }
 
+// A gallery change's audit event, written with the transaction client that made the change.
+function recordGalleryEvent(tx, req, action, gallery) {
+  return recordAuditEvent(tx, req, {
+    action,
+    actorId: req.user.id,
+    actorEmail: req.user.email,
+    targetType: 'gallery',
+    targetId: gallery.id,
+    metadata: { websiteId: gallery.websiteId },
+  });
+}
+
 // Gallery, then images, in one transaction: if any insert fails the whole create rolls back.
 function createGallery(req, website, input) {
   return prisma.$transaction(async (tx) => {
@@ -134,18 +146,6 @@ function createGallery(req, website, input) {
     await writeImages(tx, created.id, input.images);
     await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_CREATED, created);
     return tx.gallery.findUnique({ where: { id: created.id }, select: GALLERY_SELECT });
-  });
-}
-
-// A gallery change's audit event, written with the transaction client that made the change.
-function recordGalleryEvent(tx, req, action, gallery) {
-  return recordAuditEvent(tx, req, {
-    action,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
-    targetType: 'gallery',
-    targetId: gallery.id,
-    metadata: { websiteId: gallery.websiteId },
   });
 }
 

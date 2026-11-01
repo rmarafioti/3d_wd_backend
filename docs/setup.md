@@ -300,7 +300,7 @@ The database is the record of which images are kept. Post and gallery saves neve
 - deletes each one that no kept `image.src` or `gallery_image.src` refers to. An image row is kept while its post or gallery is published or a draft (drafts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's or gallery's images are deleted, unless a post or gallery that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_POST_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Client websites
 

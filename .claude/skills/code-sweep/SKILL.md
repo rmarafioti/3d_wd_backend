@@ -90,13 +90,20 @@ For each file, against `CLAUDE.md` → Code Style:
 
 - File shape: header comment → requires (packages first, then local) → module setup → `UPPER_SNAKE` constants → private helpers → routes or main function → `module.exports`. Entry points require `dotenv/config` first.
 - Route shape: validate → existence / ownership check → Prisma call → `res.json` / `res.status(201).json` → `revalidate(...)` unawaited; a one-line `// METHOD /api/path — what it does.` comment above each route.
-- Node built-ins required as `node:x`, never a bare `x` (`grep -rn -E "require\('(fs|os|path|crypto|child_process|stream|stream/promises|readline|readline/promises|util|url|http|https|zlib|events|assert|buffer|timers)'\)" --include='*.js' --exclude-dir=node_modules .`).
+- Node built-ins required as `node:x`, never a bare `x` (`grep -rn -E "require\('(fs|fs/promises|os|path|crypto|child_process|stream|stream/promises|readline|readline/promises|util|url|http|https|net|dns|zlib|events|assert|assert/strict|buffer|timers)'\)" --include='*.js' --exclude-dir=node_modules .`). A hit inside a string isn't a require: `.claude/hooks/guard.test.js` holds `node -e "…require('fs')…"` commands the hook must refuse, and it stays identical to the frontend's copy.
 - Exports: a router file exports its `router`; a middleware or service its single function; `lib/` and `validation/` an object of named functions.
 - Functions: declarations for middleware, helpers and lib functions; arrows only inline.
 - Naming: `requireX`, `xSchema` / `xShape`, `assertX`, `toX` / `fromX`, `findX`, `input`, `tx`, booleans as questions, the docs' vocabulary.
 - Input only through `validate()` (no hand trimming, lowercasing or checks in a route; login's `safeParse` is the exception). Errors thrown as `ServerError`, never sent by hand.
 - No em dashes in user-facing strings: `grep -rn '—' --include='*.js' --exclude='*.test.js' api middleware errors validation lib` and check each hit inside an error message.
 - Raw SQL only as a tagged `$queryRaw` with a comment saying why: `grep -rn -E 'queryRaw|executeRaw' --include='*.js' --exclude-dir=node_modules .`
+- Comment lines within the 100-character width. Prettier wraps code but never comments, so `npm run format:check` doesn't catch them. Count characters, not bytes (`→` and `×` are one character):
+
+  ```
+  node -e "for (const f of process.argv.slice(1)) require('node:fs').readFileSync(f, 'utf8').split('\n').forEach((l, i) => { if (l.length > 100 && l.trim().startsWith('//')) console.log(f + ':' + (i + 1)); })" $(git ls-files '*.js' | grep -v migrations)
+  ```
+
+  A long comment in `.claude/hooks/` is fixed in both repos together, since those files are identical to the frontend's (`.claude/hooks/guard.js:14` is one, left until the next change to the hook).
 
 Finding: a file that breaks a written rule, or two files doing the same thing two ways where no rule decides it (a **decision**: the rule gets written first).
 

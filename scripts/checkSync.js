@@ -1,6 +1,6 @@
 // Entry point for `npm run check:sync`: compares what must be identical in the backend and the
-// frontend (CLAUDE.md → Documentation Sync, the identical tier) and prints any difference. /doc-sync
-// runs it first, so each sync starts from the facts. Compared:
+// frontend (CLAUDE.md → Documentation Sync, the identical tier) and prints any difference.
+// /doc-sync runs it first, so each sync starts from the facts. Compared:
 //   - the API Contract section of docs/endpoints.md against the frontend's docs/api.md
 //   - .claude/hooks/guard.js and guard.test.js against the frontend's copies
 // The backend side is this working tree; the frontend side is its origin/main, read with

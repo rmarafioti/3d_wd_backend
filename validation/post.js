@@ -3,12 +3,13 @@
 // accepted until it is retired (Feature 8, expand → migrate → contract); both schemas turn either
 // one into `status`, and a request whose two values disagree is a 400 on `status`.
 // A post's body is an ordered list of elements, each a paragraph or an image. Paragraph text is
-// stored as typed; every [text](url) link in it is checked (docs/endpoints.md → Paragraph formatting).
+// stored as typed; every [text](url) link in it is checked (docs/endpoints.md → Paragraph
+// formatting).
 // Optional text fields and postDate come out as null when blank, null or missing, so they are
 // stored and returned as null. Limits match the Validation rules in docs/endpoints.md.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
-const { requiredText, optionalText, httpsUrl, itemId, imageShape } = require('./fields');
+const { requiredText, optionalText, httpsUrl, itemId, websiteId, imageShape } = require('./fields');
 
 // Link URLs follow the same https rule as image URLs.
 const LINK_URL = httpsUrl('Link URL');
@@ -137,7 +138,7 @@ function toStatusInput({ active, status, ...input }, fallback) {
 // A new post is published unless the request says otherwise.
 const createPostSchema = z
   .object({
-    websiteId: z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' })),
+    websiteId,
     ...postFields,
     ...statusShape,
     body: bodyList(z.object(imageShape, { error: 'Image is required.' })),

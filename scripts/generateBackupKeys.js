@@ -2,9 +2,9 @@
 // (docs/deploy.md → Deployment checklist step 10). Writes two files into a folder outside this
 // repo, so a private key can never be committed, and prints only their paths: no key reaches
 // the terminal, a chat or a log.
-const fs = require('fs');
-const path = require('path');
-const { parseArgs } = require('util');
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseArgs } = require('node:util');
 const { generateBackupKeyPair } = require('../lib/crypto');
 
 const REPO_ROOT = path.resolve(__dirname, '..');

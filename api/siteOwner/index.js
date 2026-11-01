@@ -6,8 +6,9 @@
 //
 // Ownership (lib/ownership.js): the account always comes from req.user (the session), never from
 // the request. A website belongs to the site owner when an account_website row links them AND the
-// website is active; a post belongs to them when its website does. Anything else is a 404, identical to
-// "doesn't exist", so ids can't be probed. A deleted post (deletedAt set) is a 404 on every route.
+// website is active; a post belongs to them when its website does. Anything else is a 404,
+// identical to "doesn't exist", so ids can't be probed. A deleted post (deletedAt set) is a 404 on
+// every route.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');

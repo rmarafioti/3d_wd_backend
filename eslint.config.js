@@ -10,8 +10,9 @@ module.exports = [
     files: ['**/*.js'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
     rules: {
-      // `const { id, ...data } = item` is how a field is dropped before a write (writeBody, writeImages).
-      // Express identifies the error handler by its four arguments, so its unused `next` stays.
+      // `const { id, ...data } = item` is how a field is dropped before a write (writeBody,
+      // writeImages). Express identifies the error handler by its four arguments, so its unused
+      // `next` stays.
       'no-unused-vars': ['error', { ignoreRestSiblings: true, argsIgnorePattern: '^next$' }],
     },
   },

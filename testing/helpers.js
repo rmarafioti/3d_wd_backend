@@ -1,6 +1,6 @@
 // Shared test helpers: the reset every test starts from, builders that write real rows to the test
-// database (accounts, websites, posts, galleries), the session cookie and CSRF header a request needs, the no-secrets assertion, the
-// audit log reader and builder, and mocks for the two external
+// database (accounts, websites, posts, galleries), the session cookie and CSRF header a request
+// needs, the no-secrets assertion, the audit log reader and builder, and mocks for the two external
 // edges (Google ID-token verification and the outbound revalidation fetch).
 const assert = require('node:assert/strict');
 const { OAuth2Client } = require('google-auth-library');

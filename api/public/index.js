@@ -17,8 +17,8 @@ router.use(invalidApiKeyRateLimit, requireApiKey, publicApiRateLimit);
 
 const GALLERY_NOT_FOUND = 'Gallery not found.';
 
-// GET /api/public/posts — the website's published posts (never a deleted one), newest first, each body in reading order.
-// postName is internal and is never returned here; neither are image ids.
+// GET /api/public/posts — the website's published posts (never a deleted one), newest first, each
+// body in reading order. postName is internal and is never returned here; neither are image ids.
 router.get('/posts', async (req, res) => {
   const posts = await prisma.post.findMany({
     where: { websiteId: req.website.id, status: 'published', deletedAt: null },

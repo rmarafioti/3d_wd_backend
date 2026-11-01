@@ -2,10 +2,10 @@
 // it refuses a folder inside the repo, and the pair it writes works as BACKUP_PUBLIC_KEY.
 const { describe, it, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { backupPublicKey } = require('../lib/crypto');
 
 const SCRIPT = path.join(__dirname, 'generateBackupKeys.js');

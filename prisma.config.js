@@ -11,8 +11,8 @@ module.exports = defineConfig({
     seed: 'node prisma/seed.js',
   },
   datasource: {
-    // process.env rather than Prisma's env() helper: env() throws when the variable is unset,
-    // which would break `prisma generate` on a fresh install even though generate needs no database.
+    // process.env rather than Prisma's env() helper: env() throws when the variable is unset, which
+    // would break `prisma generate` on a fresh install even though generate needs no database.
     url: process.env.DATABASE_URL,
   },
 });

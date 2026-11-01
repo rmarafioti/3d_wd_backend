@@ -1,6 +1,8 @@
-// Entry point for `npm run sweep:uploads`: deletes unused Cloudinary uploads (services/sweepUploads.js).
-// Run by hand locally; once deployed, a daily Render cron job runs it. Logs counts only.
+// Entry point for `npm run sweep:uploads`: deletes unused Cloudinary uploads
+// (services/sweepUploads.js). Run by hand locally; once deployed, a daily Render cron job runs it.
+// Logs counts only.
 require('dotenv/config');
+const { missingEnv } = require('../lib/config');
 
 const REQUIRED_ENV = [
   'DATABASE_URL',
@@ -9,7 +11,7 @@ const REQUIRED_ENV = [
   'CLOUDINARY_API_SECRET',
   'CLOUDINARY_FOLDER',
 ];
-const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
+const missing = missingEnv(REQUIRED_ENV, process.env);
 if (missing.length) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
