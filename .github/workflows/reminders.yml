@@ -1,0 +1,103 @@
+# Reminders: opens an issue for each routine job on a calendar (CLAUDE.md → Reminders), so GitHub
+# emails Rich and the issue is the to-do. Times are UTC.
+#   - restore drill: the 1st of January, April, July and October
+#   - dependency audit: the 1st of every month, opened only when the full npm audit (dev
+#     dependencies included) finds a moderate, high or critical advisory
+#   - Documentation Sync and code sweep: every other Monday (even ISO weeks; GitHub's cron has no
+#     "every 2 weeks", so the job runs weekly and skips odd weeks; after a year with a week 53, the
+#     gap is 3 weeks once)
+# A reminder isn't opened while the previous one of its kind is still open. Each job can be run by
+# hand from the Actions tab (workflow_dispatch), which skips the even-week check. Uses only this
+# workflow's GITHUB_TOKEN; the issue bodies are the templates in .github/reminders/.
+name: Reminders
+
+on:
+  schedule:
+    - cron: '0 13 1 1,4,7,10 *'
+    - cron: '0 13 1 * *'
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which reminder to run
+        type: choice
+        options: [restore-drill, dependency-audit, biweekly]
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  restore-drill:
+    if: github.event.schedule == '0 13 1 1,4,7,10 *' || inputs.job == 'restore-drill'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/reminders/open.sh restore-drill "Restore drill, $(date -u +%Y)-Q$(( ($(date -u +%-m) + 2) / 3 ))" .github/reminders/restore-drill.md
+
+  dependency-audit:
+    if: github.event.schedule == '0 13 1 * *' || inputs.job == 'dependency-audit'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # npm audit reads package-lock.json, so no install is needed. It exits 1 when it finds
+      # anything, which is the case this job reports.
+      - run: npm audit --json > audit.json || true
+
+      - name: Open an issue when a moderate or worse advisory is found
+        run: |
+          count=$(jq '[.vulnerabilities[] | select(.severity == "moderate" or .severity == "high" or .severity == "critical")] | length' audit.json)
+          if [ "$count" -eq 0 ]; then
+            echo "Clean: no moderate, high or critical advisory."
+            exit 0
+          fi
+          {
+            cat .github/reminders/dependency-audit.md
+            echo
+            echo "## Advisories ($count packages)"
+            echo
+            # One line per package: its own advisories, or the packages it is vulnerable through.
+            jq -r '.vulnerabilities[]
+              | select(.severity == "moderate" or .severity == "high" or .severity == "critical")
+              | . as $v
+              | ([$v.via[] | objects | "[\(.title)](\(.url))"] | unique | join(", ")) as $advisories
+              | "- **\($v.name)** (\($v.severity), \(if $v.fixAvailable then "fix available" else "no fix yet" end)): "
+                + (if $advisories == "" then "through \([$v.via[] | strings] | join(", "))" else $advisories end)' audit.json
+          } > body.md
+          .github/reminders/open.sh audit "Dependency audit, $(date -u +%Y-%m)" body.md
+
+  biweekly:
+    if: github.event.schedule == '0 13 * * 1' || inputs.job == 'biweekly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Open the Documentation Sync and code sweep reminders (even ISO weeks)
+        run: |
+          if [ "${{ github.event_name }}" = schedule ] && [ $(( 10#$(date -u +%V) % 2 )) -ne 0 ]; then
+            echo "Odd ISO week: skipped."
+            exit 0
+          fi
+          today=$(date -u +%Y-%m-%d)
+          .github/reminders/open.sh doc-sync "Documentation Sync, $today" .github/reminders/doc-sync.md
+
+          # The first sweep in January, April, July and October is the quarterly full sweep. Exactly
+          # one even-week Monday falls on days 1 to 14 of a month.
+          month=$(date -u +%-m)
+          day=$(date -u +%-d)
+          if [ $(( month % 3 )) -eq 1 ] && [ "$day" -le 14 ]; then
+            command='/code-sweep full'
+          else
+            command='/code-sweep <the end commit of the last backend row in the Code Sweep Tracker>'
+          fi
+          sed "s|{{COMMAND}}|$command|" .github/reminders/code-sweep.md > body.md
+          .github/reminders/open.sh code-sweep "Code sweep, $today" body.md

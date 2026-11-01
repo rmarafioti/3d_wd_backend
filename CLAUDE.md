@@ -43,7 +43,7 @@ root
 │   ├── admin/
 │   │   └── index.js          *accounts, websites, create account, link a website, audit events
 │   ├── siteOwner/
-│   │   ├── index.js          *websites, post CRUD, post status, upload signing; mounts galleries.js
+│   │   ├── index.js          *websites, post CRUD, post status, post delete, upload signing; mounts galleries.js
 │   │   └── galleries.js      *gallery CRUD, gallery status
 │   ├── public/
 │   │   └── index.js          *GET /public/posts, GET /public/galleries/:slug (API key auth)
@@ -57,7 +57,8 @@ root
 │   ├── backupDatabase.js     *entry point for npm run backup:database (nightly Render cron job)
 │   ├── generateBackupKeys.js *npm run backup:keygen: the backup key pair, written outside the repo
 │   ├── restoreBackup.js      *npm run backup:restore: decrypt a backup into an empty database
-│   └── release.js            *npm run release: backend to production, then the frontend, then the release tags
+│   ├── release.js            *npm run release: backend to production, then the frontend, then the release tags
+│   └── checkSync.js          *npm run check:sync: what must be identical in both repos, diffed against ../3d_wd
 ├── validation/               *zod schemas, one per resource
 │   ├── auth.js               *login body ({ credential })
 │   ├── account.js
@@ -109,10 +110,16 @@ root
 │   ├── security.md           *controls, audit log, secrets, access, incident response, pre-deploy checklist
 │   ├── deploy.md             *hosting plans, environments, env vars, the deployment checklist, client onboarding
 │   └── proposal-notes.md     *notes for the master doc's Proposal tab (not imported; read when updating it)
-├── .github/workflows/ci.yml  *lint, format, npm audit and tests on every PR and push to main or production
+├── .github/
+│   ├── workflows/ci.yml      *lint, format, npm audit and tests on every PR and push to main or production
+│   ├── workflows/reminders.yml *scheduled reminder issues: restore drill, dependency audit, Doc Sync, code sweep (Reminders)
+│   └── reminders/            *the reminder issue bodies, and open.sh, which opens one unless one is still open
 ├── .claude/
 │   ├── settings.json         *Claude Code permissions and the guard hook: merging and releasing denied (Version Control)
-│   └── hooks/guard.js        *PreToolUse guard: denies or asks before destructive git, database and storage commands
+│   ├── hooks/guard.js        *PreToolUse guard: denies or asks before destructive git, database and storage commands
+│   └── skills/               *project skills, run only when Rich types them
+│       ├── code-sweep/       */code-sweep: the Code Review procedure (full, since a commit, or a branch's diff)
+│       └── doc-sync/         */doc-sync: the Documentation Sync procedure (backend, frontend, Stevie; master doc)
 ├── docker-compose.yml        *local Postgres
 ├── render.yaml               *Render Blueprint: API + Postgres per environment, production's cron jobs
 ├── Dockerfile.backup         *the backup cron job's image: Node 24 + pg_dump 17 (docs/deploy.md)
@@ -132,16 +139,20 @@ root
 
 The app is built in this order across both repos. Each step is built, tested and committed before the next starts. Check which repo a step touches — the other repo's side may need to exist first.
 
-### Current progress (as of 2026-10-31)
+### Current progress (as of 2026-11-01)
 
-- **Now:** **launched (2026-10-28).** The MVP Build Order, Features 1 to 9 and security hardening are merged in both repos. Feature 8, Post status (issue #46, PR #47; frontend issue #44), is released in both repos (2026-10-30): the expand and migrate steps, with `status` beside `active`, which stays until its contract step. Feature 9, Streamlined post flow, is frontend only (frontend PR #47) and released. Feature 10, Photo galleries (issue #52; frontend issue #51), is merged backend first: galleries with crops, a public route by slug and the admin's gallery summary, for every site owner until the Add-on catalog branch moves them behind `website_feature`. Since issue #48 (2026-10-31), Version Control rules are enforced by a guard hook and deny rules in both repos, and every production release is tagged `release-YYYY-MM-DD` by `npm run release` (Releases); the backend's five past releases are backfilled, and the frontend's side is frontend issue #48. Feature 6, the Admin audit log view, is the first feature after launch: released backend first, since the frontend page needs both audit routes. Production is live: the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Both repos release production with `npm run release` from this repo, after staging: the backend first, then the frontend once Render reports it live. Stevie The Dog is the first client website on production (`docs/deploy.md` steps 27 and 28): its posts, images and revalidation work live. A backup was restored and matched production (step 25). Staging (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept for now, reassessed once its $13.30/mo can be justified (step 30). Since launch, breaking changes go through expand → migrate → contract (`docs/scaling.md` §0, §3). The master doc's Proposal tab is at v1 with Mark's feedback and the client questionnaire in `docs/proposal-notes.md`; that work runs alongside and doesn't block anything here. Since 2026-10-29, work starts from a GitHub issue Rich writes (Issue Workflow): Claude reads it with `gh`, branches from it, and opens the PR when Rich says so; Rich merges.
+- **Now:** **launched (2026-10-28).** The MVP Build Order, Features 1 to 9 and security hardening are merged in both repos. Feature 8, Post status (issue #46, PR #47; frontend issue #44), is released in both repos (2026-10-30): the expand and migrate steps, with `status` beside `active`, which stays until its contract step. Feature 9, Streamlined post flow, is frontend only (frontend PR #47) and released. Feature 10, Photo galleries (issue #52; frontend issue #51), is merged in both repos and waits for release: galleries with crops, a public route by slug and the admin's gallery summary, for every site owner until the Add-on catalog branch moves them behind `website_feature`. Since issue #48 (2026-10-31), Version Control rules are enforced by a guard hook and deny rules in both repos, and every production release is tagged `release-YYYY-MM-DD` by `npm run release` (Releases); both repos' past releases are backfilled, and `release-2026-10-31` is live in both. Since issue #51 (2026-11-01), four routine jobs open a reminder issue on a calendar (Reminders), and Code Review and Documentation Sync run as the `/code-sweep` and `/doc-sync` skills; the first sweep and sync were test runs on that branch. Feature 6, the Admin audit log view, is the first feature after launch: released backend first, since the frontend page needs both audit routes. Production is live: the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Both repos release production with `npm run release` from this repo, after staging: the backend first, then the frontend once Render reports it live. Stevie The Dog is the first client website on production (`docs/deploy.md` steps 27 and 28): its posts, images and revalidation work live. A backup was restored and matched production (step 25). Staging (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept for now, reassessed once its $13.30/mo can be justified (step 30). Since launch, breaking changes go through expand → migrate → contract (`docs/scaling.md` §0, §3). The master doc's Proposal tab is at v1 with Mark's feedback and the client questionnaire in `docs/proposal-notes.md`; that work runs alongside and doesn't block anything here. Since 2026-10-29, work starts from a GitHub issue Rich writes (Issue Workflow): Claude reads it with `gh`, branches from it, and opens the PR when Rich says so; Rich merges.
 - **Next:**
-  1. Feature 10's frontend PR (frontend issue #51), then one `npm run release` for both repos (it asks before the `add_gallery` migration).
-  2. The Add-on catalog branch: the `website_feature` table, with galleries moved behind it (Planned Later → Add-on catalog).
-  3. Step 31 (Rich): onboard the four waiting client websites one at a time, by `docs/deploy.md` → Onboarding a client website.
-  4. Frontend issue #48: the guard hook, settings and its release tag backfill; then the first `npm run release` that tags both repos.
-  5. Feature 8's contract step, a later issue: drop `active` once the frontend no longer sends or reads it, recomputing `status` from `active` first.
-  6. Step 30: reassess staging once its cost can be justified.
+  1. One `npm run release` for both repos: Feature 10 and this branch (it asks before the `add_gallery` migration).
+  2. After this branch merges (Rich): run each Reminders job once with `workflow_dispatch`, check each issue and its labels, run one again to see the duplicate skip, then close the test reminders.
+  3. Frontend issue #53: its dependency audit and code sweep reminders, its own `/code-sweep`, and the sync's four doc fixes.
+  4. Stevie The Dog: the sync's handoff (galleries in `docs/client-website.md`, post status wording, the revalidation body, the shared public rate limit), then Rich copies the guide into the client repos.
+  5. Issue #54: the first sweep's seven cleanups (`node:` built-ins, two unused scripts, three moved or shared helpers, a test name).
+  6. The first real reminders: the code sweep and Documentation Sync on 2026-11-09, the dependency audit on 2026-12-01 (it will list the five moderate dev advisories), the restore drill on 2027-01-01.
+  7. The Add-on catalog branch: the `website_feature` table, with galleries moved behind it (Planned Later → Add-on catalog).
+  8. Step 31 (Rich): onboard the four waiting client websites one at a time, by `docs/deploy.md` → Onboarding a client website.
+  9. Feature 8's contract step, a later issue: drop `active` once the frontend no longer sends or reads it, recomputing `status` from `active` first.
+  10. Step 30: reassess staging once its cost can be justified.
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
@@ -164,11 +175,13 @@ The app is built in this order across both repos. Each step is built, tested and
   - **`gh` token expires 2027-01-27:** renew `claude-code-3dwd` before then (`docs/security.md` → Access).
   - **Galleries in the master doc:** at the next Documentation Sync, the "Client to Website" tab gains `getGallery(slug)`, `PublicGallery` and the two crop `remotePatterns` entries (`docs/setup.md` → Client websites).
   - **Render Blueprint is on Manual Sync:** after a merge that changes `render.yaml`, click Manual Sync in Render. Code deploys and migrations don't need it: staging's run on every merge to `main`, production's on every push to `production`.
+  - **The first `/doc-sync master` starts with a scope conversation** (Rich, 2026-11-01): before reading or editing any tab. Master doc updates are long and use a lot of tokens, not every tab needs an update, and since the launch some tabs (the deploy-era ones) can be removed. Agree which tabs stay, which go and which each sync checks, write that into Documentation Sync, and remove this note.
 
 One row per merged piece of work, newest first. Add a row on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
 | Date       | What was done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-01 | `chore/scheduled-reminders` (issue #51; frontend issue #53): reminders and review skills. `.github/workflows/reminders.yml` opens a reminder issue for the quarterly restore drill, the monthly full `npm audit` (only when a moderate or worse advisory is found, dev dependencies included) and, every other Monday, a Documentation Sync and a code sweep, never while the last of its kind is open (Reminders). The Code Review and Documentation Sync procedures move into the `/code-sweep` and `/doc-sync` skills (`.claude/skills/`, run only when Rich types them), with `CLAUDE.md` keeping the rules. A sweep reviews the code changed since the last one plus three whole-repo checks, in full once a quarter, and ends with a row for Rich's Code Sweep Tracker sheet; its fixes are folded into one issue opened on Rich's yes. `/doc-sync` covers the frontend and Stevie The Dog, needs their sessions open, and lists the client repo md files Rich copies by hand. `npm run check:sync` diffs the API Contract and the guard hook against the frontend. `docs/security.md` gains Restore drills. Each skill's test run here was checked against a manual pass and its holes fixed; the sweep's doc findings are fixed on this branch, its cleanups are issue #54, and Code Style now requires `node:` built-ins (Rich). 484 tests.                                                                                                                              |
 | 2026-10-31 | `feat/photo-gallery` (issue #52; frontend issue #51): Feature 10, Photo galleries. Additive: the `gallery` and `gallery_image` tables and the `gallery_status` enum (`add_gallery`), gallery create, read, edit, draft / publish and soft delete in `api/siteOwner/galleries.js`, `galleries` on the dashboard's websites, and `GET /api/public/galleries/:slug`. A slug is made from the name once and never changes (`lib/slug.js`); names are unique per website ignoring case (409). Crops are numbers, returned publicly as Cloudinary crop URLs (`lib/galleryImages.js`), and consistent across a gallery: all or none per kind, every mobile crop one shape within 1%; when several fail, `fields.images` names the first (Rich). The admin's accounts list gains `AdminGallerySummary` (counts and crop flags, true only when every image has the crop). The sweep keeps gallery images like post images; revalidation sends `{ websiteId, galleryId }`; audit `gallery.*`. Shared ownership checks move to `lib/ownership.js`, field builders to `validation/fields.js`. 478 tests.                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2026-10-31 | `chore/version-control` (issue #48; frontend issue #48): Version Control and Releases. New `CLAUDE.md` sections: never delete an unmerged branch (`-d`, never `-D`), never delete branches or tags on GitHub (auto-delete of merged branches is on), no force pushes, no discarding uncommitted work or clearing a database without Rich's approval, nothing run against staging or production, no Cloudinary or R2 deletes outside the sweep, never read `.env`. Enforced by `.claude/hooks/guard.js`, a PreToolUse hook that denies or asks before the matching commands (96 tests), with deny and ask rules in `.claude/settings.json` as the second layer. Semantic versioning was set aside for date tags (Rich): `npm run release` tags each repo that went live `release-YYYY-MM-DD` with an annotated tag naming the other repo's live release, the migrations and the PRs; the backend's five past releases are backfilled, and a GitHub tag ruleset blocks deleting or moving them. The `gh` token has read-only Contents, so tags go out with git. `docs/deploy.md` → Rolling back. Also records Feature 8's release and Feature 9, and drops Planned Later's Streamlined post editor. 419 tests.                                                                                                                                                                                                                                                                      |
 | 2026-10-30 | `feat/post-status` (issue #46; frontend issue #44): Feature 8, Post status, the expand and migrate steps. `post.status` (`draft` / `published`, a new `post_status` enum) sits beside `active`: `add_post_status` adds it as `published`, then `backfill_post_status` sets `draft` where `active` is false. Every write sets the two in step; `Post` and `PostSummary` return both; create and the status route accept `status` or the legacy `active`, and a request where they disagree is `400` on `fields.status` (Rich). The public API filters on `status`. Status changes write `post.drafted` / `post.published`; older rows keep `post.archived` / `post.activated` (Rich). The contract step (drop `active`, recomputing `status` from it first) is a later issue. Also adds Planned Later → Recently deleted posts and marks Feature 7 released. Checked with the unchanged frontend sending `{ active }`. 308 tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -390,6 +403,7 @@ Formatting is Prettier (`.prettierrc`: `singleQuote`, `semi`, `trailingComma: al
 
 - **File shape, top to bottom:** header comment (what the file is for) → `require`s (packages such as `express`, `zod`, `google-auth-library` first, then local modules) → module setup (`const router = express.Router()` and its `router.use(...)` guards) → module constants (`UPPER_SNAKE`) → private helpers → routes (or the file's main function) → `module.exports`. Entry points (`index.js`, `prisma/seed.js`) require `dotenv/config` before anything else.
 - **Route handler shape:** validate the input (`validate(schema, req.body ?? {})`) → existence / ownership check (`if (!post) throw new ServerError(404, ...)`) → the Prisma call (`prisma.$transaction` for a multi-row write) → `res.json({ data })` or `res.status(201).json({ data })` → `revalidate(...)`, not awaited, where a post or gallery changed. Where `docs/endpoints.md` orders the steps differently (Link a Website checks the account before validating), follow the spec. Each route has a one-line comment above it: `// METHOD /api/path — what it does.`
+- **Node built-ins** are required with the `node:` prefix (`require('node:crypto')`), Node's current recommendation, so a built-in can't be mistaken for a package of the same name (Rich, 2026-11-01).
 - **Exports:** CommonJS only. A router file exports its `router`. A middleware or service file exports its single function (`module.exports = requireAuth`). `lib/` and `validation/` files export an object of named functions and schemas (`module.exports = { normalizeUrl, urlVariants }`), required with destructuring.
 - **Functions:** function declarations for middleware, helpers and lib functions. Arrows only inline: route handlers passed to `router.get` / `post` / `patch`, callbacks (`.map`, `.filter`) and `$transaction` bodies.
 - **Naming:**
@@ -410,7 +424,7 @@ Formatting is Prettier (`.prettierrc`: `singleQuote`, `semi`, `trailingComma: al
 
 ## Code Review
 
-A review is read-only. It produces findings; it never edits code. Fixes are their own task: plan in plan mode, Rich approves, build, verify (Postman or curl against the local server, plus a real frontend request wherever the frontend uses the endpoint), PR. Every fix must preserve behaviour unless the finding is a bug.
+A review is read-only. It produces findings; it never edits code. Once Rich has decided a sweep's findings, the fixes are folded into one issue that Claude drafts and opens on his yes, with anything big enough for its own plan split into its own issue (`/code-sweep` → After). Fixes are their own task: plan in plan mode, Rich approves, build, verify (Postman or curl against the local server, plus a real frontend request wherever the frontend uses the endpoint), PR. Every fix must preserve behaviour unless the finding is a bug.
 
 ### Checklist
 
@@ -420,23 +434,21 @@ A review is read-only. It produces findings; it never edits code. Fixes are thei
 4. **Reads top to bottom as a story.** Each block builds on what came before it: no forward references to helpers defined far below without reason, and no constant declared far from where it's used. A reader new to the file should be able to follow it in one pass. Names carry the meaning, so comments don't have to.
 5. **Comments are necessary and true.** A misleading comment costs more than a missing one: it sends the next developer, or agent, chasing behaviour that isn't there. For every comment: is it still true of the code next to it? Does it explain _why_ rather than restate _what_? Delete it if not. Every file keeps its header comment, and the header must match what the file does now.
 6. **Docs match code.** CLAUDE.md (architecture tree, Build Order Current progress), `docs/endpoints.md` (including the Middleware Stack), `docs/setup.md`, `docs/scaling.md`, `docs/client-website-test.md`, `README.md` and `.env.example` describe what is actually in the repo. Fix whichever side is wrong; if the spec is right and the code differs, that's a bug finding. The API Contract section of `docs/endpoints.md` must still be identical to the frontend's `docs/api.md`.
-7. **Architecture rules still hold.** Re-run the Role Ownership Check Rule, the Anti-Patterns list and the Workflow Checklist "Checks after building" against the code:
-   - the account always comes from `req.user`, never from client input
-   - "not yours" is the same `404` as "not found"
-   - `apiKeyHash` / `webhookSecretEncrypted` are never selected outside their two places and never returned
-   - the plaintext key and secret appear only in the creation response
-   - nothing logs a key, secret, token or request headers
-   - the JWT appears only in `Set-Cookie`
-   - the CSRF header is required on POST/PATCH/DELETE
-   - multi-row writes happen in one `$transaction`
-   - `revalidate` runs after commit and is not awaited
-   - no hard deletes of accounts, websites, posts or galleries, and inactive accounts and websites are honoured
-   - emails are lowercased and URLs go through `normalizeUrl`
-   - the CORS origin comes from `CORS_ORIGIN`
-   - every change writes its audit event in the same transaction, and no audit metadata holds a secret or post content
-   - the rate limits in `lib/rateLimit.js` still cover login, the public API and upload signing
+7. **Architecture rules still hold.** The Role Ownership Check Rule, the Anti-Patterns, the Patterns and Preferences and the Workflow Checklist's "Checks after building" are true of the code: the account from the session, "not yours" as `404`, no secret selected, returned or logged, the JWT only in `Set-Cookie`, CSRF on every write, one transaction per multi-row write with its audit event, `revalidate` after commit and unawaited, no hard deletes, the rate limits in place.
 8. **Every endpoint handles every outcome.** Success, validation `400` with `fields`, `401`, `403`, `404`, `409` where it applies, and the generic `500`. Each uses the status code and message `docs/endpoints.md` documents for it.
 9. **Tooling is clean.** `npm run lint`, `npm run format:check`, `npm audit --omit=dev` (no high or critical) and `npm test` pass, and `npm run dev` starts without errors (`GET /api/health` returns `{ data: { ok: true } }`).
+
+### Running a review
+
+The steps, with the concrete check behind each item, are the `/code-sweep` skill (`.claude/skills/code-sweep/SKILL.md`), so every review runs the same way:
+
+- **`/code-sweep diff`** is the self-review at the end of every piece of work (Workflow Checklist). Claude can't type a skill's command, so it reads the skill file and follows its `diff` mode.
+- **`/code-sweep <commit>`** every 2 weeks, from the code sweep reminder (Reminders): the code changed since the last sweep, plus three checks over the whole repo (items 6, 7 and 9), which catch drift between files that a diff can't show.
+- **`/code-sweep full`** once a quarter (the first sweep in January, April, July and October), and for the first sweep ever.
+
+Each sweep ends with a row for Rich's Code Sweep Tracker sheet, kept outside the repo: repo, date, commit range, and the issues found. Its end commit is where the next sweep starts. Every few sweeps, an item that keeps producing findings is a sign this section needs tuning, and a change to it is proposed through a PR, so sweeps find fewer issues over time.
+
+A change to the Checklist, Output or Scope changes the skill in the same PR.
 
 ### Output
 
@@ -444,32 +456,37 @@ Return the findings as a list, most important first. Each finding has: the file 
 
 ### Scope
 
-A full review covers `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/` and `prisma/` (schema, seed and client; not the generated `migrations/`), the `*.test.js` files and `testing/`, plus CLAUDE.md, `docs/`, `README.md`, `.env.example` and `.github/workflows/`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
+A full review covers `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `package.json`, `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/`, `scripts/` and `prisma/` (schema, seed and client; not the generated `migrations/`), the `*.test.js` files and `testing/`, `.claude/` (hooks, skills and `settings.json`), `.github/`, `render.yaml`, `Dockerfile.backup`, `.dockerignore` and `docker-compose.yml`, plus CLAUDE.md, `docs/`, `README.md` and `.env.example`. A per-step review (the self-review in Workflow Checklist) covers only that step's diff, plus anything the diff duplicates or makes dead elsewhere.
 
 ## Documentation Sync
 
-The frontend repo (`3d_wd`, a sibling folder of this repo) keeps its own docs. A sync audit checks them against this repo's docs so the two don't drift. **The backend docs are the source of truth.**
+Three repos describe the same system: this one, the frontend (`3d_wd`) and Stevie The Dog (`stevie_the_dog`), the client-side pilot whose `docs/client-website.md` every client repo copies and tailors. All three are sibling folders. A sync checks the other two against this repo's docs so they don't drift. **The backend docs are the source of truth.**
 
 ### When
 
 Not on every branch. Run it:
 
-- after a feature or step that changes the API contract, the schema or a flow, once it is merged in **both** repos
+- every 2 weeks, from the Documentation Sync reminder (Reminders)
+- after a feature or step that changes the API contract, the schema or a flow, once it is merged in **both** repos, whatever the date
 - before any production deploy
 - whenever Rich asks
 
 ### How
 
-1. **Confirm the truth first.** Check that this repo's docs match this repo's code (Code Review checklist item 6). Fix any drift here before comparing, or the audit copies it into the frontend.
-2. **Read the frontend docs in place.** Make sure the frontend folder is on an up-to-date `main`, or read `origin/main` with `git show`. Then read its `CLAUDE.md`, `AGENTS.md`, `README.md` and `docs/`. This is read-only: Claude never edits the frontend repo from this one.
-3. **Compare by tier:**
-   - **Identical:** the API Contract section of `docs/endpoints.md` against the frontend's `docs/api.md`. Diff them word for word.
-   - **Must agree:** anything both repos describe, such as roles, the session cookie and CSRF, validation rules and error messages, the Features and Planned Later lists, the scaling rules, and the Issue Workflow. The frontend may summarize, but it must never contradict the backend or leave out a rule it depends on.
-   - **Frontend-only:** UI, components, routing and the frontend's own progress line. Don't audit the content; check only that any backend fact it states is still true.
-4. **Report** findings in the Code Review output format: file and line, tier, what differs, the proposed fix and its type. Where the frontend doc is right and the backend doc is wrong or missing something, mark it **decision** for Rich instead of proposing to overwrite the frontend.
-5. **Hand off.** Rich pastes the findings into the frontend session, or Claude sends them directly when that session is open. The frontend session fixes its own docs on its own branch. Backend-side fixes are made here, on a branch, as usual.
+Run `/doc-sync` (`.claude/skills/doc-sync/SKILL.md`), which holds the steps; `/doc-sync master` audits the master doc too. A change to this section changes the skill in the same PR. The rules it follows:
 
-Rich's master document, which lives outside both repos, is audited the same way, with one difference: it is allowed to hold extra notes. Only contradictions and outdated facts are findings. It is too large for the Google Docs connector's full read, so tab positions can't be read: a copy tab is refreshed by staging its repo file as Markdown, converting it to HTML on the clipboard, and Rich pastes it over the tab (a plain paste; Paste from Markdown mangles it), and a handwritten tab is fixed with `replaceAllText`, its find text long enough to match only the sentence meant. A copy tab is the repo file with two exceptions (Rich, 2026-10-28): a progress table keeps only its newest row, since the repo holds the history, and a numbered checklist is staged with its numbers as plain text, because Docs renumbers a list whose steps carry indented notes. The test of a copy tab is that a reader with no memory of the work could act on it. Its "Client to Website" tab is the guide each client website copies as its `docs/client-website.md`: it must agree with the API Contract (`PublicPost`, the public endpoint's errors), the Revalidation section of `docs/endpoints.md` and `docs/client-website-test.md`.
+- **Sessions first:** it starts only when Claude sessions are open in `3d_wd` and `stevie_the_dog`, since fixes are handed to them.
+- **The truth first:** this repo's docs are checked against its code before anything is compared, or the sync copies the drift.
+- **Read-only elsewhere:** the other repos are read at `origin/main`, never edited from here. Each fixes its own docs on its own branch, from a handoff Claude sends once Rich agrees to the findings.
+- **Tiers:**
+  - **Identical:** the API Contract section of `docs/endpoints.md` against the frontend's `docs/api.md`, and the guard hook and its tests against the frontend's copies (`npm run check:sync`).
+  - **Must agree:** anything both repos describe, such as roles, the session cookie and CSRF, validation rules and error messages, the Features and Planned Later lists, the scaling rules, and the Issue Workflow. The frontend may summarize, but it must never contradict the backend or leave out a rule it depends on.
+  - **Frontend-only:** UI, components, routing and the frontend's own progress line. Only the backend facts it states are checked.
+  - **Stevie:** its `docs/client-website.md` must agree with the API Contract's public parts, the Revalidation section, Paragraph formatting, `docs/setup.md` → Client websites and `docs/client-website-test.md`.
+- **Client repos:** the other client repos aren't read. The sync lists which of Stevie's md files changed, and Rich copies them in by hand (for now, Rich, 2026-11-01).
+- **Report** in the Code Review output format, with the tier in place of the checklist item. Where the other repo is right and the backend is wrong or missing something, it is a **decision** for Rich, never a plan to overwrite the other repo.
+
+Rich's master document, which lives outside the repos, is audited last, once the three repos agree, and the same way, with one difference: it is allowed to hold extra notes. Only contradictions and outdated facts are findings. It is too large for the Google Docs connector's full read, so tab positions can't be read: a copy tab is refreshed by staging its repo file as Markdown, converting it to HTML on the clipboard, and Rich pastes it over the tab (a plain paste; Paste from Markdown mangles it), and a handwritten tab is fixed with `replaceAllText`, its find text long enough to match only the sentence meant. A copy tab is the repo file with two exceptions (Rich, 2026-10-28): a progress table keeps only its newest row, since the repo holds the history, and a numbered checklist is staged with its numbers as plain text, because Docs renumbers a list whose steps carry indented notes. The test of a copy tab is that a reader with no memory of the work could act on it. Its "Client to Website" tab is the guide each client website copies as its `docs/client-website.md`: it must agree with the API Contract (`PublicPost`, the public endpoint's errors), the Revalidation section of `docs/endpoints.md` and `docs/client-website-test.md`.
 
 The master doc's Proposal tab is 3D Web Dev's business proposal: the mission, who it's for, how Rich works with clients, the clients so far, pricing, how Rich finds clients, and what is still being validated. 3D Web Dev is the business; the Client Portal is the tool, built because every client needed to post to their own site (three asked, and Rich recommended it to the fourth). The Build vs Buy tab records engineering decisions, not a go-to-market comparison: its CMS child tab is why the Client Portal was built rather than using a headless CMS, and its Drag and Drop child tab (not started) is why client websites are custom builds rather than a site builder. When a feature resolves an item on the CMS tab's "Where we're behind" list, move it into the table and delete it from the list in the same piece of work. Notes for updating the Proposal tab (working notes, internal copy, evidence still to gather) are in `docs/proposal-notes.md`; read it before changing the Proposal.
 
@@ -566,6 +583,19 @@ Every production release is tagged, so the history shows what went live and when
 - **The tag message** names the other repo's live release ("Frontend: released in this run as …", "unchanged, still …", or "its release stopped"), lists the backend's new migrations, and lists the PRs since the previous release by number and branch. Two-repo work shares a branch name, so the two tags show which PRs went out together. Read them with `git tag -n99 --list 'release-*'` or on GitHub's Tags page.
 - **Rolling back:** `docs/deploy.md` → Rolling back.
 
+## Reminders
+
+Four routine jobs open a GitHub issue on a calendar (`.github/workflows/reminders.yml`, issue #51), so GitHub emails Rich and the issue is the to-do. Times are 13:00 UTC. A reminder isn't opened while the last one of its kind is still open, and each can be run by hand from the Actions tab.
+
+| Reminder           | When                                      | What to do                                                                                                         |
+| ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Restore drill      | the 1st of January, April, July, October  | restore the newest backup locally and record it in `docs/security.md` → Restore drills                             |
+| Dependency audit   | the 1st of every month, if anything found | the full `npm audit` (dev included) found a moderate or worse advisory: fix on a branch, or accept it              |
+| Documentation Sync | every other Monday (even ISO weeks)       | `/doc-sync`, with sessions open in `3d_wd` and `stevie_the_dog` (Documentation Sync)                               |
+| Code sweep         | the same Mondays                          | `/code-sweep <last swept commit>`, or `full` once a quarter, then the tracker row (Code Review → Running a review) |
+
+Neither skill runs unattended: their output is findings for Rich to decide, and Claude never comments on or closes a reminder. The frontend has its own audit and code sweep reminders; the Documentation Sync runs only here.
+
 ## Workflow Checklist
 
 - Read the issue (Issue Workflow)
@@ -573,7 +603,7 @@ Every production release is tagged, so the history shows what went live and when
 - Create a plan — always in plan mode (switch with EnterPlanMode, present with ExitPlanMode), never as a plain chat message
 - On approved, build
 - Checks after building:
-  - Self-review the diff against Code Review → Checklist
+  - Self-review the diff: read `.claude/skills/code-sweep/SKILL.md` and follow its `diff` mode (Code Review → Running a review)
   - `npm test` passes, with new tests wherever Unit Tests says one is justified
   - `npm audit --omit=dev` shows no high or critical advisory (`docs/security.md` → Dependencies)
   - Role-gating and ownership check on every route
@@ -584,7 +614,7 @@ Every production release is tagged, so the history shows what went live and when
   - Test in Postman (logic only — send the `X-CSRF-Protection: 1` header)
   - Test via a real frontend request (validates CORS/cookie behavior)
   - After manual testing (Postman, frontend), delete every row the tests added (accounts, websites, `account_website` links, posts and their elements and images), so the local database is back to the baseline in Current progress. List the rows first and delete them by id in one transaction. (`npm test` uses its own test database and never touches these rows.)
-- Final step, always, once every check above is done: run the self-review (Code Review → Checklist) over the whole diff, and report it to Rich as findings in the Code Review → Output format, with a question for each one that needs his decision on correcting the code. Nothing is committed before he answers. A review that finds nothing is still reported.
+- Final step, always, once every check above is done: run the self-review (`/code-sweep diff`, by reading the skill) over the whole diff, and report it to Rich as findings in the Code Review → Output format, with a question for each one that needs his decision on correcting the code. Nothing is committed before he answers. A review that finds nothing is still reported.
 - Only commit once code is reviewed, approved and all validation and tests are green, and only commit, push and open the PR once Rich says so (Issue Workflow step 6)
 
 Step rhythm:

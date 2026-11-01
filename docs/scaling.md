@@ -10,11 +10,11 @@ Production launched on 2026-10-28, with Stevie The Dog as its first client websi
 
 Every change is judged against the three consumers of this backend. They deploy at different times, so at any moment one of them may be running older code than the backend.
 
-| Consumer            | Uses                                                    | Deploys                              | Updated in lockstep?                                     |
-| ------------------- | ------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------- |
-| Frontend (Vercel)   | Every `/api/auth`, `/api/admin`, `/api/siteOwner` route | Separately from the backend          | Yes, but never at the exact same second                  |
-| Client websites     | `GET /api/public/posts`, the revalidation webhook       | By each website, on its own schedule | **No** — treat as a public API                           |
-| Production database | Every model                                             | Migrated on backend deploy           | Data is permanent; mistakes are not undone by a redeploy |
+| Consumer            | Uses                                                                                 | Deploys                              | Updated in lockstep?                                     |
+| ------------------- | ------------------------------------------------------------------------------------ | ------------------------------------ | -------------------------------------------------------- |
+| Frontend (Vercel)   | Every `/api/auth`, `/api/admin`, `/api/siteOwner` route                              | Separately from the backend          | Yes, but never at the exact same second                  |
+| Client websites     | `GET /api/public/posts`, `GET /api/public/galleries/:slug`, the revalidation webhook | By each website, on its own schedule | **No** — treat as a public API                           |
+| Production database | Every model                                                                          | Migrated on backend deploy           | Data is permanent; mistakes are not undone by a redeploy |
 
 ## 1. Classify the change first
 
@@ -35,7 +35,7 @@ Everything in `docs/setup.md` → Prisma conventions still applies to new models
 - **Read the generated SQL before committing.** Prisma writes `DROP COLUMN` + `ADD COLUMN` for a rename. If the SQL drops anything, stop and use the expand → migrate → contract steps in Section 3.
 - **New columns on existing tables are nullable or have a default.** A `NOT NULL` column with no default fails on a table that already has rows.
 - **Every foreign key gets an index** (`@@index([fooId])`), and so does every column a list endpoint filters or sorts on.
-- **New client-facing resources get `active Boolean @default(true)`** (soft delete) and are never hard-deleted. Posts are the exception: a `status` enum (`draft` / `published`) replaces their `active` (Feature 8). One the client can remove for good gets a nullable `deletedAt DateTime?` beside it, as posts do: every route then treats a row with `deletedAt` set as not found. Child rows edited as a list (like images) may be deleted inside their parent's edit, as today.
+- **New client-facing resources get `active Boolean @default(true)`** (soft delete) and are never hard-deleted. Posts and galleries are the exception: a `status` enum (`draft` / `published`) replaces `active` on posts (Feature 8), and galleries never had one (Feature 10). One the client can remove for good gets a nullable `deletedAt DateTime?` beside it, as posts and galleries do: every route then treats a row with `deletedAt` set as not found. Child rows edited as a list (like images) may be deleted inside their parent's edit, as today.
 - **Enums: adding a value is safe; removing or renaming one is breaking.** Add new values only, and handle the new value everywhere the enum is checked before deploying.
 - **New secrets follow the API key / webhook secret pattern:** generated, hashed or encrypted only in `lib/crypto.js`, never selected outside the one place that needs them, and added to the "Never select secrets" anti-pattern in `CLAUDE.md`.
 - **Run `npx prisma generate` after every schema change** (Prisma 7 does not do it on migrate).

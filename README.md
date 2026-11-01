@@ -111,6 +111,14 @@ Health check: `GET http://localhost:4000/api/health` → `{ "data": { "ok": true
 
 When testing in Postman, every POST/PATCH/DELETE needs the header `X-CSRF-Protection: 1`.
 
+Cross-repo check:
+
+```
+npm run check:sync         # diffs what must be identical in both repos (the API Contract, the guard hook)
+```
+
+It reads the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR`, at its `origin/main`, and edits nothing. The Documentation Sync (`/doc-sync`, `CLAUDE.md` → Documentation Sync) runs it first.
+
 ## Releasing
 
 Staging deploys every merge to `main` (`https://api-staging.3dwebdev.com`). Production deploys from the `production` branch, so a change reaches it only when released, once staging looks right:

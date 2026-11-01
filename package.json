@@ -43,7 +43,8 @@
     "lint": "eslint .",
     "pretest": "node testing/migrate.js",
     "test": "node --test --test-concurrency=1 \"**/*.test.js\" \".claude/hooks/*.test.js\"",
-    "test:watch": "node --test --test-concurrency=1 --watch \"**/*.test.js\" \".claude/hooks/*.test.js\""
+    "test:watch": "node --test --test-concurrency=1 --watch \"**/*.test.js\" \".claude/hooks/*.test.js\"",
+    "check:sync": "node scripts/checkSync.js"
   },
   "engines": {
     "node": ">=24 <25"
