@@ -2,6 +2,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "@sentry/node": "^10.78.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.5",
@@ -32,6 +33,7 @@
     "seed": "node prisma/seed.js",
     "sweep:uploads": "node scripts/sweepUploads.js",
     "backup:database": "node scripts/backupDatabase.js",
+    "sentry:check": "node scripts/sentryCheck.js",
     "backup:keygen": "node scripts/generateBackupKeys.js",
     "backup:restore": "node scripts/restoreBackup.js",
     "release": "node scripts/release.js",

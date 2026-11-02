@@ -7,10 +7,22 @@
 // responding, without awaiting it. It catches every error itself and never rejects, so a client
 // website being down can never affect a site owner's request.
 // The webhook secret is selected and decrypted only here. Never log it or the request headers.
+//
+// A failure is also reported to Sentry as a warning (production only, lib/sentry.js), grouped per
+// website: the client website is usually up but set up wrong (a webhook secret that doesn't match,
+// a missing route, a redirect), so its new content silently never appears. Only the website id and
+// the status or error name are sent, never the URL, the secret or the headers.
 const prisma = require('../prisma');
 const { decryptSecret } = require('../lib/crypto');
+const { reportWarning } = require('../lib/sentry');
 
 const TIMEOUT_MS = 5000;
+
+function revalidationFailed(websiteId, reason) {
+  const message = `Revalidation failed for website ${websiteId}: ${reason}`;
+  console.error(message);
+  reportWarning(message, ['revalidation', websiteId]);
+}
 
 // `changed` is { postId }, { galleryId } or { ability }.
 async function revalidate(websiteId, changed) {
@@ -32,13 +44,11 @@ async function revalidate(websiteId, changed) {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
-    if (!response.ok) {
-      console.error(`Revalidation failed for website ${website.id}: HTTP ${response.status}`);
-    }
+    if (!response.ok) revalidationFailed(website.id, `HTTP ${response.status}`);
   } catch (err) {
     // Timeout (TimeoutError), network failure (TypeError: fetch failed) or a database/decrypt
     // error. Only the error's name and message are logged, never the secret or the headers.
-    console.error(`Revalidation failed for website ${websiteId}: ${err.name}: ${err.message}`);
+    revalidationFailed(websiteId, `${err.name}: ${err.message}`);
   }
 }
 

@@ -1,6 +1,7 @@
 // The single error handler. Every error leaves the server as { error: { message, fields? } }.
 // Express 5 forwards rejected async handlers here automatically, so routes just throw.
 const ServerError = require('./serverError');
+const { reportError } = require('../lib/sentry');
 
 const GENERIC_MESSAGE = 'Something went wrong, please try again.';
 
@@ -22,8 +23,10 @@ function errorHandler(err, req, res, next) {
     return res.status(413).json({ error: { message: 'Request body is too large.' } });
   }
 
-  // Unexpected: log the error itself (never request headers or cookies) and hide the details.
+  // Unexpected: log the error itself (never request headers or cookies), report it to Sentry
+  // (lib/sentry.js scrubs the event), and hide the details. Expected errors above never report.
   console.error(err);
+  reportError(err);
   return res.status(500).json({ error: { message: GENERIC_MESSAGE } });
 }
 
