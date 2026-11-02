@@ -1,7 +1,8 @@
-// Admin routes, mounted at /api/admin: the site owner account list (with each website's gallery
-// summaries: counts and crop flags, never content), the active website picker,
-// Create an Account, Link a Website, and the read-only audit event list and its months. Every route
-// requires a signed-in administrator.
+// Admin routes, mounted at /api/admin: the site owner account list (with each website's abilities,
+// its post summaries: names and statuses, and its gallery summaries: counts and crop flags; never
+// content), the active website picker,
+// Create an Account, Link a Website, setting a requested ability live, and the read-only audit
+// event list and its months. Every route requires a signed-in administrator.
 // api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
 // secret exist only in the one response that creates the new website they belong to.
 // Every change writes its audit events (lib/audit.js) inside the same transaction.
@@ -14,6 +15,7 @@ const { validate } = require('../../validation/validate');
 const { createAccountSchema } = require('../../validation/account');
 const { websiteChoiceSchema } = require('../../validation/website');
 const { listAuditEventsSchema } = require('../../validation/auditEvent');
+const { abilityStatusSchema } = require('../../validation/ability');
 const { normalizeUrl, urlVariants } = require('../../lib/normalizeUrl');
 const { findFreeMediaFolder } = require('../../lib/mediaFolder');
 const {
@@ -23,6 +25,7 @@ const {
   encryptSecret,
 } = require('../../lib/crypto');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -36,13 +39,15 @@ const ACCOUNT_SELECT = {
   createdAt: true,
 };
 const WEBSITE_SUMMARY_SELECT = { id: true, websiteName: true, url: true, active: true };
-// A gallery's name and status, plus one crop column per kind from each of its images (at most 30),
-// enough for toAdminGallerySummary's counts and flags. Crops aren't files, so the admin can't see
-// them in Cloudinary; this is how the admin knows a site owner cropped a gallery.
+// A gallery's name, status and request note (where the site owner wants it), plus one crop column
+// per kind from each of its images (at most 30), enough for toAdminGallerySummary's counts and
+// flags. Crops aren't files, so the admin can't see them in Cloudinary; this is how the admin knows
+// a site owner cropped a gallery.
 const ADMIN_GALLERY_SELECT = {
   id: true,
   galleryName: true,
   status: true,
+  requestNote: true,
   images: { select: { thumbnailX: true, mobileX: true } },
 };
 // Every audit_event column but actorId: actorEmail already names the actor.
@@ -113,6 +118,16 @@ async function createWebsiteWithCredentials(tx, websiteName, url) {
   });
 
   return { website, credentials: { apiKey, webhookSecret } };
+}
+
+// Every new website starts with the posts ability, added: its site owner's first post and request
+// form move it on (api/siteOwner/abilities.js).
+async function addPostsAbility(tx, req, websiteId) {
+  const ability = await tx.websiteAbility.create({
+    data: { websiteId, kind: 'posts' },
+    select: ABILITY_SELECT,
+  });
+  await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_ADDED, ability);
 }
 
 // Audit events, written with the transaction client that made the change.
@@ -188,8 +203,11 @@ function toAdminGallerySummary({ images, ...gallery }) {
   };
 }
 
-// GET /api/admin/accounts — every site owner (active and inactive) with their linked websites,
-// each with its gallery summaries (not deleted, newest first).
+// GET /api/admin/accounts — every site owner (active and inactive) with their linked websites, each
+// with its abilities (not removed, in the order they were added; the request note is how the site
+// owner says where the ability goes), its post summaries (names and statuses only, not deleted,
+// drafts included, newest first) and its gallery summaries (not deleted, newest first, each with
+// its request note).
 router.get('/accounts', async (req, res) => {
   const accounts = await prisma.account.findMany({
     where: { role: 'site_owner' },
@@ -202,6 +220,16 @@ router.get('/accounts', async (req, res) => {
           website: {
             select: {
               ...WEBSITE_SUMMARY_SELECT,
+              abilities: {
+                where: { removedAt: null },
+                orderBy: { createdAt: 'asc' },
+                select: ABILITY_SELECT,
+              },
+              posts: {
+                where: { deletedAt: null },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                select: { id: true, postName: true, status: true },
+              },
               galleries: {
                 where: { deletedAt: null },
                 orderBy: { createdAt: 'desc' },
@@ -219,6 +247,7 @@ router.get('/accounts', async (req, res) => {
     ...account,
     websites: accountWebsites.map(({ website }) => ({
       ...website,
+      abilities: website.abilities.map(toAbility),
       galleries: website.galleries.map(toAdminGallerySummary),
     })),
   }));
@@ -305,7 +334,7 @@ router.post('/accounts', async (req, res) => {
     // New website path.
     const url = await assertUrlAvailable(input.websiteUrl);
 
-    // Three inserts, plus their audit events: if any one fails, nothing is saved.
+    // Four inserts, plus their audit events: if any one fails, nothing is saved.
     const { account, website, credentials } = await prisma.$transaction(async (tx) => {
       const account = await tx.account.create({ data: accountData, select: ACCOUNT_SELECT });
       const { website, credentials } = await createWebsiteWithCredentials(
@@ -315,6 +344,7 @@ router.post('/accounts', async (req, res) => {
       );
       await tx.accountWebsite.create({ data: { accountId: account.id, websiteId: website.id } });
       await recordWebsiteCreated(tx, req, website.id);
+      await addPostsAbility(tx, req, website.id);
       await recordAccountCreated(tx, req, account.id, website.id);
       await recordWebsiteLinked(tx, req, account.id, website.id);
       return { account, website, credentials };
@@ -372,13 +402,14 @@ router.post('/accounts/:id/websites', async (req, res) => {
   const url = await assertUrlAvailable(input.websiteUrl);
 
   try {
-    // Two inserts, plus their audit events: if either fails, nothing is saved.
+    // Three inserts, plus their audit events: if any one fails, nothing is saved.
     const { website, credentials } = await prisma.$transaction(async (tx) => {
       const created = await createWebsiteWithCredentials(tx, input.websiteName, url);
       await tx.accountWebsite.create({
         data: { accountId: account.id, websiteId: created.website.id },
       });
       await recordWebsiteCreated(tx, req, created.website.id);
+      await addPostsAbility(tx, req, created.website.id);
       await recordWebsiteLinked(tx, req, account.id, created.website.id);
       return created;
     });
@@ -389,6 +420,34 @@ router.post('/accounts/:id/websites', async (req, res) => {
     if (uniqueConflict(err) === 'url') throw new ServerError(409, URL_TAKEN);
     throw err;
   }
+});
+
+// PATCH /api/admin/abilities/:id/status — body { status: 'live' }. Sets a requested ability live
+// once the client website shows its content. A removed ability is a 404.
+router.patch('/abilities/:id/status', async (req, res) => {
+  const { status } = validate(abilityStatusSchema, req.body ?? {});
+
+  const ability = await prisma.websiteAbility.findFirst({
+    where: { id: req.params.id, removedAt: null },
+    select: ABILITY_SELECT,
+  });
+  if (!ability) throw new ServerError(404, 'Ability not found.');
+  if (ability.status === 'live') throw new ServerError(409, 'This ability is already live.');
+  if (ability.status === 'added') {
+    throw new ServerError(409, "This ability hasn't been requested yet.");
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const live = await tx.websiteAbility.update({
+      where: { id: ability.id },
+      data: { status },
+      select: ABILITY_SELECT,
+    });
+    await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_LIVE, live);
+    return live;
+  });
+
+  res.json({ data: toAbility(updated) });
 });
 
 module.exports = router;

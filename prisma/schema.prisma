@@ -44,6 +44,25 @@ enum GalleryStatus {
   @@map("gallery_status")
 }
 
+// The abilities a website can have (CLAUDE.md → Features, Abilities). Every website has posts;
+// galleries are added by the site owner.
+enum AbilityKind {
+  posts
+  galleries
+
+  @@map("ability_kind")
+}
+
+// Where an ability is on its way to the client website: added by the site owner, requested
+// through the request form, then set live by the admin once the client website shows it.
+enum AbilityStatus {
+  added
+  requested
+  live
+
+  @@map("ability_status")
+}
+
 model Account {
   id             String   @id @default(uuid(7))
   name           String
@@ -74,6 +93,7 @@ model Website {
   accountWebsites AccountWebsite[]
   posts           Post[]
   galleries       Gallery[]
+  abilities       WebsiteAbility[]
 
   @@map("website")
 }
@@ -159,6 +179,8 @@ model Gallery {
   title       String? // optional public headline
   copy        String?       @db.Text // optional public description; line breaks kept
   status      GalleryStatus @default(published)
+  requestNote String?       @map("request_note") @db.Text // its request message: where it goes
+  requestedAt DateTime?     @map("requested_at") // null until the request message is sent
   deletedAt   DateTime?     @map("deleted_at") // set by Delete a Gallery; gone from every route
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
@@ -198,6 +220,28 @@ model GalleryImage {
   @@map("gallery_image")
 }
 
+// One of a website's abilities. One row per website and kind, reused when a removed ability is
+// added again. turnedOn is the site owner's On/Off switch: off hides that ability's content from
+// the public API. removedAt is set when the site owner removes it (galleries only; posts can't be
+// removed), and null while the website has it.
+model WebsiteAbility {
+  id          String        @id @default(uuid(7))
+  websiteId   String        @map("website_id")
+  kind        AbilityKind
+  status      AbilityStatus @default(added)
+  turnedOn    Boolean       @default(true) @map("turned_on")
+  requestNote String?       @map("request_note") @db.Text // the request form: where it goes
+  requestedAt DateTime?     @map("requested_at")
+  removedAt   DateTime?     @map("removed_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  website Website @relation(fields: [websiteId], references: [id])
+
+  @@unique([websiteId, kind]) // also the index on website_id
+  @@map("website_ability")
+}
+
 // Append-only record of who did what (docs/security.md → Audit log). Written by lib/audit.js,
 // inside the same transaction as the change it records. No foreign keys, so an event never blocks
 // or depends on another row. metadata never holds a key, secret, token, header or post content.
@@ -206,7 +250,7 @@ model AuditEvent {
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
   actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account
   actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token
-  targetType String?  @map("target_type") // 'account', 'website', 'post' or 'gallery'
+  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery' or 'ability'
   targetId   String?  @map("target_id")
   metadata   Json?
   ip         String?

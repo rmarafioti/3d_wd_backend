@@ -2,12 +2,14 @@
 // and its galleries by slug with its API key. Covers every 401, that only this website's published
 // posts come back, newest first, each body in order, that the PublicPost shape never carries
 // postName, item ids or secrets, a gallery's images with their cropped versions and its 404s, and
-// both rate limits (per website for a valid key, per address for a refused one).
+// both rate limits (per website for a valid key, per address for a refused one), and that an
+// ability turned off (or galleries removed) hides its content.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../../app');
+const prisma = require('../../prisma');
 const {
   resetState,
   disconnect,
@@ -17,6 +19,7 @@ const {
   imageElement,
   createPost,
   createGallery,
+  createAbility,
   assertNoSecrets,
 } = require('../../testing/helpers');
 
@@ -267,5 +270,54 @@ describe('GET /api/public/galleries/:slug', () => {
 
     assert.equal(res.status, 429);
     assert.deepEqual(res.body, TOO_MANY_REQUESTS);
+  });
+});
+
+describe('abilities on the public routes', () => {
+  it('returns no posts while posts are turned off, and every published post once on', async () => {
+    const { website, apiKey } = await createWebsite();
+    const post = await createPost(website);
+    const ability = await createAbility(website, 'posts', { status: 'live', turnedOn: false });
+
+    const off = await fetchPosts(apiKey);
+    await prisma.websiteAbility.update({ where: { id: ability.id }, data: { turnedOn: true } });
+    const on = await fetchPosts(apiKey);
+
+    assert.equal(off.status, 200);
+    assert.deepEqual(off.body, { data: [] });
+    assert.deepEqual(
+      on.body.data.map((item) => item.id),
+      [post.id],
+    );
+  });
+
+  it('returns 404 for a gallery while galleries are turned off or removed', async () => {
+    const { website, apiKey } = await createWebsite();
+    await createGallery(website, { slug: 'art' });
+    const ability = await createAbility(website, 'galleries', { status: 'live', turnedOn: false });
+
+    const off = await fetchGallery(apiKey, 'art');
+    await prisma.websiteAbility.update({
+      where: { id: ability.id },
+      data: { turnedOn: true, removedAt: new Date() },
+    });
+    const removed = await fetchGallery(apiKey, 'art');
+    await prisma.websiteAbility.update({ where: { id: ability.id }, data: { removedAt: null } });
+    const on = await fetchGallery(apiKey, 'art');
+
+    assert.deepEqual([off.status, removed.status, on.status], [404, 404, 200]);
+    assert.deepEqual(off.body, GALLERY_NOT_FOUND);
+    assert.deepEqual(removed.body, GALLERY_NOT_FOUND);
+  });
+
+  it("shows another website's content as usual when only one website turned its ability off", async () => {
+    const { website, apiKey } = await createWebsite();
+    await createPost(website);
+    const { website: other } = await createWebsite();
+    await createAbility(other, 'posts', { status: 'live', turnedOn: false });
+
+    const res = await fetchPosts(apiKey);
+
+    assert.equal(res.body.data.length, 1);
   });
 });

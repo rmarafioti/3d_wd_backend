@@ -1,10 +1,10 @@
-// Zod schemas for photo galleries: create, edit (full form submission) and status (draft /
-// published). A gallery's images are an ordered list, 1 to 30. Each image may carry a thumbnail
-// crop (a square) and a mobile crop (at least as tall as it is wide): rectangles in the stored
-// image's pixels that must fit inside it. A gallery's crops are consistent (Rich, 2026-10-31):
-// every image has a thumbnail crop or none does, every image has a mobile crop or none does, and
-// every mobile crop has one shape. Optional text fields come out as null when blank, null or
-// missing. Limits match the Validation rules in docs/endpoints.md.
+// Zod schemas for photo galleries: create, edit (full form submission), status (draft / published)
+// and the request message. A gallery's images are an ordered list, 1 to 30. Each image may carry a
+// thumbnail crop (a square) and a mobile crop (at least as tall as it is wide): rectangles in the
+// stored image's pixels that must fit inside it. A gallery's crops are consistent (Rich,
+// 2026-10-31): every image has a thumbnail crop or none does, every image has a mobile crop or none
+// does, and every mobile crop has one shape. Optional text fields come out as null when blank, null
+// or missing. Limits match the Validation rules in docs/endpoints.md.
 const { z } = require('zod');
 const { requiredText, optionalText, itemId, websiteId, imageShape } = require('./fields');
 
@@ -107,4 +107,12 @@ const updateGallerySchema = z.object({
 
 const galleryStatusSchema = z.object({ status });
 
-module.exports = { createGallerySchema, updateGallerySchema, galleryStatusSchema };
+// The request message sent once after a gallery is created: where on the site it should go.
+const requestGallerySchema = z.object({ requestNote: requiredText('Request note', 1000) });
+
+module.exports = {
+  createGallerySchema,
+  updateGallerySchema,
+  galleryStatusSchema,
+  requestGallerySchema,
+};
