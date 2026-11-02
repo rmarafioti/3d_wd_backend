@@ -1,5 +1,7 @@
 // Public routes, mounted at /api/public: called server-side by a client's website with its API
 // key (Authorization: Bearer <apiKey>), for its published posts and its galleries by slug.
+// An ability the site owner turned off (api/siteOwner/abilities.js) hides its content here: no
+// posts, or a 404 for every gallery. Galleries also need the ability not removed.
 // No cookie, no CSRF header, no CORS needed.
 // Rate limited twice (lib/rateLimit.js): refused keys per IP, before the key check, and each
 // website's calls per website, after it.
@@ -18,10 +20,16 @@ router.use(invalidApiKeyRateLimit, requireApiKey, publicApiRateLimit);
 const GALLERY_NOT_FOUND = 'Gallery not found.';
 
 // GET /api/public/posts — the website's published posts (never a deleted one), newest first, each
-// body in reading order. postName is internal and is never returned here; neither are image ids.
+// body in reading order; none while posts are turned off. postName is internal and is never
+// returned here; neither are image ids.
 router.get('/posts', async (req, res) => {
   const posts = await prisma.post.findMany({
-    where: { websiteId: req.website.id, status: 'published', deletedAt: null },
+    where: {
+      websiteId: req.website.id,
+      status: 'published',
+      deletedAt: null,
+      website: { abilities: { none: { kind: 'posts', turnedOn: false } } },
+    },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     select: {
       id: true,
@@ -49,9 +57,10 @@ router.get('/posts', async (req, res) => {
   res.json({ data });
 });
 
-// GET /api/public/galleries/:slug — one of the website's published galleries (never a deleted
-// one), its images in order, each with its thumbnail and mobile versions when the site owner
-// cropped them. galleryName is internal and is never returned here; neither are image ids.
+// GET /api/public/galleries/:slug — one of the website's published galleries (never a deleted one,
+// nor while galleries are turned off or removed), its images in order, each with its thumbnail and
+// mobile versions when the site owner cropped them. galleryName is internal and is never returned
+// here; neither are image ids.
 router.get('/galleries/:slug', async (req, res) => {
   const gallery = await prisma.gallery.findFirst({
     where: {
@@ -59,6 +68,11 @@ router.get('/galleries/:slug', async (req, res) => {
       slug: req.params.slug,
       status: 'published',
       deletedAt: null,
+      website: {
+        abilities: {
+          none: { kind: 'galleries', OR: [{ turnedOn: false }, { removedAt: { not: null } }] },
+        },
+      },
     },
     select: {
       id: true,

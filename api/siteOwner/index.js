@@ -1,8 +1,9 @@
-// Site owner routes, mounted at /api/siteOwner: the site owner's websites with post and gallery
-// summaries, post create / read / edit / draft or publish / delete, and the signature for uploading
-// a website's images to Cloudinary. The gallery routes are their own router (./galleries.js),
-// mounted here behind the same guards. Every route requires a signed-in site owner. Every post
-// change writes its audit event (lib/audit.js) inside the same transaction.
+// Site owner routes, mounted at /api/siteOwner: the site owner's websites with their abilities and
+// post and gallery summaries, post create / read / edit / draft or publish / delete, and the
+// signature for uploading a website's images to Cloudinary. The gallery and ability routes are
+// their own routers (./galleries.js, ./abilities.js), mounted here behind the same guards. Every
+// route requires a signed-in site owner. Every post change writes its audit event (lib/audit.js)
+// inside the same transaction.
 //
 // Ownership (lib/ownership.js): the account always comes from req.user (the session), never from
 // the request. A website belongs to the site owner when an account_website row links them AND the
@@ -22,13 +23,16 @@ const { toBody } = require('../../lib/postBody');
 const { signUpload } = require('../../lib/cloudinary');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { ABILITY_SELECT, toAbility } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
+const abilities = require('./abilities');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('site_owner'));
 router.use('/galleries', galleries);
+router.use('/abilities', abilities);
 
 const POST_NOT_FOUND = 'Post not found.';
 const WEBSITE_NOT_FOUND = 'Website not found.';
@@ -117,8 +121,8 @@ function recordPostEvent(tx, req, action, post) {
   });
 }
 
-// GET /api/siteOwner/websites — the site owner's active websites, each with post and gallery
-// summaries.
+// GET /api/siteOwner/websites — the site owner's active websites, each with its abilities (not
+// removed, in the order they were added) and post and gallery summaries.
 router.get('/websites', async (req, res) => {
   const websites = await prisma.website.findMany({
     where: ownedWebsiteWhere(req.user.id),
@@ -128,6 +132,11 @@ router.get('/websites', async (req, res) => {
       websiteName: true,
       url: true,
       active: true,
+      abilities: {
+        where: { removedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: ABILITY_SELECT,
+      },
       posts: {
         where: { deletedAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -143,13 +152,21 @@ router.get('/websites', async (req, res) => {
       galleries: {
         where: { deletedAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        select: { id: true, galleryName: true, slug: true, status: true, createdAt: true },
+        select: {
+          id: true,
+          galleryName: true,
+          slug: true,
+          status: true,
+          requestedAt: true,
+          createdAt: true,
+        },
       },
     },
   });
 
   const data = websites.map((website) => ({
     ...website,
+    abilities: website.abilities.map(toAbility),
     posts: website.posts.map((post) => ({ ...post, postDate: toDateOnly(post.postDate) })),
   }));
   res.json({ data });

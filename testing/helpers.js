@@ -1,7 +1,7 @@
 // Shared test helpers: the reset every test starts from, builders that write real rows to the test
-// database (accounts, websites, posts, galleries), the session cookie and CSRF header a request
-// needs, the no-secrets assertion, the audit log reader and builder, and mocks for the two external
-// edges (Google ID-token verification and the outbound revalidation fetch).
+// database (accounts, websites, posts, galleries, abilities), the session cookie and CSRF header a
+// request needs, the no-secrets assertion, the audit log reader and builder, and mocks for the two
+// external edges (Google ID-token verification and the outbound revalidation fetch).
 const assert = require('node:assert/strict');
 const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../prisma');
@@ -34,7 +34,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database and empty rate limit counts.
 async function resetState() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
+    'TRUNCATE TABLE website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
   );
   await resetRateLimits();
 }
@@ -153,6 +153,11 @@ function createGallery(website, { images = [], ...overrides } = {}) {
   });
 }
 
+// Gives a website one of its abilities (website_ability): added and on unless overridden.
+function createAbility(website, kind, overrides = {}) {
+  return prisma.websiteAbility.create({ data: { websiteId: website.id, kind, ...overrides } });
+}
+
 // A site owner linked to an active website: the starting point of most site owner tests.
 async function createOwnerWithWebsite(websiteOverrides = {}) {
   const owner = await createSiteOwner();
@@ -254,6 +259,7 @@ module.exports = {
   imageElement,
   createPost,
   createGallery,
+  createAbility,
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,

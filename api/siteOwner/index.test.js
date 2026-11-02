@@ -23,6 +23,7 @@ const {
   imageElement,
   createPost,
   createGallery,
+  createAbility,
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,
@@ -129,7 +130,7 @@ describe('site owner route guards', () => {
 });
 
 describe('GET /api/siteOwner/websites', () => {
-  it("returns only the owner's active websites, sorted, with post and gallery summaries newest first", async () => {
+  it("returns only the owner's active websites, sorted, with abilities and post and gallery summaries", async () => {
     const owner = await createSiteOwner();
     const { website: beta } = await createWebsite({ websiteName: 'Beta' });
     const { website: alpha } = await createWebsite({ websiteName: 'Alpha' });
@@ -148,8 +149,19 @@ describe('GET /api/siteOwner/websites', () => {
       slug: 'interior',
       status: 'draft',
     });
-    const newerGallery = await createGallery(alpha, { galleryName: 'Art', slug: 'art' });
+    const newerGallery = await createGallery(alpha, {
+      galleryName: 'Art',
+      slug: 'art',
+      requestedAt: new Date('2026-11-02T00:00:00.000Z'),
+    });
     await createGallery(alpha, { galleryName: 'Deleted', deletedAt: new Date() });
+    const postsAbility = await createAbility(alpha, 'posts', { status: 'live' });
+    const galleriesAbility = await createAbility(alpha, 'galleries', {
+      status: 'requested',
+      requestNote: 'A gallery page',
+      requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+    await createAbility(beta, 'galleries', { removedAt: new Date() });
 
     const res = await as(owner, 'get', '/api/siteOwner/websites');
 
@@ -161,6 +173,28 @@ describe('GET /api/siteOwner/websites', () => {
           websiteName: 'Alpha',
           url: alpha.url,
           active: true,
+          abilities: [
+            {
+              id: postsAbility.id,
+              kind: 'posts',
+              status: 'live',
+              turnedOn: true,
+              requestNote: null,
+              requestedAt: null,
+              createdAt: postsAbility.createdAt.toISOString(),
+              updatedAt: postsAbility.updatedAt.toISOString(),
+            },
+            {
+              id: galleriesAbility.id,
+              kind: 'galleries',
+              status: 'requested',
+              turnedOn: true,
+              requestNote: 'A gallery page',
+              requestedAt: '2026-11-01T00:00:00.000Z',
+              createdAt: galleriesAbility.createdAt.toISOString(),
+              updatedAt: galleriesAbility.updatedAt.toISOString(),
+            },
+          ],
           posts: [
             {
               id: newer.id,
@@ -185,6 +219,7 @@ describe('GET /api/siteOwner/websites', () => {
               galleryName: 'Art',
               slug: 'art',
               status: 'published',
+              requestedAt: '2026-11-02T00:00:00.000Z',
               createdAt: newerGallery.createdAt.toISOString(),
             },
             {
@@ -192,6 +227,7 @@ describe('GET /api/siteOwner/websites', () => {
               galleryName: 'Interior',
               slug: 'interior',
               status: 'draft',
+              requestedAt: null,
               createdAt: olderGallery.createdAt.toISOString(),
             },
           ],
@@ -201,6 +237,7 @@ describe('GET /api/siteOwner/websites', () => {
           websiteName: 'Beta',
           url: beta.url,
           active: true,
+          abilities: [],
           posts: [],
           galleries: [],
         },

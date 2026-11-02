@@ -17,6 +17,9 @@ const {
   createAdmin,
   createSiteOwner,
   createWebsite,
+  createAbility,
+  createPost,
+  paragraph,
   linkWebsite,
   createGallery,
   imageSrc,
@@ -43,6 +46,11 @@ function adminEvent(admin, action, targetType, targetId, metadata = null) {
   return { action, actorId: admin.id, actorEmail: admin.email, targetType, targetId, metadata };
 }
 
+// The state a new website's posts ability is added with, as its audit event's metadata holds it.
+function postsAddedMetadata(website) {
+  return { websiteId: website.id, kind: 'posts', status: 'added', turnedOn: true, removed: false };
+}
+
 async function rowCounts() {
   const [accounts, websites, links] = await Promise.all([
     prisma.account.count(),
@@ -60,6 +68,7 @@ describe('admin route guards', () => {
     ['post', '/api/admin/accounts/some-id/websites'],
     ['get', '/api/admin/auditEvents'],
     ['get', '/api/admin/auditEvents/months'],
+    ['patch', '/api/admin/abilities/some-id/status'],
   ];
 
   for (const [method, path] of routes) {
@@ -106,8 +115,24 @@ describe('GET /api/admin/accounts', () => {
           active: true,
           createdAt: amy.createdAt.toISOString(),
           websites: [
-            { id: alpha.id, websiteName: 'Alpha', url: alpha.url, active: false, galleries: [] },
-            { id: beta.id, websiteName: 'Beta', url: beta.url, active: true, galleries: [] },
+            {
+              id: alpha.id,
+              websiteName: 'Alpha',
+              url: alpha.url,
+              active: false,
+              abilities: [],
+              posts: [],
+              galleries: [],
+            },
+            {
+              id: beta.id,
+              websiteName: 'Beta',
+              url: beta.url,
+              active: true,
+              abilities: [],
+              posts: [],
+              galleries: [],
+            },
           ],
         },
         {
@@ -149,6 +174,8 @@ describe('GET /api/admin/accounts', () => {
     };
     const cropped = await createGallery(website, {
       galleryName: 'Cropped',
+      requestNote: 'The portfolio page',
+      requestedAt: new Date(),
       title: 'A title',
       copy: 'Some copy',
       images: [image('a', crops), image('b', crops), image('c', crops)],
@@ -172,6 +199,7 @@ describe('GET /api/admin/accounts', () => {
         id: plain.id,
         galleryName: 'Plain',
         status: 'draft',
+        requestNote: null,
         imageCount: 1,
         hasThumbnails: false,
         hasMobileCrops: false,
@@ -180,6 +208,7 @@ describe('GET /api/admin/accounts', () => {
         id: mixed.id,
         galleryName: 'Mixed',
         status: 'published',
+        requestNote: null,
         imageCount: 2,
         hasThumbnails: false,
         hasMobileCrops: false,
@@ -188,6 +217,7 @@ describe('GET /api/admin/accounts', () => {
         id: cropped.id,
         galleryName: 'Cropped',
         status: 'published',
+        requestNote: 'The portfolio page',
         imageCount: 3,
         hasThumbnails: true,
         hasMobileCrops: true,
@@ -290,7 +320,7 @@ describe('POST /api/admin/accounts', () => {
     ]);
   });
 
-  it('records the new website, account and link in the audit log, without credentials', async () => {
+  it('records the new website, its posts ability, account and link in the audit log, without credentials', async () => {
     const admin = await createAdmin();
 
     const res = await as(admin, 'post', '/api/admin/accounts').send({
@@ -301,9 +331,11 @@ describe('POST /api/admin/accounts', () => {
     });
 
     const { account, website, credentials } = res.body.data;
+    const posts = await prisma.websiteAbility.findFirst({ where: { websiteId: website.id } });
     const events = await auditEvents();
     assert.deepEqual(events, [
       adminEvent(admin, 'website.created', 'website', website.id),
+      adminEvent(admin, 'ability.added', 'ability', posts.id, postsAddedMetadata(website)),
       adminEvent(admin, 'account.created', 'account', account.id, { websiteId: website.id }),
       adminEvent(admin, 'website.linked', 'account', account.id, { websiteId: website.id }),
     ]);
@@ -477,7 +509,7 @@ describe('POST /api/admin/accounts/:id/websites', () => {
     ]);
   });
 
-  it('records the new website and its link in the audit log', async () => {
+  it('records the new website, its posts ability and its link in the audit log', async () => {
     const admin = await createAdmin();
     const owner = await createSiteOwner();
 
@@ -487,8 +519,10 @@ describe('POST /api/admin/accounts/:id/websites', () => {
     });
 
     const { website } = res.body.data;
+    const posts = await prisma.websiteAbility.findFirst({ where: { websiteId: website.id } });
     assert.deepEqual(await auditEvents(), [
       adminEvent(admin, 'website.created', 'website', website.id),
+      adminEvent(admin, 'ability.added', 'ability', posts.id, postsAddedMetadata(website)),
       adminEvent(admin, 'website.linked', 'account', owner.id, { websiteId: website.id }),
     ]);
   });
@@ -767,5 +801,159 @@ describe('GET /api/admin/auditEvents/months', () => {
     await as(admin, 'get', '/api/admin/auditEvents/months');
 
     assert.deepEqual(await auditEvents(), []);
+  });
+});
+
+describe('PATCH /api/admin/abilities/:id/status', () => {
+  it('sets a requested ability live and records it with its state', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const ability = await createAbility(website, 'galleries', {
+      status: 'requested',
+      requestNote: 'A gallery page',
+      requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+
+    const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
+      status: 'live',
+    });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data, {
+      id: ability.id,
+      kind: 'galleries',
+      status: 'live',
+      turnedOn: true,
+      requestNote: 'A gallery page',
+      requestedAt: '2026-11-01T00:00:00.000Z',
+      createdAt: ability.createdAt.toISOString(),
+      updatedAt: res.body.data.updatedAt,
+    });
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(admin, 'ability.live', 'ability', ability.id, {
+        websiteId: website.id,
+        kind: 'galleries',
+        status: 'live',
+        turnedOn: true,
+        removed: false,
+      }),
+    ]);
+  });
+
+  it('returns 409 for an ability not yet requested, or already live', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const added = await createAbility(website, 'posts');
+    const live = await createAbility(website, 'galleries', { status: 'live' });
+
+    const notRequested = await as(admin, 'patch', `/api/admin/abilities/${added.id}/status`).send({
+      status: 'live',
+    });
+    const alreadyLive = await as(admin, 'patch', `/api/admin/abilities/${live.id}/status`).send({
+      status: 'live',
+    });
+
+    assert.equal(notRequested.status, 409);
+    assert.deepEqual(notRequested.body, {
+      error: { message: "This ability hasn't been requested yet." },
+    });
+    assert.equal(alreadyLive.status, 409);
+    assert.deepEqual(alreadyLive.body, { error: { message: 'This ability is already live.' } });
+    assert.deepEqual(await auditEvents(), []);
+  });
+
+  it('returns 404 for a removed or unknown ability', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const removed = await createAbility(website, 'galleries', {
+      status: 'requested',
+      removedAt: new Date(),
+    });
+
+    for (const id of [removed.id, '019a0000-0000-7000-8000-000000000000']) {
+      const res = await as(admin, 'patch', `/api/admin/abilities/${id}/status`).send({
+        status: 'live',
+      });
+
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, { error: { message: 'Ability not found.' } });
+    }
+  });
+
+  it('returns 400 on fields.status for any status but live', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const ability = await createAbility(website, 'galleries', { status: 'requested' });
+
+    const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
+      status: 'added',
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: { message: VALIDATION_FAILED, fields: { status: 'Status must be live.' } },
+    });
+  });
+});
+
+describe('GET /api/admin/accounts abilities', () => {
+  it("returns each website's abilities that aren't removed, with the request note", async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const { website } = await createWebsite();
+    await linkWebsite(owner, website);
+    const posts = await createAbility(website, 'posts', {
+      status: 'requested',
+      requestNote: 'A blog page',
+      requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+    const { website: other } = await createWebsite();
+    await linkWebsite(owner, other);
+    await createAbility(other, 'galleries', { removedAt: new Date() });
+
+    const res = await as(admin, 'get', '/api/admin/accounts');
+
+    const [first, second] = res.body.data[0].websites;
+    const withAbility = first.id === website.id ? first : second;
+    const withRemoved = first.id === website.id ? second : first;
+    assert.deepEqual(withAbility.abilities, [
+      {
+        id: posts.id,
+        kind: 'posts',
+        status: 'requested',
+        turnedOn: true,
+        requestNote: 'A blog page',
+        requestedAt: '2026-11-01T00:00:00.000Z',
+        createdAt: posts.createdAt.toISOString(),
+        updatedAt: posts.updatedAt.toISOString(),
+      },
+    ]);
+    assert.deepEqual(withRemoved.abilities, []);
+  });
+});
+
+describe('GET /api/admin/accounts posts', () => {
+  it("returns each website's posts, not deleted, drafts included, newest first, as names and statuses only", async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const { website } = await createWebsite();
+    await linkWebsite(owner, website);
+    const older = await createPost(website, {
+      postName: 'Older',
+      status: 'draft',
+      header: 'Private header',
+      body: [paragraph('Private body words')],
+    });
+    const newer = await createPost(website, { postName: 'Newer' });
+    await createPost(website, { postName: 'Deleted', deletedAt: new Date() });
+
+    const res = await as(admin, 'get', '/api/admin/accounts');
+
+    assert.deepEqual(res.body.data[0].websites[0].posts, [
+      { id: newer.id, postName: 'Newer', status: 'published' },
+      { id: older.id, postName: 'Older', status: 'draft' },
+    ]);
+    const text = JSON.stringify(res.body);
+    assert.ok(!text.includes('Private header') && !text.includes('Private body words'));
   });
 });

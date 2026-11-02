@@ -1,8 +1,9 @@
-// Request tests for the site owner gallery routes (api/siteOwner/galleries.js): create, read,
-// edit, status and delete. Covers the role guard, the ownership rule (another owner's, an inactive
-// website's or a deleted gallery is a 404), validation including the crop rules, the image src
-// folder rule, the slug (made once, -2 on a clash, never changed), the image list reconcile, and
-// the audit event and revalidation call after every change. fetch is mocked in every test.
+// Request tests for the site owner gallery routes (api/siteOwner/galleries.js): create, read, edit,
+// status and delete. Covers the role guard, the Photo Galleries ability create needs, the ownership
+// rule (another owner's, an inactive website's or a deleted gallery is a 404), validation including
+// the crop rules, the image src folder rule, the slug (made once, -2 on a clash, never changed),
+// the image list reconcile, and the audit event and revalidation call after every change. fetch is
+// mocked in every test.
 require('../../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,6 +19,7 @@ const {
   linkWebsite,
   imageSrc,
   createGallery,
+  createAbility,
   createOwnerWithWebsite,
   sessionCookie,
   assertNoSecrets,
@@ -40,6 +42,13 @@ beforeEach(async () => {
 });
 afterEach(() => mock.restoreAll());
 after(disconnect);
+
+// A site owner whose website has the Photo Galleries ability, as every gallery route needs.
+async function ownerWithGalleries(websiteOverrides) {
+  const created = await createOwnerWithWebsite(websiteOverrides);
+  await createAbility(created.website, 'galleries');
+  return created;
+}
 
 // Sends a request as the given account. Writes carry the CSRF header.
 function as(account, method, path) {
@@ -103,6 +112,7 @@ describe('site owner gallery route guards', () => {
     ['get', '/api/siteOwner/galleries/some-id'],
     ['patch', '/api/siteOwner/galleries/some-id'],
     ['patch', '/api/siteOwner/galleries/some-id/status'],
+    ['post', '/api/siteOwner/galleries/some-id/request'],
     ['delete', '/api/siteOwner/galleries/some-id'],
   ];
 
@@ -127,7 +137,7 @@ describe('site owner gallery route guards', () => {
   }
 
   it('returns 403 for a write without the CSRF header', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
 
     const res = await request(app)
       .post('/api/siteOwner/galleries')
@@ -141,7 +151,7 @@ describe('site owner gallery route guards', () => {
 
 describe('POST /api/siteOwner/galleries', () => {
   it('creates a gallery with its images in order and crops, and returns the Gallery shape', async () => {
-    const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
+    const { owner, website } = await ownerWithGalleries({ websiteName: 'Stevie The Dog' });
     const first = image(website, {
       src: imageSrc(website, 'a'),
       caption: ' The front room ',
@@ -179,6 +189,8 @@ describe('POST /api/siteOwner/galleries', () => {
       title: 'Inside the shop',
       copy: 'Line one\nLine two',
       status: 'published',
+      requestNote: null,
+      requestedAt: null,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       images: [
@@ -208,7 +220,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('stores blank optional fields as null and saves a draft when asked', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
 
     const res = await as(owner, 'post', '/api/siteOwner/galleries').send(
       newGallery(website, { title: '   ', copy: null, status: 'draft' }),
@@ -221,7 +233,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('adds -2 to the slug when the website already has it, even on a deleted gallery', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     await createGallery(website, { slug: 'interior', deletedAt: new Date() });
     const { website: other } = await createWebsite();
     await createGallery(other, { slug: 'interior-2' });
@@ -233,7 +245,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it("returns 409 for a name another of the website's galleries has, in any case", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     await createGallery(website, { galleryName: 'Interior' });
 
     const res = await as(owner, 'post', '/api/siteOwner/galleries').send(
@@ -246,7 +258,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it("allows a deleted gallery's name, or another website's", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     await createGallery(website, { galleryName: 'Interior', deletedAt: new Date() });
     const { website: other } = await createWebsite();
     await createGallery(other, { galleryName: 'Interior' });
@@ -257,7 +269,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('creates one of two same-name galleries sent at once and refuses the other', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const send = () => as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(website));
 
     const statuses = (await Promise.all([send(), send()])).map((res) => res.status).sort();
@@ -267,7 +279,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('gives two names that make the same slug, sent at once, their own slugs', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const send = (galleryName) =>
       as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(website, { galleryName }));
 
@@ -281,7 +293,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('records the new gallery in the audit log and revalidates the website', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
 
     const res = await as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(website));
 
@@ -295,8 +307,8 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it("returns 404 for another owner's website or an inactive one", async () => {
-    const { owner } = await createOwnerWithWebsite();
-    const { website: notMine } = await createOwnerWithWebsite();
+    const { owner } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
     const { website: inactive } = await createWebsite({ active: false });
     await linkWebsite(owner, inactive);
 
@@ -309,8 +321,25 @@ describe('POST /api/siteOwner/galleries', () => {
     assert.equal(await prisma.gallery.count(), 0);
   });
 
-  it("returns 400 Invalid image. for an image outside the website's folder", async () => {
+  it('returns 403 on a website without the Photo Galleries ability, or with it removed', async () => {
     const { owner, website } = await createOwnerWithWebsite();
+    const { website: removed } = await createOwnerWithWebsite();
+    await linkWebsite(owner, removed);
+    await createAbility(removed, 'galleries', { removedAt: new Date() });
+
+    for (const target of [website, removed]) {
+      const res = await as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(target));
+
+      assert.equal(res.status, 403);
+      assert.deepEqual(res.body, {
+        error: { message: 'Add Photo Galleries to this website first.' },
+      });
+    }
+    assert.equal(await prisma.gallery.count(), 0);
+  });
+
+  it("returns 400 Invalid image. for an image outside the website's folder", async () => {
+    const { owner, website } = await ownerWithGalleries();
     const { website: other } = await createWebsite();
 
     const res = await as(owner, 'post', '/api/siteOwner/galleries').send(
@@ -323,7 +352,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('returns 400 with a message per field for invalid input', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const tooMany = Array.from({ length: 31 }, () => image(website));
 
     const cases = [
@@ -349,7 +378,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('returns 400 for a crop that is outside the image or the wrong shape', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const thumbnail = 'Thumbnail crop must be a square inside the image.';
     const mobile = 'Mobile crop must be inside the image and at least as tall as it is wide.';
 
@@ -371,7 +400,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('accepts a crop that fills the image exactly', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const crops = {
       thumbnailCrop: { x: 400, y: 0, width: 800, height: 800 },
       mobileCrop: { x: 0, y: 0, width: 800, height: 800 },
@@ -385,7 +414,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('returns 400 on images when the crops are not the same across the gallery', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const square = { x: 0, y: 0, width: 800, height: 800 };
     const fourByFive = { x: 0, y: 0, width: 640, height: 800 };
     const nineBySixteen = { x: 0, y: 0, width: 450, height: 800 };
@@ -414,7 +443,7 @@ describe('POST /api/siteOwner/galleries', () => {
   });
 
   it('accepts mobile crops of one shape within whole-pixel rounding', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const images = [
       { x: 0, y: 0, width: 640, height: 800 },
       { x: 0, y: 0, width: 626, height: 782 },
@@ -436,7 +465,7 @@ describe('POST /api/siteOwner/galleries', () => {
 
 describe('GET /api/siteOwner/galleries/:id', () => {
   it('returns the gallery with its images in order', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website, {
       images: [
         storedImage(website, { src: imageSrc(website, 'b'), altText: 'B' }),
@@ -462,8 +491,8 @@ describe('GET /api/siteOwner/galleries/:id', () => {
   });
 
   it("returns 404 for another owner's, a deleted or an unknown gallery", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const { website: notMine } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
     const others = await createGallery(notMine);
     const deleted = await createGallery(website, { deletedAt: new Date() });
 
@@ -478,7 +507,7 @@ describe('GET /api/siteOwner/galleries/:id', () => {
 
 describe('PATCH /api/siteOwner/galleries/:id', () => {
   it('reorders and updates kept images, deletes missing ones and adds new ones', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website, {
       images: [
         storedImage(website, { src: imageSrc(website, 'a'), altText: 'A' }),
@@ -513,7 +542,7 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it('returns 400 on images when the edit leaves an image without the thumbnail crop the others have', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website, { images: [storedImage(website)] });
     const [stored] = gallery.images;
 
@@ -536,8 +565,8 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it('keeps the slug, website and status when the gallery is renamed', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const { website: other } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
+    const { website: other } = await ownerWithGalleries();
     const gallery = await createGallery(website, { slug: 'interior', status: 'draft' });
 
     const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}`).send(
@@ -557,7 +586,7 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it("returns 409 for another gallery's name and changes nothing, but keeps its own", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     await createGallery(website, { galleryName: 'Art' });
     const gallery = await createGallery(website, { galleryName: 'Interior' });
     const path = `/api/siteOwner/galleries/${gallery.id}`;
@@ -574,7 +603,7 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it("returns 400 Invalid image. for another gallery's image id or an id sent twice", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website, { images: [storedImage(website)] });
     const other = await createGallery(website, { images: [storedImage(website)] });
     const [own] = gallery.images;
@@ -595,7 +624,7 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it('records the edit in the audit log and revalidates the website', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
 
     await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}`).send(editGallery(website));
@@ -607,8 +636,8 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
   });
 
   it("returns 404 for another owner's gallery and changes nothing", async () => {
-    const { owner } = await createOwnerWithWebsite();
-    const { website: notMine } = await createOwnerWithWebsite();
+    const { owner } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
     const gallery = await createGallery(notMine);
 
     const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}`).send(
@@ -624,7 +653,7 @@ describe('PATCH /api/siteOwner/galleries/:id', () => {
 
 describe('PATCH /api/siteOwner/galleries/:id/status', () => {
   it('sets a gallery to draft and back to published, each in the audit log', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
     const path = `/api/siteOwner/galleries/${gallery.id}/status`;
 
@@ -640,7 +669,7 @@ describe('PATCH /api/siteOwner/galleries/:id/status', () => {
   });
 
   it('revalidates the website after a status change', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
 
     await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/status`).send({
@@ -651,7 +680,7 @@ describe('PATCH /api/siteOwner/galleries/:id/status', () => {
   });
 
   it('returns 400 on status when it is missing or not draft or published', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
 
     for (const body of [{}, { status: 'archived' }]) {
@@ -665,8 +694,8 @@ describe('PATCH /api/siteOwner/galleries/:id/status', () => {
   });
 
   it("returns 404 for another owner's gallery", async () => {
-    const { owner } = await createOwnerWithWebsite();
-    const { website: notMine } = await createOwnerWithWebsite();
+    const { owner } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
     const gallery = await createGallery(notMine);
 
     const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/status`).send({
@@ -680,7 +709,7 @@ describe('PATCH /api/siteOwner/galleries/:id/status', () => {
 
 describe('DELETE /api/siteOwner/galleries/:id', () => {
   it('stamps deletedAt, keeps the rows, records it and revalidates the website', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website, { images: [storedImage(website)] });
 
     const res = await as(owner, 'delete', `/api/siteOwner/galleries/${gallery.id}`);
@@ -696,7 +725,7 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
   });
 
   it('treats a deleted gallery as gone on every route', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
+    const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
     const path = `/api/siteOwner/galleries/${gallery.id}`;
     await as(owner, 'delete', path);
@@ -715,8 +744,8 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
   });
 
   it("returns 404 for another owner's gallery and leaves it", async () => {
-    const { owner } = await createOwnerWithWebsite();
-    const { website: notMine } = await createOwnerWithWebsite();
+    const { owner } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
     const gallery = await createGallery(notMine);
 
     const res = await as(owner, 'delete', `/api/siteOwner/galleries/${gallery.id}`);
@@ -724,5 +753,116 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
     assert.equal(res.status, 404);
     const stored = await prisma.gallery.findUnique({ where: { id: gallery.id } });
     assert.equal(stored.deletedAt, null);
+  });
+});
+
+describe('POST /api/siteOwner/galleries/:id/request', () => {
+  // The gallery event a request writes, beside the ability's own event when its status changes.
+  function abilityRequested(owner, ability, turnedOn = true) {
+    return {
+      action: 'ability.requested',
+      actorId: owner.id,
+      actorEmail: owner.email,
+      targetType: 'ability',
+      targetId: ability.id,
+      metadata: {
+        websiteId: ability.websiteId,
+        kind: 'galleries',
+        status: 'requested',
+        turnedOn,
+        removed: false,
+      },
+    };
+  }
+
+  it('saves the note, moves an added or live ability to requested, and keeps the note out of the audit log', async () => {
+    for (const status of ['added', 'live']) {
+      await resetState();
+      const { owner, website } = await createOwnerWithWebsite();
+      const ability = await createAbility(website, 'galleries', { status });
+      const gallery = await createGallery(website);
+
+      const res = await as(owner, 'post', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+        requestNote: '  On the Portfolio page,\nbelow the intro.  ',
+      });
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.id, gallery.id);
+      assert.equal(res.body.data.requestNote, 'On the Portfolio page,\nbelow the intro.');
+      assert.ok(res.body.data.requestedAt);
+      const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+      assert.equal(stored.status, 'requested');
+      assert.equal(stored.requestedAt.toISOString(), res.body.data.requestedAt);
+      assert.equal(stored.requestNote, null);
+      const events = await auditEvents();
+      assert.deepEqual(events, [
+        galleryEvent(owner, 'gallery.requested', gallery.id, website.id),
+        abilityRequested(owner, ability),
+      ]);
+      assert.ok(!JSON.stringify(events).includes('Portfolio'));
+    }
+  });
+
+  it('writes only the gallery event when the ability is already requested', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const requestedAt = new Date('2026-11-01T00:00:00.000Z');
+    const ability = await createAbility(website, 'galleries', { status: 'requested', requestedAt });
+    const gallery = await createGallery(website);
+
+    const res = await as(owner, 'post', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'Here',
+    });
+
+    assert.equal(res.status, 200);
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.deepEqual(stored.requestedAt, requestedAt);
+    assert.deepEqual(await auditEvents(), [
+      galleryEvent(owner, 'gallery.requested', gallery.id, website.id),
+    ]);
+  });
+
+  it('returns 409 when the gallery has already been requested', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { requestedAt: new Date() });
+
+    const res = await as(owner, 'post', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'Here',
+    });
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.body, {
+      error: { message: 'This gallery has already been requested.' },
+    });
+  });
+
+  it('returns 400 on fields.requestNote for a blank note and one over 1000 characters', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website);
+    const path = `/api/siteOwner/galleries/${gallery.id}/request`;
+
+    const blank = await as(owner, 'post', path).send({ requestNote: '   ' });
+    const long = await as(owner, 'post', path).send({ requestNote: 'a'.repeat(1001) });
+
+    assert.equal(blank.status, 400);
+    assert.deepEqual(blank.body.error.fields, { requestNote: 'Request note is required.' });
+    assert.deepEqual(long.body.error.fields, {
+      requestNote: 'Request note must be 1000 characters or fewer.',
+    });
+  });
+
+  it("returns 404 for another owner's gallery, a deleted one or an unknown id", async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
+    const theirs = await createGallery(notMine);
+    const deleted = await createGallery(website, { deletedAt: new Date() });
+
+    for (const id of [theirs.id, deleted.id, UNKNOWN_ID]) {
+      const res = await as(owner, 'post', `/api/siteOwner/galleries/${id}/request`).send({
+        requestNote: 'Here',
+      });
+
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, GALLERY_NOT_FOUND);
+    }
   });
 });

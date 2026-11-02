@@ -11,6 +11,7 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - A site owner can log in.
 - A site owner can create, edit and delete a post, and set it to draft or published.
 - A site owner can create, edit and delete a photo gallery, and set it to draft or published (Feature 10, after launch).
+- A site owner adds Photo Galleries to a website, requests each ability's wiring into their site, and turns an ability on or off; the administrator sets a requested ability live (Feature 12, Abilities).
 - The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post or gallery changes.
 
 Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), business hours. Photo galleries were added after launch (Feature 10).
@@ -105,6 +106,8 @@ Table gallery {
   title        string   [null]       // optional public headline
   copy         string   [null]       // optional public description; line breaks kept
   status       gallery_status [not null, default: 'published']  // only published galleries are public
+  request_note string   [null]       // its request message: where on the site it goes
+  requested_at datetime [null]       // null until the message is sent; the dashboard asks for it
   deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays
   created_at   datetime [not null, default: now()]
   updated_at   datetime [not null]
@@ -137,12 +140,29 @@ Table gallery_image {
   }
 }
 
+Table website_ability {
+  id           string   [primary key, default: uuid v7]
+  website_id   string   [not null]
+  kind         ability_kind   [not null]
+  status       ability_status [not null, default: 'added']  // added → requested → live
+  turned_on    bool     [not null, default: true]  // the site owner's switch: off hides its content publicly
+  request_note string   [null]       // the request form: where on the site it goes
+  requested_at datetime [null]
+  removed_at   datetime [null]       // galleries only; set by Remove, cleared when added again
+  created_at   datetime [not null, default: now()]
+  updated_at   datetime [not null]
+
+  indexes {
+    (website_id, kind) [unique]  // one row per website and ability, reused when added again
+  }
+}
+
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
   actor_id    string   [null]      // the signed-in account; null for a failed login with no account
   actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
-  target_type string   [null]      // account, website, post or gallery
+  target_type string   [null]      // account, website, post, gallery or ability
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
   ip          string   [null]
@@ -171,6 +191,17 @@ Enum gallery_status {
   published
 }
 
+Enum ability_kind {
+  posts
+  galleries
+}
+
+Enum ability_status {
+  added
+  requested
+  live
+}
+
 Enum element_type {
   paragraph
   image
@@ -186,12 +217,13 @@ Ref: element.image_id - image.id    // an image element shows exactly one image
 Ref: image.post_id > post.id        // a post can have many images
 Ref: gallery.website_id > website.id         // a website can have many galleries
 Ref: gallery_image.gallery_id > gallery.id   // a gallery can have many images
+Ref: website_ability.website_id > website.id // a website has one row per ability
 // audit_event has no references on purpose: an event never blocks or depends on another row
 ```
 
 ### Prisma conventions
 
-- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Gallery`, `GalleryImage`, `AuditEvent`) mapped to the snake_case tables above with `@@map`.
+- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Gallery`, `GalleryImage`, `WebsiteAbility`, `AuditEvent`) mapped to the snake_case tables above with `@@map`.
 - Every snake_case column has a camelCase field with `@map` (e.g. `apiKeyHash String @unique @map("api_key_hash")`), so nothing snake_case ever reaches an API response.
 - Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created.
 - A post's body is its `element` rows, and a gallery's images its `gallery_image` rows, both read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.
@@ -297,10 +329,10 @@ The database is the record of which images are kept. Post and gallery saves neve
 `npm run sweep:uploads` (`scripts/sweepUploads.js`, running `services/sweepUploads.js`):
 
 - lists every image under `<CLOUDINARY_FOLDER>/` uploaded more than 24 hours ago (Cloudinary Admin API);
-- deletes each one that no kept `image.src` or `gallery_image.src` refers to. An image row is kept while its post or gallery is published or a draft (drafts keep their images), or was deleted less than 30 days ago. After 30 days a deleted post's or gallery's images are deleted, unless a post or gallery that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
+- deletes each one that no kept `image.src` or `gallery_image.src` refers to. An image row is kept while its post or gallery is published or a draft (drafts keep their images), or was deleted less than 30 days ago (removing Photo Galleries deletes the website's galleries, so the same 30 days apply). After 30 days a deleted post's or gallery's images are deleted, unless a post or gallery that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `services/sweepUploads.js`; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `lib/retention.js`, since a removed Photo Galleries ability can be added back with its galleries for the same 30 days; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Client websites
 
