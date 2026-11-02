@@ -39,7 +39,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 
 Every variable the backend reads, per deployed environment. The values that aren't secret are written in `render.yaml`. Secrets and ids are `sync: false` there: Render asks for each one once, when its service is created (if it doesn't, it is set on the service by hand), and they are copied straight from 1Password (3DWD Production), never through a chat, an issue or a commit (`docs/security.md` → Secrets). A secret added after creation is set on the service by hand, since later syncs never ask.
 
-Production's three services each read only their own variables (`render.yaml`): the API reads all but the backup ones; `3dwd-sweep-uploads` reads `NODE_ENV`, `DATABASE_URL` and the four `CLOUDINARY_*`; `3dwd-backup-database` reads `DATABASE_URL`, `BACKUP_PUBLIC_KEY` and the four `R2_*`. Render's environment groups can't hold `sync: false` values, so the Cloudinary pair is entered on both the API and the sweep.
+Production's three services each read only their own variables (`render.yaml`): the API reads all but the backup ones; `3dwd-sweep-uploads` reads `NODE_ENV`, `DATABASE_URL` and the four `CLOUDINARY_*`; `3dwd-backup-database` reads `DATABASE_URL`, `BACKUP_PUBLIC_KEY` and the four `R2_*`. All three also read `SENTRY_DSN`, entered on each. Render's environment groups can't hold `sync: false` values, so the Cloudinary pair is entered on both the API and the sweep.
 
 | Variable                | Staging                                 | Production                                        |
 | ----------------------- | --------------------------------------- | ------------------------------------------------- |
@@ -61,6 +61,7 @@ Production's three services each read only their own variables (`render.yaml`): 
 | `R2_ACCESS_KEY_ID`      | not set                                 | the R2 token's access key id                      |
 | `R2_SECRET_ACCESS_KEY`  | not set                                 | the R2 token's secret                             |
 | `R2_BUCKET`             | not set                                 | `3dwd-backups`                                    |
+| `SENTRY_DSN`            | not set (Sentry off)                    | the Sentry project's DSN, on all three services   |
 
 `NODE_ENV=production` on staging makes `lib/config.js` check it like production: https `CORS_ORIGIN` and a cookie domain. Each environment's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` is its own; none is reused from local or the other environment.
 
@@ -77,6 +78,14 @@ One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a 
 - **`3dwd-backup-database`** (production only): a cron job running `npm run backup:database` nightly at 08:00 UTC, an hour before the sweep (`services/backupDatabase.js`). It dumps the production database with `pg_dump` (custom format, no owner or privileges), encrypts the dump with the backup public key (`docs/setup.md` → Crypto Module), and uploads it to the private R2 bucket `3dwd-backups` as `backups/<timestamp>.dump.enc`. A bucket lock keeps each dump from being deleted or overwritten for 30 days, then a lifecycle rule deletes it. Only the public key is in Render, so a leak there can't read a backup. The private key lives only in 1Password (3DWD Production). It needs a `pg_dump` of the database's major version (17), and Render's native Node runtime only has `postgresql-client` 12 to 14, so this cron job runs in Docker: `Dockerfile.backup`, Node 24 on Debian 13 (trixie), which ships `postgresql-client-17`. The image holds `lib/`, `services/`, `scripts/` and the runtime packages from a plain `npm ci --omit=dev` (checked against `package-lock.json`); `.dockerignore` keeps `.env` and the local `node_modules` out of the build. A failed run exits 1, so Render shows it.
 
 Cron schedules are in UTC.
+
+### Alerts
+
+A production failure reaches Rich by email (issue #50, `docs/security.md` → Controls in place):
+
+- **Render:** failure notifications on `3dwd-api-production` deploys and on both cron jobs. None for staging, whose failures are the safety net working.
+- **Uptime monitor (UptimeRobot):** checks `https://api.3dwebdev.com/api/health` every few minutes, outside Render. Render's health check only gates a deploy; it doesn't watch the live API. It also checks each live client website's home page (Onboarding a client website, step 5), since Vercel emails a failed deployment but doesn't watch a live site.
+- **Sentry:** production only (`SENTRY_DSN` on the three services; empty on staging and locally, so nothing is sent). The API reports unexpected 500s and uncaught errors, and both cron jobs report a failed run (`lib/sentry.js`). A failed revalidation call is a warning, one Sentry issue per website: the client website is usually up but set up wrong (a webhook secret that doesn't match, a missing `/api/revalidate` route, a redirect), so its site owner's changes silently never appear. Its "new issue" alert emails the admin. After `SENTRY_DSN` is first set, run `npm run sentry:check` once from the API's Render Shell and find the test event in Sentry, with no request data in it.
 
 ## Deployment checklist
 
@@ -212,4 +221,5 @@ The repeatable flow for each new client website. Stevie The Dog runs it first (c
 2. On the client website's Vercel project, set `HEADLESS_CMS_API_URL=https://api.3dwebdev.com`, `HEADLESS_CMS_API_KEY` and `HEADLESS_CMS_WEBHOOK_SECRET`, for Production only.
 3. In the client website's `next.config`, the `remotePatterns` entries allow its own folder, `3dwd/<media_folder>` (`docs/setup.md` → Client websites). `media_folder` follows the rule in `docs/setup.md` → media_folder; confirm it with a query from the API's Render Shell (`psql "$DATABASE_URL" -c "SELECT media_folder FROM website"`), since a clash adds `-2`.
 4. Redeploy the client website, then run Tests A–C (`docs/client-website-test.md`) against production.
-5. The site owner signs in with their Google account and writes their first post.
+5. Add the website's home page to the uptime monitor (Alerts), so Rich hears when it is down.
+6. The site owner signs in with their Google account and writes their first post.

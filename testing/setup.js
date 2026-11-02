@@ -26,3 +26,5 @@ process.env.R2_ACCESS_KEY_ID = 'test-r2-key';
 process.env.R2_SECRET_ACCESS_KEY = 'test-r2-secret';
 process.env.R2_BUCKET = 'test-backups';
 delete process.env.COOKIE_DOMAIN;
+// Sentry stays off in tests; lib/sentry.test.js turns it on with a transport that sends nothing.
+delete process.env.SENTRY_DSN;

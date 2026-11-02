@@ -111,6 +111,9 @@ projects:
                 sync: false
               - key: SEED_ADMIN_EMAIL
                 sync: false
+              # Sentry error reporting (lib/sentry.js), production only, on all three services.
+              - key: SENTRY_DSN
+                sync: false
 
           # npm run sweep:uploads: deletes Cloudinary uploads under 3dwd/ that no image row uses,
           # once they are over 24 hours old (docs/setup.md → Upload cleanup). Schedules are UTC.
@@ -140,6 +143,8 @@ projects:
                 sync: false
               - key: CLOUDINARY_API_SECRET
                 sync: false
+              - key: SENTRY_DSN
+                sync: false
 
           # npm run backup:database: an encrypted pg_dump uploaded to R2, nightly. In Docker for
           # pg_dump 17 (Dockerfile.backup). An hour before the sweep, so the two never overlap.
@@ -168,6 +173,8 @@ projects:
               - key: R2_ACCESS_KEY_ID
                 sync: false
               - key: R2_SECRET_ACCESS_KEY
+                sync: false
+              - key: SENTRY_DSN
                 sync: false
         databases:
           - name: 3dwd-db-production

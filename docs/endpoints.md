@@ -603,6 +603,6 @@ Rows written before Feature 8 (2026-10-30) name a status change `post.archived` 
 - Skip entirely if `website.active === false`.
 - Decrypt `webhook_secret_encrypted` with `lib/crypto.js`, then:
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }` for a post, `{ "websiteId": "...", "galleryId": "..." }` for a gallery, or `{ "websiteId": "...", "ability": "posts" | "galleries" }` for an ability, timeout 5 seconds (`AbortSignal.timeout(5000)`).
-- Non-2xx response, timeout or network error → log the website id and status. **Never** log the secret, the Authorization header or the request headers.
+- Non-2xx response, timeout or network error → log the website id and status, and report the same line to Sentry as a warning grouped per website (production only, `lib/sentry.js` → `reportWarning`). **Never** log or report the secret, the URL, the Authorization header or the request headers.
 - A client website's `/api/revalidate` route must not require `postId` (nor `galleryId`): it revalidates its whole `cms` tag whatever the body names (Stevie The Dog's route ignores the body, checked 2026-10-31).
 - The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the master doc's "Client to Website" tab.

@@ -1,9 +1,11 @@
 // Entry point for `npm run backup:database`: an encrypted dump of the database, uploaded to R2
 // (services/backupDatabase.js). A nightly Render cron job runs it in production; run by hand
 // before a migration that drops or rewrites data. `-- --label test` marks a backup that isn't the
-// nightly one. Logs the object key and size only. Exits 1 on any failure, so Render shows it.
+// nightly one. Logs the object key and size only. Exits 1 on any failure, so Render shows it, and
+// reports the failure to Sentry in production (lib/sentry.js), so a failed night is an alert.
 require('dotenv/config');
 const { parseArgs } = require('node:util');
+const { initSentry, reportError, flushSentry } = require('../lib/sentry');
 const { missingEnv } = require('../lib/config');
 const { backupPublicKey } = require('../lib/crypto');
 
@@ -15,27 +17,37 @@ const REQUIRED_ENV = [
   'R2_SECRET_ACCESS_KEY',
   'R2_BUCKET',
 ];
-const missing = missingEnv(REQUIRED_ENV, process.env);
-if (missing.length) {
-  console.error(`Missing required environment variables: ${missing.join(', ')}`);
-  process.exit(1);
-}
-try {
-  backupPublicKey();
-} catch (err) {
-  console.error(err.message);
+// Logs the message (never the error object, which could hold the database URL), reports it, and
+// exits 1 once Sentry has sent it.
+async function fail(message) {
+  console.error(message);
+  reportError(new Error(message));
+  await flushSentry();
   process.exit(1);
 }
 
-const backupDatabase = require('../services/backupDatabase');
+async function main() {
+  initSentry();
 
-const { values } = parseArgs({ options: { label: { type: 'string' } } });
+  const missing = missingEnv(REQUIRED_ENV, process.env);
+  if (missing.length) {
+    return fail(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+  try {
+    backupPublicKey();
+  } catch (err) {
+    return fail(err.message);
+  }
 
-backupDatabase({ label: values.label })
-  .then(({ key, size }) => {
+  const backupDatabase = require('../services/backupDatabase');
+  const { values } = parseArgs({ options: { label: { type: 'string' } } });
+
+  try {
+    const { key, size } = await backupDatabase({ label: values.label });
     console.log(`Database backup: uploaded ${key} (${size} bytes).`);
-  })
-  .catch((err) => {
-    console.error(`Database backup failed: ${err.message}`);
-    process.exitCode = 1;
-  });
+  } catch (err) {
+    await fail(`Database backup failed: ${err.message}`);
+  }
+}
+
+main();
