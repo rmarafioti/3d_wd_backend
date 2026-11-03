@@ -17,7 +17,7 @@ const turnedOnSchema = z.object({
   turnedOn: z.boolean({ error: 'Turned on must be true or false.' }),
 });
 
-// Only live for now: the admin sets a requested ability live once the client website shows it.
+// Only live for now: the admin sets an ability live once its code is wired into the client website.
 const abilityStatusSchema = z.object({
   status: z.literal('live', { error: 'Status must be live.' }),
 });

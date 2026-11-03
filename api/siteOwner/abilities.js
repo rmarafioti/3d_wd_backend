@@ -4,13 +4,15 @@
 // or gallery. Posts are every website's from the start and can't be removed; Photo Galleries are
 // added here. Every change writes its audit event (lib/abilities.js) inside the same transaction.
 //
-// An ability moves added → requested (the site owner's request form) → live (the admin, once the
-// client website shows it), and back to requested when new content needs wiring in or moving:
-// posts after a new first post or an edited request form, galleries after each gallery's request
-// message (./galleries.js). Sending or editing a request emails the admin after responding,
-// unawaited (services/requestEmail.js). On / Off is the site owner's switch once it is live: off
-// hides the ability's content from the public API. Removing Photo Galleries deletes the website's
-// galleries; adding it back within 30 days restores them, while their images still exist.
+// An ability's status moves added → live, set by the admin once its code is wired into the client
+// website. Where its content goes is its placement, apart from the status (issue #71,
+// lib/abilities.js): posts have one, on the ability, requested by the request form (after the
+// first post, after a new first post, or edited) and set live by the admin with the ability;
+// each gallery has its own (./galleries.js). Sending or editing a request emails the admin after
+// responding, unawaited (services/requestEmail.js). On / Off is the site owner's switch once it is
+// live: off hides the ability's content from the public API. Removing Photo Galleries deletes the
+// website's galleries; adding it back within 30 days restores them, while their images still
+// exist. Either way it comes back with its status and switch: removing doesn't unwire the code.
 //
 // Ownership (lib/abilities.js → findOwnedAbility): the ability's website is the site owner's and
 // active, and the ability isn't removed. Anything else is a 404 "Ability not found.".
@@ -60,13 +62,14 @@ async function recordGalleryEvents(tx, req, action, galleries) {
   }
 }
 
-// A first add, or an add more than 30 days after a removal: the ability starts again at added.
+// A first add, or an add more than 30 days after a removal, once the galleries it deleted are
+// gone for good. The ability keeps its status and switch: removing it never unwired its code, and
+// each new gallery is requested on its own (Rich, 2026-11-03).
 async function addAbility(tx, req, websiteId, kind, removed) {
-  const data = { status: 'added', turnedOn: true, requestNote: null, requestedAt: null };
   const ability = removed
     ? await tx.websiteAbility.update({
         where: { id: removed.id },
-        data: { ...data, removedAt: null },
+        data: { removedAt: null },
         select: ABILITY_SELECT,
       })
     : await tx.websiteAbility.create({ data: { websiteId, kind }, select: ABILITY_SELECT });
@@ -145,13 +148,13 @@ async function hasNewFirstPost(ability) {
   return oldest !== null && ability.requestedAt !== null && oldest.createdAt > ability.requestedAt;
 }
 
-// Saves the posts request note and puts the ability back to requested, for the admin to wire in
-// (or move) posts on the client website.
+// Saves the posts request note and puts their placement to requested, for the admin to place (or
+// move) posts on the client website. The ability's status is left as it is.
 function saveRequest(req, ability, requestNote, action) {
   return prisma.$transaction(async (tx) => {
     const requested = await tx.websiteAbility.update({
       where: { id: ability.id },
-      data: { status: 'requested', requestNote, requestedAt: new Date() },
+      data: { placement: 'requested', requestNote, requestedAt: new Date() },
       select: ABILITY_SELECT,
     });
     await recordAbilityEvent(tx, req, action, requested);
@@ -161,15 +164,15 @@ function saveRequest(req, ability, requestNote, action) {
 
 // POST /api/siteOwner/abilities/:id/request — the posts request form: where on the client website
 // posts should appear. Sent after the first post, and again after a new first post once every post
-// was deleted (Rich, 2026-11-02). Moves posts to requested (from added or live) for the admin to
-// wire up. Photo Galleries are requested per gallery instead (./galleries.js).
+// was deleted (Rich, 2026-11-02). Moves posts' placement to requested for the admin to place them.
+// Photo Galleries are requested per gallery instead (./galleries.js).
 router.post('/:id/request', async (req, res) => {
   const input = validate(requestAbilitySchema, req.body ?? {});
 
   const ability = await findOwnedAbility(req.user.id, req.params.id);
   if (!ability) throw new ServerError(404, ABILITY_NOT_FOUND);
   if (ability.kind === 'galleries') throw new ServerError(409, GALLERIES_PER_GALLERY);
-  const canRequest = ability.status === 'added' || (await hasNewFirstPost(ability));
+  const canRequest = ability.placement === null || (await hasNewFirstPost(ability));
   if (!canRequest) throw new ServerError(409, ALREADY_REQUESTED);
 
   const updated = await saveRequest(
@@ -184,8 +187,8 @@ router.post('/:id/request', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/abilities/:id/request — the site owner changed their mind about where posts
-// should go, live or not (Rich, 2026-11-02). Replaces the note and puts posts back to requested, so
-// the admin's pill marks it until the component is moved and posts are set live again.
+// should go, live or not (Rich, 2026-11-02). Replaces the note and puts posts' placement back to
+// requested, so the admin's pill marks it until the component is moved and posts are set live.
 router.patch('/:id/request', async (req, res) => {
   const input = validate(requestAbilitySchema, req.body ?? {});
 

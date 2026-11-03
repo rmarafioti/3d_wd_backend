@@ -11,7 +11,7 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - A site owner can log in.
 - A site owner can create, edit and delete a post, and set it to draft or published.
 - A site owner can create, edit and delete a photo gallery, and set it to draft or published (Feature 10, after launch).
-- A site owner adds Photo Galleries to a website, requests each ability's wiring into their site, and turns an ability on or off; the administrator sets a requested ability live (Feature 12, Abilities).
+- A site owner adds Photo Galleries to a website, says where each gallery and their posts go, and turns an ability on or off; the administrator sets an ability live once its code is wired, and each gallery and posts live once placed (Feature 12, Abilities; split by issue #71).
 - The administrator is emailed when a site owner sends or edits a request message, and a site owner can change where their posts or a gallery should go (Feature 13, Request emails).
 - The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post or gallery changes.
 
@@ -109,6 +109,7 @@ Table gallery {
   status       gallery_status [not null, default: 'published']  // only published galleries are public
   request_note string   [null]       // its request message: where on the site it goes
   requested_at datetime [null]       // null until the message is sent; the dashboard asks for it
+  placement    placement [null]      // requested → live (set by the admin); null until the message
   deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays
   created_at   datetime [not null, default: now()]
   updated_at   datetime [not null]
@@ -145,10 +146,11 @@ Table website_ability {
   id           string   [primary key, default: uuid v7]
   website_id   string   [not null]
   kind         ability_kind   [not null]
-  status       ability_status [not null, default: 'added']  // added → requested → live
+  status       ability_status [not null, default: 'added']  // added → live: its code is wired
   turned_on    bool     [not null, default: true]  // the site owner's switch: off hides its content publicly
   request_note string   [null]       // the request form: where on the site it goes
   requested_at datetime [null]
+  placement    placement [null]      // posts only: requested → live; null until the form is sent
   removed_at   datetime [null]       // galleries only; set by Remove, cleared when added again
   created_at   datetime [not null, default: now()]
   updated_at   datetime [not null]
@@ -199,6 +201,11 @@ Enum ability_kind {
 
 Enum ability_status {
   added
+  requested   // no longer written (issue #71); kept until a later cleanup
+  live
+}
+
+Enum placement {     // where an item sits on the client website (issue #71)
   requested
   live
 }

@@ -48,23 +48,24 @@ PostSummary    { id, postName, postDate, active, status, createdAt }
 AuditEvent     { id, action, actorEmail, targetType, targetId, metadata, ip, createdAt }
 Post           { id, websiteId, websiteName, postName, header, subHeader,
                  postDate, active, status, createdAt, updatedAt, body: Element[] }
-GallerySummary { id, galleryName, slug, status, requestedAt, createdAt }
+GallerySummary { id, galleryName, slug, status, placement, requestedAt, createdAt }
 AdminPostSummary { id, postName, status }
-AdminGallerySummary { id, galleryName, status, requestNote, imageCount, hasThumbnails, hasMobileCrops }
+AdminGallerySummary { id, galleryName, status, placement, requestNote, imageCount, hasThumbnails, hasMobileCrops }
 Crop           { x, y, width, height }              // pixels of the stored image
 GalleryImage   { id, src, width, height, altText, caption,
                  thumbnailCrop: Crop | null, mobileCrop: Crop | null }
-Gallery        { id, websiteId, websiteName, galleryName, slug, title, copy, status,
+Gallery        { id, websiteId, websiteName, galleryName, slug, title, copy, status, placement,
                  requestNote, requestedAt, createdAt, updatedAt, images: GalleryImage[] }
 CroppedImage   { src, width, height }
 PublicGallery  { id, slug, title, copy, createdAt, updatedAt,
                  images: [{ src, width, height, altText, caption,
                             thumbnail: CroppedImage | null, mobile: CroppedImage | null }] }
-Ability        { id, kind: 'posts' | 'galleries', status: 'added' | 'requested' | 'live',
-                 turnedOn, requestNote, requestedAt, createdAt, updatedAt }
+Ability        { id, kind: 'posts' | 'galleries', status: 'added' | 'live', turnedOn,
+                 placement, requestNote, requestedAt, createdAt, updatedAt }
+// placement: 'requested' | 'live' | null, on Ability (posts only) and on every gallery shape
 ```
 
-Optional post fields (`header`, `subHeader`, `postDate`) are `null` when empty. Optional gallery fields (`title`, `copy`, an image's `caption`) are `null` when empty too. An ability's `requestNote` and `requestedAt` are `null` until its request form is sent, and a gallery's until its request message is sent.
+Optional post fields (`header`, `subHeader`, `postDate`) are `null` when empty. Optional gallery fields (`title`, `copy`, an image's `caption`) are `null` when empty too. An ability's `requestNote`, `requestedAt` and `placement` are `null` until its request form is sent, and a gallery's until its request message is sent. A galleries ability's are always `null`: each gallery has its own.
 
 A post's `body` is its content as an ordered list of elements: each element is a paragraph or an image, returned in the order the site owner arranged them, so a client website renders `body` in order to interleave text and photos. Elements have no `id`; they are identified by their position. A paragraph's `text` keeps the line breaks the site owner typed (render it with `white-space: pre-line`). A paragraph's `text` may also contain formatting markup, described in Paragraph formatting below.
 
@@ -82,6 +83,7 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `POST /api/admin/accounts`                         | admin                                             | `{ name, email, websiteId }` **or** `{ name, email, websiteName, websiteUrl }`                                                                                                | `201 { account, website, credentials? }`                                                                                                     |
 | `POST /api/admin/accounts/:id/websites`            | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                          | `201 { website, credentials? }`                                                                                                              |
 | `PATCH /api/admin/abilities/:id/status`            | admin                                             | `{ status: 'live' }`                                                                                                                                                          | `200 Ability`                                                                                                                                |
+| `PATCH /api/admin/galleries/:id/placement`         | admin                                             | `{ placement: 'live' }`                                                                                                                                                       | `200 AdminGallerySummary`                                                                                                                    |
 | `GET /api/siteOwner/websites`                      | site owner                                        | —                                                                                                                                                                             | `200 [ WebsiteSummary + { abilities: Ability[], posts: PostSummary[], galleries: GallerySummary[] } ]`                                       |
 | `POST /api/siteOwner/posts`                        | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, status?, active?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }] }` | `201 Post`                                                                                                                                   |
 | `GET /api/siteOwner/posts/:id`                     | site owner                                        | —                                                                                                                                                                             | `200 Post`                                                                                                                                   |
@@ -130,14 +132,13 @@ Notes:
 - `PATCH /api/siteOwner/galleries/:id` is a full submission of the edit form, like a post edit: `images` is the complete current list, in order; an existing image carries its `id`, a new one has none, and any stored image missing from the list is deleted. `websiteId`, `status` and `slug` cannot be changed here.
 - `DELETE /api/siteOwner/galleries/:id` works like deleting a post: every site owner gallery route then returns `404` "Gallery not found." for it, `GET /api/siteOwner/websites` leaves it out, and the public route never returns it.
 - An ability is something the Client Portal lets a site owner update on their website themselves: `posts` or `galleries` (Photo Galleries). It belongs to a website. `abilities` on a website lists the ones it has, oldest first; a kind it doesn't have isn't listed, and the dashboard offers "+ Add" for it. Every website has `posts` from the moment it is created, and it can't be removed. A website must add `galleries` before creating a gallery (`403` otherwise).
-- An ability's `status` moves `added` → `requested` → `live`: the site owner adds it, says where on their site its content should appear, and the administrator sets it `live` once the client website shows it. Where it goes is asked in a required message:
-  - **Posts:** the ability's request form (`POST /api/siteOwner/abilities/:id/request`), sent after the website's first post, and again after a new first post once every post was deleted (the website's oldest post that isn't deleted was created after the ability's `requestedAt`).
-  - **Photo Galleries:** each gallery's own request message (`POST /api/siteOwner/galleries/:id/request`), sent once, after that gallery is created, since two galleries usually go in different places. A gallery whose `requestedAt` is `null` still needs its message. A galleries ability's `requestNote` stays `null`; each note is on its gallery.
-  - Sending either puts the ability back to `requested`, from `added` or `live`, so the administrator wires in the new content and sets it `live` again.
-  - **Changing where it goes:** a message already sent can be edited, live or not, with the same route as a `PATCH` (`PATCH /api/siteOwner/abilities/:id/request` for posts, `PATCH /api/siteOwner/galleries/:id/request` for a gallery). The edit replaces the note and puts the ability back to `requested` until the administrator moves the content and sets it `live` again.
+- An ability's `status` says whether its code is wired into the client website: `added` → `live`. The site owner adds it, and the administrator sets it `live` once its component is in the site. Where its content goes is a separate thing, `placement`: `requested` once the site owner says where on their site it should appear, then `live` once the administrator has placed and styled it and the site owner approved the mock-up. A status never goes back to `added`, and nothing a site owner does to a post or gallery changes it (issue #71). Where it goes is asked in a required message:
+  - **Posts:** one placement, on the posts ability. The request form (`POST /api/siteOwner/abilities/:id/request`) is sent after the website's first post, and again after a new first post once every post was deleted (the website's oldest post that isn't deleted was created after the ability's `requestedAt`). The administrator sets posts live with one switch (`PATCH /api/admin/abilities/:id/status`), which sets both their `placement` and, if still `added`, the ability's `status`.
+  - **Photo Galleries:** a placement per gallery. Each gallery's own request message (`POST /api/siteOwner/galleries/:id/request`) is sent once, after that gallery is created, since two galleries usually go in different places. A gallery whose `requestedAt` is `null` still needs its message. The administrator sets the ability live on its own, with no request, once the gallery component is wired, and then each gallery live (`PATCH /api/admin/galleries/:id/placement`), which needs the ability live first. Deleting a gallery changes nothing on the ability.
+  - **Changing where it goes:** a message already sent can be edited, live or not, with the same route as a `PATCH` (`PATCH /api/siteOwner/abilities/:id/request` for posts, `PATCH /api/siteOwner/galleries/:id/request` for a gallery). The edit replaces the note and puts that `placement` back to `requested` until the administrator moves the content and sets it `live` again. The ability's `status` stays as it is.
   - Sending or editing a message also emails the administrator; the response never waits for it (`docs/endpoints.md` → Request Emails).
-- `turnedOn` is the site owner's switch, changeable only once `live`: while it is `false`, `GET /api/public/posts` returns `[]` for posts, and `GET /api/public/galleries/:slug` returns `404` for galleries. The site owner can still create and edit while it is off. A dashboard pill reads "requested" while `requested`, else "off" while `turnedOn` is `false`, else the status.
-- `DELETE /api/siteOwner/abilities/:id` removes Photo Galleries from the website: its galleries are deleted with it, and the upload cleanup deletes their images 30 days later. Adding it again within those 30 days (`POST /api/siteOwner/abilities`) brings those galleries back with the ability's earlier status and switch; after 30 days the ability starts again at `added`. A removed ability isn't listed and is `404` "Ability not found." on every ability route.
+- `turnedOn` is the site owner's switch, changeable only once `live`: while it is `false`, `GET /api/public/posts` returns `[]` for posts, and `GET /api/public/galleries/:slug` returns `404` for galleries. The site owner can still create and edit while it is off. An ability's pill reads "off" while it is `live` and `turnedOn` is `false`, else its status; posts and each gallery also show their `placement` ("requested" or "live") once their message is sent.
+- `DELETE /api/siteOwner/abilities/:id` removes Photo Galleries from the website: its galleries are deleted with it, and the upload cleanup deletes their images 30 days later. Adding it again (`POST /api/siteOwner/abilities`) keeps the ability's status and switch, since removing it doesn't unwire its code; within those 30 days it also brings those galleries back, each with its own placement, and after 30 days they stay deleted. A removed ability isn't listed and is `404` "Ability not found." on every ability route.
 - Crops: each gallery image may have a `thumbnailCrop` (a square) and a `mobileCrop` (at least as tall as it is wide), the part of the image the site owner chose for a thumbnail and for phones. A crop is in the stored image's pixels, the `width` and `height` Cloudinary returned, so a crop picked on a larger file in the browser is scaled to the stored size before it is sent. Send `null` (or leave it out on create) for no crop. A gallery's crops are consistent: every image has a thumbnail crop or none does, every image has a mobile crop or none does, and every mobile crop has the same shape (Validation rules). `PublicGallery` returns each crop as a ready `CroppedImage`, a Cloudinary URL that cuts that rectangle from the stored image, with the crop's own `width` and `height` for `<Image>`; it is `null` when there is no crop, and the client website then shows the full image.
 
 ### Error messages the frontend displays
@@ -162,8 +163,11 @@ Notes:
 | Edit the posts request form before it is sent                                                                         | 409  | This ability hasn't been requested yet.                                                                           |
 | Turn on or off an ability that isn't live                                                                             | 409  | This ability can be turned on or off once it is live.                                                             |
 | Remove posts                                                                                                          | 409  | Posts can't be removed.                                                                                           |
-| Admin: set live an ability not yet requested                                                                          | 409  | This ability hasn't been requested yet.                                                                           |
-| Admin: set live an ability already live                                                                               | 409  | This ability is already live.                                                                                     |
+| Admin: set posts live before their request form is sent                                                               | 409  | This ability hasn't been requested yet.                                                                           |
+| Admin: set live Photo Galleries already live, or posts already placed live                                            | 409  | This ability is already live.                                                                                     |
+| Admin: set a gallery live before Photo Galleries is live                                                              | 409  | Set Photo Galleries live first.                                                                                   |
+| Admin: set a gallery live before its request message is sent                                                          | 409  | This gallery hasn't been requested yet.                                                                           |
+| Admin: set a gallery live that is already live                                                                        | 409  | This gallery is already live.                                                                                     |
 | Link: account already linked to that website                                                                          | 409  | This account is already linked to [Website Name].                                                                 |
 | Website / account / post / gallery / ability not found or not yours                                                   | 404  | [Website / Account / Post / Gallery / Ability] not found.                                                         |
 | Public: no published gallery with that slug on this website                                                           | 404  | Gallery not found.                                                                                                |
@@ -190,7 +194,7 @@ Notes:
 - Crops: `x` and `y` whole numbers from 0, `width` and `height` whole numbers from 1, and the rectangle inside the image (`x + width` at most the image's `width`, `y + height` at most its `height`). A `thumbnailCrop` must also be square ("Thumbnail crop must be a square inside the image."); a `mobileCrop` must be at least as tall as it is wide ("Mobile crop must be inside the image and at least as tall as it is wide."). The message is on `images.N.thumbnailCrop` or `images.N.mobileCrop` (on one of its numbers, such as `images.N.thumbnailCrop.x`, when that number isn't a whole number in range).
 - Crops across a gallery, checked once every image passes its own rules, with the message on `images`: if any image has a `thumbnailCrop`, every image must ("Add a thumbnail crop to every image, or remove them all."); if any image has a `mobileCrop`, every image must ("Add a mobile crop to every image, or remove them all."); and every `mobileCrop`'s width ÷ height must be within 1% of the first one's in list order, which allows for whole-pixel rounding such as 750 × 938 for 4:5 ("Every mobile crop must be the same shape."). When more than one fails, the message is the first of these three.
 - Gallery `status` (create / status): `draft` or `published` ("Status must be draft or published."). Optional on create; the status route needs it. Galleries have no `active`.
-- Abilities: `kind` is `posts` or `galleries` ("Choose posts or galleries."). `requestNote` (an ability's or a gallery's): required, max 1000 (line breaks kept). `turnedOn`: a boolean ("Turned on must be true or false."). The admin's `status`: `live` ("Status must be live.").
+- Abilities: `kind` is `posts` or `galleries` ("Choose posts or galleries."). `requestNote` (an ability's or a gallery's): required, max 1000 (line breaks kept). `turnedOn`: a boolean ("Turned on must be true or false."). The admin's `status`: `live` ("Status must be live."). The admin's gallery `placement`: `live` ("Placement must be live.").
 - Audit events query: `month` matches `YYYY-MM` with a month from 01 to 12 ("Enter a month as YYYY-MM."); `limit` is a whole number from 1 to 100 ("Limit must be a whole number from 1 to 100."); `cursor` is a UUID ("Invalid cursor."). A parameter sent twice fails its rule.
 
 ### Paragraph formatting
@@ -332,7 +336,7 @@ All admin routes: `requireAuth` + `requireRole('admin')`. `api_key_hash` and `we
 
 ### Get All Accounts — `GET /api/admin/accounts`
 
-Every account where `role = site_owner` (active and inactive), sorted by `name`, each with its linked websites (via `account_website`): `[{ id, name, email, role, active, createdAt, websites: [{ id, websiteName, url, active, abilities: Ability[], posts: [{ id, postName, status }], galleries: [{ id, galleryName, status, requestNote, imageCount, hasThumbnails, hasMobileCrops }] }] }]`. Each website's abilities are the ones not removed, oldest first, with the posts request note, so the administrator sees which abilities are requested and where posts should go; each gallery carries its own request note. Each website's posts are the ones not deleted, drafts included, newest `createdAt` first. Each website's galleries are the ones not deleted, newest first; `imageCount` and the two crop flags are worked out from its `gallery_image` rows, and a flag is true only when every image has that crop. No post content (header, sub header, date, body or images) and no gallery content (images, captions, title or copy): the administrator does not view site owner content, only each post's name and status and whether a gallery has photos and crops. Powers the account list on `/admin`.
+Every account where `role = site_owner` (active and inactive), sorted by `name`, each with its linked websites (via `account_website`): `[{ id, name, email, role, active, createdAt, websites: [{ id, websiteName, url, active, abilities: Ability[], posts: [{ id, postName, status }], galleries: [{ id, galleryName, status, placement, requestNote, imageCount, hasThumbnails, hasMobileCrops }] }] }]`. Each website's abilities are the ones not removed, oldest first, with posts' placement and request note, so the administrator sees which abilities are live and where posts should go; each gallery carries its own placement and request note. Each website's posts are the ones not deleted, drafts included, newest `createdAt` first. Each website's galleries are the ones not deleted, newest first; `imageCount` and the two crop flags are worked out from its `gallery_image` rows, and a flag is true only when every image has that crop. No post content (header, sub header, date, body or images) and no gallery content (images, captions, title or copy): the administrator does not view site owner content, only each post's name and status and whether a gallery has photos and crops. Powers the account list on `/admin`.
 
 ### Get All Websites — `GET /api/admin/websites`
 
@@ -357,13 +361,25 @@ Get Audit Events and Get Audit Event Months are the only routes that read `audit
 
 ### Set an Ability Live — `PATCH /api/admin/abilities/:id/status`
 
-Body `{ status: 'live' }`, the only value for now. The administrator sets a requested ability live once its content is wired into the client website and the client has approved how it looks.
+Body `{ status: 'live' }`, the only value for now. The administrator sets an ability live once its code is wired into the client website (issue #71: its status, apart from where its content is placed).
 
 1. Validate → `400` on `fields.status`.
 2. The ability must exist and not be removed → `404` "Ability not found."
-3. Its `status` must be `requested` → `409` "This ability hasn't been requested yet." (`added`) or "This ability is already live." (`live`).
-4. One transaction: set `status` to `live` and write `ability.live`.
-5. Return `200 { data: Ability }`. No revalidation: the public API already returns content whatever the status.
+3. **Photo Galleries:** its `status` must be `added` → otherwise `409` "This ability is already live." No request is needed: the component is wired before any gallery is placed in it.
+4. **Posts:** one switch for both. Its `placement` must be `requested` → `409` "This ability hasn't been requested yet." (`null`) or "This ability is already live." (`live`).
+5. One transaction: set `status` to `live` (and, for posts, `placement` to `live`) and write `ability.live`.
+6. Return `200 { data: Ability }`. No revalidation: the public API already returns content whatever the status.
+
+### Set a Gallery Live — `PATCH /api/admin/galleries/:id/placement`
+
+Body `{ placement: 'live' }`, the only value. The administrator sets a gallery live once it is placed and styled on the client website and the site owner approved the mock-up.
+
+1. Validate → `400` on `fields.placement`.
+2. The gallery must exist and not be deleted → `404` "Gallery not found."
+3. Its website's Photo Galleries ability must be `live` → `409` "Set Photo Galleries live first."
+4. Its `placement` must be `requested` → `409` "This gallery hasn't been requested yet." (`null`) or "This gallery is already live." (`live`).
+5. One transaction: write `gallery.live` and set `placement` to `live`.
+6. Return `200 { data: AdminGallerySummary }`. No revalidation: nothing public changes.
 
 ### Create an Account — `POST /api/admin/accounts`
 
@@ -395,7 +411,7 @@ All site-owner routes: `requireAuth` + `requireRole('site_owner')`.
 
 ### Get All Websites Tied To the Account — `GET /api/siteOwner/websites`
 
-The site owner's active websites (via `account_website`), sorted by `websiteName`, each with its **abilities** (not removed, oldest first, as `Ability`), **post summaries** and **gallery summaries** (published and draft, never deleted), each newest `createdAt` first: `[{ id, websiteName, url, active, abilities: Ability[], posts: [{ id, postName, postDate, active, status, createdAt }], galleries: [{ id, galleryName, slug, status, requestedAt, createdAt }] }]`. A gallery's `requestedAt` is `null` until its request message is sent, which is how the dashboard knows to ask for it. No post body or gallery images: they load with the single post or gallery. Powers the `/dashboard` list and the website dropdown in Create a Post and Create a Gallery.
+The site owner's active websites (via `account_website`), sorted by `websiteName`, each with its **abilities** (not removed, oldest first, as `Ability`), **post summaries** and **gallery summaries** (published and draft, never deleted), each newest `createdAt` first: `[{ id, websiteName, url, active, abilities: Ability[], posts: [{ id, postName, postDate, active, status, createdAt }], galleries: [{ id, galleryName, slug, status, placement, requestedAt, createdAt }] }]`. A gallery's `requestedAt` is `null` until its request message is sent, which is how the dashboard knows to ask for it, and its `placement` shows whether it is waiting or live. No post body or gallery images: they load with the single post or gallery. Powers the `/dashboard` list and the website dropdown in Create a Post and Create a Gallery.
 
 ### Create a Post — `POST /api/siteOwner/posts`
 
@@ -480,7 +496,7 @@ Body `{ requestNote }`: where on the client website this gallery should go. The 
 
 1. Validate → `400` on `fields.requestNote`. Ownership check → `404` "Gallery not found."
 2. The gallery's `requestedAt` must be `null` → otherwise `409` "This gallery has already been requested."
-3. One transaction: set the gallery's `requestNote` and `requestedAt`, and write `gallery.requested` (without the note). If the website's galleries ability isn't already `requested`, set its `status` to `requested` and its `requestedAt`, and write `ability.requested`; one already `requested` is left as it is, so its event is written only when its status changes.
+3. One transaction: set the gallery's `requestNote`, `requestedAt` and `placement` (`requested`), and write `gallery.requested` (without the note). The ability isn't changed.
 4. Return `200 { data: Gallery }`, then call `sendRequestEmail` (Request Emails) after commit, not awaited. No revalidation: nothing public changes.
 
 Galleries made before this route (the `backfill_gallery_request` migration) have `requestedAt` set to when they were created and no note, so no message is asked for them.
@@ -491,7 +507,7 @@ Body `{ requestNote }`: the site owner changed their mind about where the galler
 
 1. Validate → `400` on `fields.requestNote`. Ownership check → `404` "Gallery not found."
 2. The gallery's `requestedAt` must be set → otherwise `409` "This gallery hasn't been requested yet." A gallery backfilled with `requestedAt` and no note can be edited, which gives it one.
-3. One transaction, as in Request a Gallery: replace the gallery's `requestNote`, set `requestedAt` to now, write `gallery.request_updated` (without the note), and put the galleries ability back to `requested` (with `ability.requested`) unless it already is.
+3. One transaction, as in Request a Gallery: replace the gallery's `requestNote`, set `requestedAt` to now and `placement` back to `requested`, and write `gallery.request_updated` (without the note). The ability isn't changed.
 4. Return `200 { data: Gallery }`, then call `sendRequestEmail` after commit, not awaited.
 
 ### Delete a Gallery — `DELETE /api/siteOwner/galleries/:id`
@@ -508,16 +524,16 @@ The ability routes live in `api/siteOwner/abilities.js`, mounted at `/api/siteOw
 2. The website already has it (a row that isn't removed; `posts` always) → `409` "This ability has already been added."
 3. One transaction, one of three:
    - **No row:** insert it (`added`, on) and write `ability.added`.
-   - **Removed less than 30 days ago:** clear `removedAt`, and clear `deletedAt` on the website's galleries whose `deletedAt` equals the ability's `removedAt` (the ones the removal deleted; galleries deleted one by one before stay deleted), writing `gallery.restored` for each, then `ability.restored`. The status, switch and request note are kept. 30 days is `DELETED_GRACE_MS` (`lib/retention.js`), the time the upload cleanup keeps a deleted gallery's images.
-   - **Removed longer ago:** clear `removedAt` and start again (`added`, on, no request note) → `ability.added`.
+   - **Removed less than 30 days ago:** clear `removedAt`, and clear `deletedAt` on the website's galleries whose `deletedAt` equals the ability's `removedAt` (the ones the removal deleted; galleries deleted one by one before stay deleted), writing `gallery.restored` for each, then `ability.restored`. The status, switch and request note are kept, and each gallery keeps its placement. 30 days is `DELETED_GRACE_MS` (`lib/retention.js`), the time the upload cleanup keeps a deleted gallery's images.
+   - **Removed longer ago:** clear `removedAt`, keeping the status and switch (removing doesn't unwire the code); the galleries stay deleted → `ability.added`.
 4. Return `201 { data: Ability }`. After a restore, call `revalidate(websiteId, { ability })` after commit, since the galleries return to the website.
 
 **Request form — `POST /api/siteOwner/abilities/:id/request`**, body `{ requestNote }`. Posts only: the frontend shows it, required, once the site owner has saved the website's first post, and again after a new first post once every post was deleted. Photo Galleries are requested per gallery (Request a Gallery).
 
 1. Validate → `400` on `fields.requestNote`. Ownership check → `404`.
 2. A galleries ability → `409` "Photo Galleries are requested one gallery at a time."
-3. `status` must be `added`, or the website's oldest post that isn't deleted must have been created after `requestedAt` (a new first post) → otherwise `409` "This ability has already been requested."
-4. One transaction: set `status` to `requested`, and `requestNote` and `requestedAt` (replacing any earlier ones), and write `ability.requested` (without the note).
+3. `placement` must be `null`, or the website's oldest post that isn't deleted must have been created after `requestedAt` (a new first post) → otherwise `409` "This ability has already been requested."
+4. One transaction: set `placement` to `requested`, and `requestNote` and `requestedAt` (replacing any earlier ones), and write `ability.requested` (without the note). The `status` is left as it is.
 5. Return `200 { data: Ability }`, then call `sendRequestEmail` (Request Emails) after commit, not awaited.
 
 **Edit the request form — `PATCH /api/siteOwner/abilities/:id/request`**, body `{ requestNote }`. Posts only: the site owner changed their mind about where posts should go, live or not.
@@ -525,7 +541,7 @@ The ability routes live in `api/siteOwner/abilities.js`, mounted at `/api/siteOw
 1. Validate → `400` on `fields.requestNote`. Ownership check → `404`.
 2. A galleries ability → `409` "Photo Galleries are requested one gallery at a time." (each gallery's message is edited on the gallery).
 3. `requestedAt` must be set (the form was sent) → otherwise `409` "This ability hasn't been requested yet."
-4. One transaction: set `status` to `requested`, replace `requestNote`, set `requestedAt` to now, and write `ability.request_updated` (without the note). The new `requestedAt` is what a later new first post is compared with.
+4. One transaction: set `placement` to `requested`, replace `requestNote`, set `requestedAt` to now, and write `ability.request_updated` (without the note). The `status` is left as it is. The new `requestedAt` is what a later new first post is compared with.
 5. Return `200 { data: Ability }`, then call `sendRequestEmail` after commit, not awaited.
 
 **On / Off — `PATCH /api/siteOwner/abilities/:id/turnedOn`**, body `{ turnedOn }`.
@@ -606,16 +622,17 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 | `gallery.restored`                         | Add (Abilities), within 30 days of a removal                                       | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`  |
 | `gallery.requested`                        | Request a Gallery                                                                  | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`  |
 | `gallery.request_updated`                  | Edit a Gallery's Request                                                           | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`  |
+| `gallery.live`                             | Set a Gallery Live                                                                 | the admin                     | the admin's email                                      | `gallery` | `{ websiteId }`  |
 | `ability.added`                            | Add (Abilities); a new website's posts ability (Create an Account, Link a Website) | the site owner, or the admin  | their email                                            | `ability` | the state, below |
-| `ability.requested`                        | Request form; Request a Gallery, when the ability's status changes                 | the site owner                | the site owner's email                                 | `ability` | the state        |
+| `ability.requested`                        | Request form (posts)                                                               | the site owner                | the site owner's email                                 | `ability` | the state        |
 | `ability.request_updated`                  | Edit the request form                                                              | the site owner                | the site owner's email                                 | `ability` | the state        |
 | `ability.live`                             | Set an Ability Live                                                                | the admin                     | the admin's email                                      | `ability` | the state        |
 | `ability.turned_on` / `ability.turned_off` | On / Off                                                                           | the site owner                | the site owner's email                                 | `ability` | the state        |
 | `ability.removed` / `ability.restored`     | Remove, Add (Abilities)                                                            | the site owner                | the site owner's email                                 | `ability` | the state        |
 
-An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (`CLAUDE.md` → Planned Later → Audit analytics). The request note is the site owner's own text and is never in it.
+An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, placement, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (`CLAUDE.md` → Planned Later → Audit analytics). The request note is the site owner's own text and is never in it.
 
-Rows written before Feature 8 (2026-10-30) name a status change `post.archived` (now `post.drafted`) or `post.activated` (now `post.published`). Audit rows are never rewritten, so both names appear in the log.
+Before issue #71 (2026-11-03), a gallery's request message also wrote `ability.requested` with the status `requested`, and ability events had no `placement`. Rows written before Feature 8 (2026-10-30) name a status change `post.archived` (now `post.drafted`) or `post.activated` (now `post.published`). Audit rows are never rewritten, so both names appear in the log.
 
 `actorEmail` is a copy of the email at the time of the event, and only ever a verified one: a Google token that fails verification records none.
 

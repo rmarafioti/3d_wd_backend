@@ -72,7 +72,7 @@ Use this for any new resource (photo galleries and business hours are the known 
 5. **Writes:** multi-row writes in one `$transaction`. If the client website shows the resource, call `revalidate(websiteId, …)` after commit, not awaited.
 6. **Public exposure:** decide explicitly which fields are public. Internal fields (like `postName`) never reach `/api/public`. Adding fields to `PublicPost` is additive; a new kind of public content is a new public endpoint.
 7. **Tests:** per the Unit Tests section in `CLAUDE.md`; every new status code and message gets a request test.
-8. **Handoff and verification:** frontend handoff, Postman, a real frontend request, and test rows deleted afterwards (Workflow Checklist).
+8. **Handoff and verification:** frontend handoff, a manual UI test through the real frontend (Postman only for a new kind of route), and test rows deleted afterwards (Workflow Checklist).
 
 ## 6. Performance rules
 

@@ -11,7 +11,8 @@
 //
 // Production only: with RESEND_API_KEY empty (locally, in tests and on staging) nothing is sent.
 // At most 10 emails per website in 24 hours (lib/emailCap.js); a message past the cap is still
-// saved, only its email is skipped. Logs and Sentry get the website id only, never an address, the key or the note.
+// saved, only its email is skipped. Logs and Sentry get the website id only, never an address,
+// the key or the note.
 const prisma = require('../prisma');
 const { reportWarning } = require('../lib/sentry');
 const { withinEmailCap } = require('../lib/emailCap');

@@ -53,14 +53,25 @@ enum AbilityKind {
   @@map("ability_kind")
 }
 
-// Where an ability is on its way to the client website: added by the site owner, requested
-// through the request form, then set live by the admin once the client website shows it.
+// Whether an ability's code is wired into the client website: added by the site owner, then set
+// live by the admin. `requested` is no longer written (issue #71: where its content goes is
+// Placement); it stays until a later cleanup, since removing an enum value is breaking.
 enum AbilityStatus {
   added
   requested
   live
 
   @@map("ability_status")
+}
+
+// Where an item is placed on the client website (issue #71): requested by its request message,
+// then set live by the admin once it is placed, styled and approved. Each gallery has its own;
+// posts have one, on the posts ability.
+enum Placement {
+  requested
+  live
+
+  @@map("placement")
 }
 
 model Account {
@@ -181,6 +192,7 @@ model Gallery {
   status      GalleryStatus @default(published)
   requestNote String?       @map("request_note") @db.Text // its request message: where it goes
   requestedAt DateTime?     @map("requested_at") // null until the request message is sent
+  placement   Placement? // null until the request message is sent
   deletedAt   DateTime?     @map("deleted_at") // set by Delete a Gallery; gone from every route
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
@@ -232,6 +244,7 @@ model WebsiteAbility {
   turnedOn    Boolean       @default(true) @map("turned_on")
   requestNote String?       @map("request_note") @db.Text // the request form: where it goes
   requestedAt DateTime?     @map("requested_at")
+  placement   Placement? // posts only: where posts go; null until the request form is sent
   removedAt   DateTime?     @map("removed_at")
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")

@@ -8,8 +8,9 @@
 // A gallery is created only on a website that has the Photo Galleries ability (./abilities.js).
 // The other routes need no check: removing the ability deletes the website's galleries.
 // Each gallery's request message (where on the site it goes) is sent once, after it is created,
-// and can be edited after when the site owner changes their mind. Either puts the ability back to
-// requested so the admin wires the gallery in or moves it (Rich, 2026-11-02).
+// and can be edited after when the site owner changes their mind. Either puts the gallery's own
+// placement to requested, so the admin places it or moves it, then sets it live (api/admin).
+// Nothing here changes the ability: its status says only whether its code is wired (issue #71).
 //
 // Ownership (lib/ownership.js): a gallery belongs to the site owner when its website does and it
 // isn't deleted. Anything else is a 404 "Gallery not found.", identical to "doesn't exist".
@@ -29,7 +30,6 @@ const {
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { findFreeSlug } = require('../../lib/slug');
 const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages');
-const { ABILITY_SELECT, recordAbilityEvent } = require('../../lib/abilities');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const revalidate = require('../../services/revalidate');
 const sendRequestEmail = require('../../services/requestEmail');
@@ -55,6 +55,7 @@ const GALLERY_SELECT = {
   title: true,
   copy: true,
   status: true,
+  placement: true,
   requestNote: true,
   requestedAt: true,
   createdAt: true,
@@ -92,6 +93,7 @@ function toGallery(gallery) {
     title: gallery.title,
     copy: gallery.copy,
     status: gallery.status,
+    placement: gallery.placement,
     requestNote: gallery.requestNote,
     requestedAt: gallery.requestedAt,
     createdAt: gallery.createdAt,
@@ -274,32 +276,16 @@ router.patch('/:id/status', async (req, res) => {
   revalidate(gallery.websiteId, { galleryId: gallery.id });
 });
 
-// Saves a gallery's request note and puts the website's Photo Galleries ability back to requested
-// (from added or live), so the admin's pill flags the gallery to wire in or move. A gallery that
-// isn't deleted always has its ability (removing it deletes the galleries). The ability's event is
-// written only when its status changes, one row per change for analytics.
+// Saves a gallery's request note and puts its placement to requested (from none or live), so the
+// admin's pill flags the gallery to place or move.
 function saveRequest(req, gallery, requestNote, action) {
   return prisma.$transaction(async (tx) => {
-    const requestedAt = new Date();
     await recordGalleryEvent(tx, req, action, gallery);
-    const requested = await tx.gallery.update({
+    return tx.gallery.update({
       where: { id: gallery.id },
-      data: { requestNote, requestedAt },
+      data: { requestNote, requestedAt: new Date(), placement: 'requested' },
       select: GALLERY_SELECT,
     });
-    const ability = await tx.websiteAbility.findFirst({
-      where: { websiteId: gallery.websiteId, kind: 'galleries', removedAt: null },
-      select: { id: true, status: true },
-    });
-    if (ability.status !== 'requested') {
-      const changed = await tx.websiteAbility.update({
-        where: { id: ability.id },
-        data: { status: 'requested', requestedAt },
-        select: ABILITY_SELECT,
-      });
-      await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_REQUESTED, changed);
-    }
-    return requested;
   });
 }
 
@@ -324,8 +310,8 @@ router.post('/:id/request', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/galleries/:id/request — the site owner changed their mind about where the
-// gallery should go, live or not (Rich, 2026-11-02). Replaces the note, and the ability goes back
-// to requested until the admin moves the gallery and sets it live again.
+// gallery should go, live or not (Rich, 2026-11-02). Replaces the note, and the gallery goes back
+// to requested until the admin moves it and sets it live again.
 router.patch('/:id/request', async (req, res) => {
   const input = validate(requestGallerySchema, req.body ?? {});
 

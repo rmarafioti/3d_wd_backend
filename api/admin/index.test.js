@@ -48,7 +48,14 @@ function adminEvent(admin, action, targetType, targetId, metadata = null) {
 
 // The state a new website's posts ability is added with, as its audit event's metadata holds it.
 function postsAddedMetadata(website) {
-  return { websiteId: website.id, kind: 'posts', status: 'added', turnedOn: true, removed: false };
+  return {
+    websiteId: website.id,
+    kind: 'posts',
+    status: 'added',
+    turnedOn: true,
+    placement: null,
+    removed: false,
+  };
 }
 
 async function rowCounts() {
@@ -69,6 +76,7 @@ describe('admin route guards', () => {
     ['get', '/api/admin/auditEvents'],
     ['get', '/api/admin/auditEvents/months'],
     ['patch', '/api/admin/abilities/some-id/status'],
+    ['patch', '/api/admin/galleries/some-id/placement'],
   ];
 
   for (const [method, path] of routes) {
@@ -176,6 +184,7 @@ describe('GET /api/admin/accounts', () => {
       galleryName: 'Cropped',
       requestNote: 'The portfolio page',
       requestedAt: new Date(),
+      placement: 'requested',
       title: 'A title',
       copy: 'Some copy',
       images: [image('a', crops), image('b', crops), image('c', crops)],
@@ -199,6 +208,7 @@ describe('GET /api/admin/accounts', () => {
         id: plain.id,
         galleryName: 'Plain',
         status: 'draft',
+        placement: null,
         requestNote: null,
         imageCount: 1,
         hasThumbnails: false,
@@ -208,6 +218,7 @@ describe('GET /api/admin/accounts', () => {
         id: mixed.id,
         galleryName: 'Mixed',
         status: 'published',
+        placement: null,
         requestNote: null,
         imageCount: 2,
         hasThumbnails: false,
@@ -217,6 +228,7 @@ describe('GET /api/admin/accounts', () => {
         id: cropped.id,
         galleryName: 'Cropped',
         status: 'published',
+        placement: 'requested',
         requestNote: 'The portfolio page',
         imageCount: 3,
         hasThumbnails: true,
@@ -804,15 +816,24 @@ describe('GET /api/admin/auditEvents/months', () => {
   });
 });
 
+// An ability event's metadata: the ability's whole state after the change.
+function abilityState(ability, state) {
+  return {
+    websiteId: ability.websiteId,
+    kind: ability.kind,
+    status: 'live',
+    turnedOn: true,
+    placement: null,
+    removed: false,
+    ...state,
+  };
+}
+
 describe('PATCH /api/admin/abilities/:id/status', () => {
-  it('sets a requested ability live and records it with its state', async () => {
+  it('sets Photo Galleries live from added, with no request, and records it with its state', async () => {
     const admin = await createAdmin();
     const { website } = await createWebsite();
-    const ability = await createAbility(website, 'galleries', {
-      status: 'requested',
-      requestNote: 'A gallery page',
-      requestedAt: new Date('2026-11-01T00:00:00.000Z'),
-    });
+    const ability = await createAbility(website, 'galleries');
 
     const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
       status: 'live',
@@ -824,51 +845,91 @@ describe('PATCH /api/admin/abilities/:id/status', () => {
       kind: 'galleries',
       status: 'live',
       turnedOn: true,
-      requestNote: 'A gallery page',
-      requestedAt: '2026-11-01T00:00:00.000Z',
+      placement: null,
+      requestNote: null,
+      requestedAt: null,
       createdAt: ability.createdAt.toISOString(),
       updatedAt: res.body.data.updatedAt,
     });
     assert.deepEqual(await auditEvents(), [
-      adminEvent(admin, 'ability.live', 'ability', ability.id, {
-        websiteId: website.id,
-        kind: 'galleries',
-        status: 'live',
-        turnedOn: true,
-        removed: false,
-      }),
+      adminEvent(admin, 'ability.live', 'ability', ability.id, abilityState(ability)),
     ]);
   });
 
-  it('returns 409 for an ability not yet requested, or already live', async () => {
+  it('sets requested posts live and places them with one switch', async () => {
     const admin = await createAdmin();
     const { website } = await createWebsite();
-    const added = await createAbility(website, 'posts');
-    const live = await createAbility(website, 'galleries', { status: 'live' });
-
-    const notRequested = await as(admin, 'patch', `/api/admin/abilities/${added.id}/status`).send({
+    const added = await createAbility(website, 'posts', {
+      placement: 'requested',
+      requestNote: 'A blog page',
+      requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+    const { website: other } = await createWebsite();
+    const moving = await createAbility(other, 'posts', {
       status: 'live',
-    });
-    const alreadyLive = await as(admin, 'patch', `/api/admin/abilities/${live.id}/status`).send({
-      status: 'live',
+      turnedOn: false,
+      placement: 'requested',
+      requestedAt: new Date(),
     });
 
-    assert.equal(notRequested.status, 409);
-    assert.deepEqual(notRequested.body, {
-      error: { message: "This ability hasn't been requested yet." },
-    });
-    assert.equal(alreadyLive.status, 409);
-    assert.deepEqual(alreadyLive.body, { error: { message: 'This ability is already live.' } });
+    for (const [ability, turnedOn] of [
+      [added, true],
+      [moving, false],
+    ]) {
+      const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
+        status: 'live',
+      });
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.status, 'live');
+      assert.equal(res.body.data.placement, 'live');
+      assert.equal(res.body.data.turnedOn, turnedOn);
+    }
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(
+        admin,
+        'ability.live',
+        'ability',
+        added.id,
+        abilityState(added, { placement: 'live' }),
+      ),
+      adminEvent(
+        admin,
+        'ability.live',
+        'ability',
+        moving.id,
+        abilityState(moving, { placement: 'live', turnedOn: false }),
+      ),
+    ]);
+  });
+
+  it('returns 409 for posts not yet requested, posts already live, or Photo Galleries already live', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const notRequested = await createAbility(website, 'posts');
+    const { website: other } = await createWebsite();
+    const livePosts = await createAbility(other, 'posts', { status: 'live', placement: 'live' });
+    const liveGalleries = await createAbility(website, 'galleries', { status: 'live' });
+
+    const send = (ability) =>
+      as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({ status: 'live' });
+    const responses = [await send(notRequested), await send(livePosts), await send(liveGalleries)];
+
+    assert.deepEqual(
+      responses.map((res) => [res.status, res.body.error.message]),
+      [
+        [409, "This ability hasn't been requested yet."],
+        [409, 'This ability is already live.'],
+        [409, 'This ability is already live.'],
+      ],
+    );
     assert.deepEqual(await auditEvents(), []);
   });
 
   it('returns 404 for a removed or unknown ability', async () => {
     const admin = await createAdmin();
     const { website } = await createWebsite();
-    const removed = await createAbility(website, 'galleries', {
-      status: 'requested',
-      removedAt: new Date(),
-    });
+    const removed = await createAbility(website, 'galleries', { removedAt: new Date() });
 
     for (const id of [removed.id, '019a0000-0000-7000-8000-000000000000']) {
       const res = await as(admin, 'patch', `/api/admin/abilities/${id}/status`).send({
@@ -883,7 +944,7 @@ describe('PATCH /api/admin/abilities/:id/status', () => {
   it('returns 400 on fields.status for any status but live', async () => {
     const admin = await createAdmin();
     const { website } = await createWebsite();
-    const ability = await createAbility(website, 'galleries', { status: 'requested' });
+    const ability = await createAbility(website, 'galleries');
 
     const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
       status: 'added',
@@ -896,6 +957,114 @@ describe('PATCH /api/admin/abilities/:id/status', () => {
   });
 });
 
+describe('PATCH /api/admin/galleries/:id/placement', () => {
+  // A website whose Photo Galleries ability has the given status, with one gallery.
+  async function websiteWithGallery(abilityStatus, galleryFields = {}) {
+    const { website } = await createWebsite();
+    await createAbility(website, 'galleries', { status: abilityStatus });
+    const gallery = await createGallery(website, {
+      galleryName: 'Art',
+      requestNote: 'The portfolio page',
+      requestedAt: new Date(),
+      placement: 'requested',
+      ...galleryFields,
+    });
+    return { website, gallery };
+  }
+
+  function placementPath(gallery) {
+    return `/api/admin/galleries/${gallery.id}/placement`;
+  }
+
+  it('sets a requested gallery live, returns its summary and records it', async () => {
+    const admin = await createAdmin();
+    const { website, gallery } = await websiteWithGallery('live');
+
+    const res = await as(admin, 'patch', placementPath(gallery)).send({ placement: 'live' });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data, {
+      id: gallery.id,
+      galleryName: 'Art',
+      status: 'published',
+      placement: 'live',
+      requestNote: 'The portfolio page',
+      imageCount: 0,
+      hasThumbnails: false,
+      hasMobileCrops: false,
+    });
+    assert.deepEqual(await auditEvents(), [
+      adminEvent(admin, 'gallery.live', 'gallery', gallery.id, { websiteId: website.id }),
+    ]);
+  });
+
+  it('returns 409 before Photo Galleries is live, before the request, and once live', async () => {
+    const admin = await createAdmin();
+    const { gallery: abilityNotLive } = await websiteWithGallery('added');
+    const { gallery: notRequested } = await websiteWithGallery('live', {
+      requestNote: null,
+      requestedAt: null,
+      placement: null,
+    });
+    const { gallery: alreadyLive } = await websiteWithGallery('live', { placement: 'live' });
+
+    const responses = [];
+    for (const gallery of [abilityNotLive, notRequested, alreadyLive]) {
+      responses.push(await as(admin, 'patch', placementPath(gallery)).send({ placement: 'live' }));
+    }
+
+    assert.deepEqual(
+      responses.map((res) => [res.status, res.body.error.message]),
+      [
+        [409, 'Set Photo Galleries live first.'],
+        [409, "This gallery hasn't been requested yet."],
+        [409, 'This gallery is already live.'],
+      ],
+    );
+    assert.deepEqual(await auditEvents(), []);
+  });
+
+  it("returns 409 when the gallery's website has no Photo Galleries row at all", async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const gallery = await createGallery(website, {
+      requestedAt: new Date(),
+      placement: 'requested',
+    });
+
+    const res = await as(admin, 'patch', placementPath(gallery)).send({ placement: 'live' });
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.body, { error: { message: 'Set Photo Galleries live first.' } });
+  });
+
+  it('returns 404 for a deleted or unknown gallery', async () => {
+    const admin = await createAdmin();
+    const { gallery } = await websiteWithGallery('live', { deletedAt: new Date() });
+
+    for (const id of [gallery.id, '019a0000-0000-7000-8000-000000000000']) {
+      const res = await as(admin, 'patch', `/api/admin/galleries/${id}/placement`).send({
+        placement: 'live',
+      });
+
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, { error: { message: 'Gallery not found.' } });
+    }
+  });
+
+  it('returns 400 on fields.placement for any placement but live', async () => {
+    const admin = await createAdmin();
+    const { gallery } = await websiteWithGallery('live');
+
+    const res = await as(admin, 'patch', placementPath(gallery)).send({ placement: 'requested' });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: { message: VALIDATION_FAILED, fields: { placement: 'Placement must be live.' } },
+    });
+  });
+});
+
 describe('GET /api/admin/accounts abilities', () => {
   it("returns each website's abilities that aren't removed, with the request note", async () => {
     const admin = await createAdmin();
@@ -903,7 +1072,7 @@ describe('GET /api/admin/accounts abilities', () => {
     const { website } = await createWebsite();
     await linkWebsite(owner, website);
     const posts = await createAbility(website, 'posts', {
-      status: 'requested',
+      placement: 'requested',
       requestNote: 'A blog page',
       requestedAt: new Date('2026-11-01T00:00:00.000Z'),
     });
@@ -920,8 +1089,9 @@ describe('GET /api/admin/accounts abilities', () => {
       {
         id: posts.id,
         kind: 'posts',
-        status: 'requested',
+        status: 'added',
         turnedOn: true,
+        placement: 'requested',
         requestNote: 'A blog page',
         requestedAt: '2026-11-01T00:00:00.000Z',
         createdAt: posts.createdAt.toISOString(),
