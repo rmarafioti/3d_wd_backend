@@ -573,7 +573,7 @@ Called **server-side** by a client's website (at build/regeneration time) with `
 
 Called server-side by a client's website with its API key, like the posts route. Returns the website's **published** gallery with that slug (never a draft, a deleted one, another website's, or any while its galleries ability is turned off or removed: all `404` "Gallery not found."): `{ id, slug, title, copy, createdAt, updatedAt, images }`, its images in order. Each image is `{ src, width, height, altText, caption, thumbnail, mobile }`; `thumbnail` and `mobile` are `{ src, width, height }`, or `null` when the site owner didn't crop one. Their `src` is the stored image's URL with a Cloudinary crop transformation after `/image/upload/` (`lib/cloudinary.js` → `croppedSrc`, `docs/setup.md` → Gallery crops), and their `width` and `height` are the crop's. `galleryName` and image ids are never included.
 
-How the client website uses these is specced in the master doc's "Client to Website" tab (each client website keeps it as its `docs/client-website.md`). The end-to-end test against a client website is `docs/client-website-test.md`.
+How the client website uses these is specced in the client guide (Stevie The Dog's `docs/client-website.md`, which each client website copies). The end-to-end test against a client website is `docs/client-website-test.md`.
 
 ### Health — `GET /api/health`
 
@@ -630,7 +630,7 @@ Rows written before Feature 8 (2026-10-30) name a status change `post.archived` 
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }` for a post, `{ "websiteId": "...", "galleryId": "..." }` for a gallery, or `{ "websiteId": "...", "ability": "posts" | "galleries" }` for an ability, timeout 5 seconds (`AbortSignal.timeout(5000)`).
 - Non-2xx response, timeout or network error → log the website id and status, and report the same line to Sentry as a warning grouped per website (production only, `lib/sentry.js` → `reportWarning`). **Never** log or report the secret, the URL, the Authorization header or the request headers.
 - A client website's `/api/revalidate` route must not require `postId` (nor `galleryId`): it revalidates its whole `cms` tag whatever the body names (Stevie The Dog's route ignores the body, checked 2026-10-31).
-- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the master doc's "Client to Website" tab.
+- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the client guide (Stevie The Dog's `docs/client-website.md`, which each client website copies).
 
 ## Request Emails
 

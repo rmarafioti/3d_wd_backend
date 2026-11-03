@@ -2,7 +2,7 @@
 
 The runbook for testing a client website against this backend, end to end: posts render on the website, and a post change reaches the live site within moments. Imported from `CLAUDE.md` via `@docs/client-website-test.md`.
 
-The client side (env vars, `getPosts()`, rendering, the `/api/revalidate` route) is specced in the master doc's "Client to Website" tab. Each client website keeps that tab as its own `docs/client-website.md`. This file covers only what is done from this repo's side. The backend behaviour it tests is in `docs/endpoints.md` → Public and → Revalidation.
+The client side (env vars, `getPosts()`, rendering, the `/api/revalidate` route) is specced in the client guide, Stevie The Dog's `docs/client-website.md`, which each client website copies as its own. This file covers only what is done from this repo's side. The backend behaviour it tests is in `docs/endpoints.md` → Public and → Revalidation.
 
 The test website is Stevie The Dog (`https://www.steviethedog.com`, deployed on Vercel). Its API key and webhook secret were recorded at the one-time reveal, and its stored URL serves the site directly with no redirect (checked 2026-10-09).
 

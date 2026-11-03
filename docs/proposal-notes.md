@@ -1,6 +1,6 @@
 # Proposal Notes
 
-Notes for us, not for the reader, kept beside the master doc's Proposal tab. When a section of the Proposal is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating the Proposal. Not imported from `CLAUDE.md`: it is read only when working on the proposal.
+Notes for us, not for the reader, kept beside the Proposal (a tab of Rich's Google Doc, with Build vs Buy). When a section of the Proposal is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating the Proposal. Not imported from `CLAUDE.md`: it is read only when working on the proposal.
 
 The Proposal is 3D Web Dev's business proposal, version 1, written 2026-10-25 from Rich's answers after a B2B sales friend's review of the pitch. That review asked four questions: what expensive problem it solves, what it delivers that existing solutions don't, whether it can be delivered profitably as it grows, and how it will be marketed and sold.
 
@@ -109,7 +109,7 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 ### Supporting material
 
 - **Still to write:** "Why not a drag-and-drop platform", a comparison for business owners. It says "drag-and-drop platforms" and names no platform (decided 2026-10-25). Client stories keep the platform names (Squarespace, Wix), since they are history.
-- **Where the technical detail lives:** the master doc's How It's Built tab, the security, scaling and deployment tabs, and Build vs Buy (CMS, and Drag and Drop, not started).
+- **Where the technical detail lives:** the two repos on GitHub (`3d_wd_backend` and `3d_wd`, their `CLAUDE.md` and `docs/`), and Build vs Buy (CMS, and Drag and Drop, not started). The master doc's How It's Built and deploy-era tabs were retired (issue #62).
 
 ### For the landing page
 

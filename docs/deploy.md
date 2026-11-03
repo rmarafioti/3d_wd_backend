@@ -1,6 +1,6 @@
 # Deploy
 
-How the backend is hosted, the checklist the first production deploy followed (staging first, launched 2026-10-28; kept as the record), how every later deploy runs, and how a client website is onboarded. Imported from `CLAUDE.md` via `@docs/deploy.md`. The frontend keeps its own `docs/deploy.md`; the master doc's Deployment tab copies both.
+How the backend is hosted, the checklist the first production deploy followed (staging first, launched 2026-10-28; kept as the record), how every later deploy runs, and how a client website is onboarded. Imported from `CLAUDE.md` via `@docs/deploy.md`. The frontend keeps its own `docs/deploy.md`.
 
 The decisions here were made on 2026-10-24. The backend was first planned on Railway; on 2026-10-26 Railway had closed new sign-ups, so it moved to Render, the other host considered. `docs/security.md` holds the controls, secrets and access this file relies on; `docs/scaling.md` holds the rules for changing the system once it is live.
 
