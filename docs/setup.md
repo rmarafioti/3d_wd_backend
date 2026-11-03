@@ -12,6 +12,7 @@ Instructions for the setup and behavior of database functionality: schema, Prism
 - A site owner can create, edit and delete a post, and set it to draft or published.
 - A site owner can create, edit and delete a photo gallery, and set it to draft or published (Feature 10, after launch).
 - A site owner adds Photo Galleries to a website, requests each ability's wiring into their site, and turns an ability on or off; the administrator sets a requested ability live (Feature 12, Abilities).
+- The administrator is emailed when a site owner sends or edits a request message, and a site owner can change where their posts or a gallery should go (Feature 13, Request emails).
 - The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post or gallery changes.
 
 Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), business hours. Photo galleries were added after launch (Feature 10).

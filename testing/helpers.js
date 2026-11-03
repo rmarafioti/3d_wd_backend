@@ -7,6 +7,7 @@ const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../prisma');
 const { SESSION_COOKIE, signSession } = require('../lib/jwt');
 const { resetRateLimits } = require('../lib/rateLimit');
+const { resetEmailCap } = require('../lib/emailCap');
 const {
   generateApiKey,
   generateWebhookSecret,
@@ -31,12 +32,14 @@ function unique() {
   return sequence;
 }
 
-// Run in beforeEach: every test starts from an empty database and empty rate limit counts.
+// Run in beforeEach: every test starts from an empty database, empty rate limit counts and no
+// request emails counted against the daily cap.
 async function resetState() {
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
   );
   await resetRateLimits();
+  resetEmailCap();
 }
 
 // Run in each file's after hook, so the Prisma connection pool doesn't keep the process alive.
