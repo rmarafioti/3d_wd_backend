@@ -347,7 +347,7 @@ A client website shows its images with `next/image`, so its `next.config` must a
 | `/<cloud name>/image/upload/*/*/3dwd/<media_folder>/**`     | its gallery crops, production (only with a gallery)    |
 | `/<cloud name>/image/upload/*/*/3dwd-dev/<media_folder>/**` | its gallery crops, local testing (only with a gallery) |
 
-In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (checked against Next.js 16.4.3's matcher, 2026-10-31: the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The master doc's "Client to Website" tab carries the same rule.
+In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (checked against Next.js 16.4.3's matcher, 2026-10-31: the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The client guide (Stevie The Dog's `docs/client-website.md`) carries the same rule.
 
 ## Seed Users
 
