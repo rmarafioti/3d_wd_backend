@@ -1,9 +1,9 @@
-// Request tests for the site owner ability routes (api/siteOwner/abilities.js): add, request, turn
-// on or off, and remove. Covers the role guard and CSRF, the ownership rule (another owner's,
-// an inactive website's or a removed ability is a 404), validation, every 409, removing Photo
-// Galleries (its galleries deleted with the ability's time) and adding it back (restored within 30
-// days, started again after), the audit events with the ability's full state, and revalidation.
-// fetch is mocked in every test.
+// Request tests for the site owner ability routes (api/siteOwner/abilities.js): add, request (and
+// edit the request), turn on or off, and remove. Covers the role guard and CSRF, the ownership
+// rule (another owner's, an inactive website's or a removed ability is a 404), validation, every
+// 409, removing Photo Galleries (its galleries deleted with the ability's time) and adding it back
+// (restored within 30 days, started again after), the audit events with the ability's full state,
+// revalidation, and the admin's request email. fetch is mocked in every test.
 require('../../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
@@ -93,6 +93,7 @@ describe('site owner ability route guards', () => {
   const routes = [
     ['post', '/api/siteOwner/abilities'],
     ['post', '/api/siteOwner/abilities/some-id/request'],
+    ['patch', '/api/siteOwner/abilities/some-id/request'],
     ['patch', '/api/siteOwner/abilities/some-id/turnedOn'],
     ['delete', '/api/siteOwner/abilities/some-id'],
   ];
@@ -395,6 +396,157 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
       assert.equal(res.status, 404);
       assert.deepEqual(res.body, ABILITY_NOT_FOUND);
     }
+  });
+});
+
+describe('PATCH /api/siteOwner/abilities/:id/request', () => {
+  it('replaces the note of live posts and puts them back to requested, recording the edit', async () => {
+    const lastRequest = new Date(Date.now() - DAY_MS);
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      status: 'live',
+      requestNote: 'On the home page',
+      requestedAt: lastRequest,
+    });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/abilities/${ability.id}/request`).send({
+      requestNote: 'On the News page',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.status, 'requested');
+    assert.equal(res.body.data.requestNote, 'On the News page');
+    assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
+    const events = await auditEvents();
+    assert.deepEqual(events, [
+      abilityEvent(owner, 'ability.request_updated', ability, { status: 'requested' }),
+    ]);
+    assert.ok(!JSON.stringify(events).includes('News page'));
+  });
+
+  it('edits a note that is still requested', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      status: 'requested',
+      requestNote: 'Old place',
+      requestedAt: new Date(),
+    });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/abilities/${ability.id}/request`).send({
+      requestNote: 'New place',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.requestNote, 'New place');
+  });
+
+  it('returns 409 for posts not requested yet and for a Photo Galleries ability', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const posts = await createAbility(website, 'posts');
+    const galleries = await createAbility(website, 'galleries', {
+      status: 'requested',
+      requestedAt: new Date(),
+    });
+
+    const notYet = await as(owner, 'patch', `/api/siteOwner/abilities/${posts.id}/request`).send({
+      requestNote: 'Here',
+    });
+    const perGallery = await as(
+      owner,
+      'patch',
+      `/api/siteOwner/abilities/${galleries.id}/request`,
+    ).send({ requestNote: 'Here' });
+
+    assert.equal(notYet.status, 409);
+    assert.deepEqual(notYet.body, {
+      error: { message: "This ability hasn't been requested yet." },
+    });
+    assert.equal(perGallery.status, 409);
+    assert.deepEqual(perGallery.body, {
+      error: { message: 'Photo Galleries are requested one gallery at a time.' },
+    });
+  });
+
+  it('returns 400 on fields.requestNote for a blank note', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      status: 'live',
+      requestNote: 'Here',
+      requestedAt: new Date(),
+    });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/abilities/${ability.id}/request`).send({
+      requestNote: ' ',
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body.error.fields, { requestNote: 'Request note is required.' });
+  });
+
+  it("returns 404 for another owner's ability", async () => {
+    const { owner } = await createOwnerWithWebsite();
+    const { website: notMine } = await createOwnerWithWebsite();
+    const theirs = await createAbility(notMine, 'posts', {
+      status: 'live',
+      requestNote: 'Here',
+      requestedAt: new Date(),
+    });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/abilities/${theirs.id}/request`).send({
+      requestNote: 'Mine now',
+    });
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, ABILITY_NOT_FOUND);
+  });
+});
+
+describe('posts request emails', () => {
+  it('emails the admin after the request form is sent and again after it is edited', async (t) => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    t.after(() => delete process.env.RESEND_API_KEY);
+    await createAdmin({ email: 'rich@example.com' });
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts');
+    const path = `/api/siteOwner/abilities/${ability.id}/request`;
+
+    const sent = await as(owner, 'post', path).send({ requestNote: 'On the News page' });
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 1));
+    const edited = await as(owner, 'patch', path).send({ requestNote: 'On the About page' });
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 2));
+
+    assert.equal(sent.status, 200);
+    assert.equal(edited.status, 200);
+    const [first, second] = fetchMock.mock.calls.map((call) => {
+      const [url, options] = call.arguments;
+      return { url, body: JSON.parse(options.body) };
+    });
+    assert.equal(first.url, 'https://api.resend.com/emails');
+    assert.deepEqual(first.body.to, ['rich@example.com']);
+    assert.equal(first.body.reply_to, owner.email);
+    assert.match(first.body.subject, /^New request: Posts on /);
+    assert.match(first.body.text, /On the News page/);
+    assert.match(second.body.subject, /^Updated request: Posts on /);
+    assert.match(second.body.text, /On the About page/);
+  });
+
+  it('answers the site owner normally when the email fails', async (t) => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    t.after(() => delete process.env.RESEND_API_KEY);
+    t.mock.method(console, 'error', () => {});
+    mock.restoreAll();
+    fetchMock = mockFetch(mock, new TypeError('fetch failed'));
+    await createAdmin();
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts');
+
+    const res = await as(owner, 'post', `/api/siteOwner/abilities/${ability.id}/request`).send({
+      requestNote: 'Here',
+    });
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 1));
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.status, 'requested');
   });
 });
 

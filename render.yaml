@@ -114,6 +114,9 @@ projects:
               # Sentry error reporting (lib/sentry.js), production only, on all three services.
               - key: SENTRY_DSN
                 sync: false
+              # Request emails to the admin (services/requestEmail.js), production's API only.
+              - key: RESEND_API_KEY
+                sync: false
 
           # npm run sweep:uploads: deletes Cloudinary uploads under 3dwd/ that no image row uses,
           # once they are over 24 hours old (docs/setup.md → Upload cleanup). Schedules are UTC.

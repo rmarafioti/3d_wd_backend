@@ -28,3 +28,5 @@ process.env.R2_BUCKET = 'test-backups';
 delete process.env.COOKIE_DOMAIN;
 // Sentry stays off in tests; lib/sentry.test.js turns it on with a transport that sends nothing.
 delete process.env.SENTRY_DSN;
+// Request emails stay off in tests; the tests that check them set a fixed key and restore it.
+delete process.env.RESEND_API_KEY;

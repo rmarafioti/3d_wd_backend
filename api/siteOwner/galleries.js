@@ -1,14 +1,15 @@
 // Site owner gallery routes, mounted at /api/siteOwner/galleries by api/siteOwner/index.js after
 // its requireAuth and requireRole('site_owner') guards: create, read, edit, draft or publish, and
-// delete a photo gallery, and send its request message. Every change writes its audit event
-// (lib/audit.js) inside the same transaction, then revalidates the client website after commit (the
-// request message changes nothing public, so it doesn't).
+// delete a photo gallery, and send or edit its request message. Every change writes its audit
+// event (lib/audit.js) inside the same transaction, then revalidates the client website after
+// commit (the request message changes nothing public, so it doesn't; it emails the admin instead,
+// services/requestEmail.js).
 //
 // A gallery is created only on a website that has the Photo Galleries ability (./abilities.js).
 // The other routes need no check: removing the ability deletes the website's galleries.
 // Each gallery's request message (where on the site it goes) is sent once, after it is created,
-// and puts the ability back to requested so the admin wires the new gallery in (Rich,
-// 2026-11-02).
+// and can be edited after when the site owner changes their mind. Either puts the ability back to
+// requested so the admin wires the gallery in or moves it (Rich, 2026-11-02).
 //
 // Ownership (lib/ownership.js): a gallery belongs to the site owner when its website does and it
 // isn't deleted. Anything else is a 404 "Gallery not found.", identical to "doesn't exist".
@@ -31,6 +32,7 @@ const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages'
 const { ABILITY_SELECT, recordAbilityEvent } = require('../../lib/abilities');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const revalidate = require('../../services/revalidate');
+const sendRequestEmail = require('../../services/requestEmail');
 
 const router = express.Router();
 
@@ -39,6 +41,10 @@ const WEBSITE_NOT_FOUND = 'Website not found.';
 const GALLERY_NAME_TAKEN = 'A gallery with this name already exists.';
 const ADD_GALLERIES_FIRST = 'Add Photo Galleries to this website first.';
 const ALREADY_REQUESTED = 'This gallery has already been requested.';
+const NOT_REQUESTED = "This gallery hasn't been requested yet.";
+
+// The gallery fields the request routes check.
+const REQUEST_CHECK_SELECT = { id: true, websiteId: true, requestedAt: true };
 
 // Images are ordered by position.
 const GALLERY_SELECT = {
@@ -268,30 +274,19 @@ router.patch('/:id/status', async (req, res) => {
   revalidate(gallery.websiteId, { galleryId: gallery.id });
 });
 
-// POST /api/siteOwner/galleries/:id/request — the gallery's request message: where on the client
-// website it should go. Sent once. The website's Photo Galleries ability goes back to requested
-// (from added or live), so the admin's pill flags the new gallery to wire in.
-router.post('/:id/request', async (req, res) => {
-  const input = validate(requestGallerySchema, req.body ?? {});
-
-  const gallery = await findOwnedGallery(req.user.id, req.params.id, {
-    id: true,
-    websiteId: true,
-    requestedAt: true,
-  });
-  if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
-  if (gallery.requestedAt) throw new ServerError(409, ALREADY_REQUESTED);
-
-  const updated = await prisma.$transaction(async (tx) => {
+// Saves a gallery's request note and puts the website's Photo Galleries ability back to requested
+// (from added or live), so the admin's pill flags the gallery to wire in or move. A gallery that
+// isn't deleted always has its ability (removing it deletes the galleries). The ability's event is
+// written only when its status changes, one row per change for analytics.
+function saveRequest(req, gallery, requestNote, action) {
+  return prisma.$transaction(async (tx) => {
     const requestedAt = new Date();
-    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_REQUESTED, gallery);
+    await recordGalleryEvent(tx, req, action, gallery);
     const requested = await tx.gallery.update({
       where: { id: gallery.id },
-      data: { requestNote: input.requestNote, requestedAt },
+      data: { requestNote, requestedAt },
       select: GALLERY_SELECT,
     });
-    // A gallery that isn't deleted always has its ability (removing it deletes the galleries).
-    // Its event is written only when its status changes, one row per change for analytics.
     const ability = await tx.websiteAbility.findFirst({
       where: { websiteId: gallery.websiteId, kind: 'galleries', removedAt: null },
       select: { id: true, status: true },
@@ -306,8 +301,51 @@ router.post('/:id/request', async (req, res) => {
     }
     return requested;
   });
+}
+
+// POST /api/siteOwner/galleries/:id/request — the gallery's request message: where on the client
+// website it should go. Sent once, after the gallery is created.
+router.post('/:id/request', async (req, res) => {
+  const input = validate(requestGallerySchema, req.body ?? {});
+
+  const gallery = await findOwnedGallery(req.user.id, req.params.id, REQUEST_CHECK_SELECT);
+  if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
+  if (gallery.requestedAt) throw new ServerError(409, ALREADY_REQUESTED);
+
+  const updated = await saveRequest(
+    req,
+    gallery,
+    input.requestNote,
+    AUDIT_ACTIONS.GALLERY_REQUESTED,
+  );
 
   res.json({ data: toGallery(updated) });
+  sendRequestEmail(gallery.websiteId, { siteOwnerId: req.user.id, galleryId: gallery.id });
+});
+
+// PATCH /api/siteOwner/galleries/:id/request — the site owner changed their mind about where the
+// gallery should go, live or not (Rich, 2026-11-02). Replaces the note, and the ability goes back
+// to requested until the admin moves the gallery and sets it live again.
+router.patch('/:id/request', async (req, res) => {
+  const input = validate(requestGallerySchema, req.body ?? {});
+
+  const gallery = await findOwnedGallery(req.user.id, req.params.id, REQUEST_CHECK_SELECT);
+  if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
+  if (!gallery.requestedAt) throw new ServerError(409, NOT_REQUESTED);
+
+  const updated = await saveRequest(
+    req,
+    gallery,
+    input.requestNote,
+    AUDIT_ACTIONS.GALLERY_REQUEST_UPDATED,
+  );
+
+  res.json({ data: toGallery(updated) });
+  sendRequestEmail(gallery.websiteId, {
+    siteOwnerId: req.user.id,
+    galleryId: gallery.id,
+    isUpdate: true,
+  });
 });
 
 // DELETE /api/siteOwner/galleries/:id — soft delete: stamps deletedAt, so the gallery is gone

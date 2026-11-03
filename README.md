@@ -55,6 +55,7 @@ Set:
 | `CLOUDINARY_API_SECRET` | same place — never log or share it  | same — back it up        |
 | `CLOUDINARY_FOLDER`     | `3dwd-dev`                          | `3dwd`                   |
 | `SENTRY_DSN`            | leave empty (Sentry off)            | the Sentry project's DSN |
+| `RESEND_API_KEY`        | leave empty (emails off)            | Resend's sending key     |
 
 Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`, which must be at least 32 characters) with:
 

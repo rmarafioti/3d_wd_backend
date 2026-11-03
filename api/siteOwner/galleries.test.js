@@ -1,9 +1,10 @@
 // Request tests for the site owner gallery routes (api/siteOwner/galleries.js): create, read, edit,
-// status and delete. Covers the role guard, the Photo Galleries ability create needs, the ownership
-// rule (another owner's, an inactive website's or a deleted gallery is a 404), validation including
-// the crop rules, the image src folder rule, the slug (made once, -2 on a clash, never changed),
-// the image list reconcile, and the audit event and revalidation call after every change. fetch is
-// mocked in every test.
+// status, delete, and sending or editing the request message. Covers the role guard, the Photo
+// Galleries ability create needs, the ownership rule (another owner's, an inactive website's or a
+// deleted gallery is a 404), validation including the crop rules, the image src folder rule, the
+// slug (made once, -2 on a clash, never changed), the image list reconcile, the audit event and
+// revalidation call after every change, and the admin's request email. fetch is mocked in every
+// test.
 require('../../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
@@ -113,6 +114,7 @@ describe('site owner gallery route guards', () => {
     ['patch', '/api/siteOwner/galleries/some-id'],
     ['patch', '/api/siteOwner/galleries/some-id/status'],
     ['post', '/api/siteOwner/galleries/some-id/request'],
+    ['patch', '/api/siteOwner/galleries/some-id/request'],
     ['delete', '/api/siteOwner/galleries/some-id'],
   ];
 
@@ -756,25 +758,26 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
   });
 });
 
-describe('POST /api/siteOwner/galleries/:id/request', () => {
-  // The gallery event a request writes, beside the ability's own event when its status changes.
-  function abilityRequested(owner, ability, turnedOn = true) {
-    return {
-      action: 'ability.requested',
-      actorId: owner.id,
-      actorEmail: owner.email,
-      targetType: 'ability',
-      targetId: ability.id,
-      metadata: {
-        websiteId: ability.websiteId,
-        kind: 'galleries',
-        status: 'requested',
-        turnedOn,
-        removed: false,
-      },
-    };
-  }
+// The ability event a request message writes beside the gallery's, when the ability's status
+// changes.
+function abilityRequested(owner, ability, turnedOn = true) {
+  return {
+    action: 'ability.requested',
+    actorId: owner.id,
+    actorEmail: owner.email,
+    targetType: 'ability',
+    targetId: ability.id,
+    metadata: {
+      websiteId: ability.websiteId,
+      kind: 'galleries',
+      status: 'requested',
+      turnedOn,
+      removed: false,
+    },
+  };
+}
 
+describe('POST /api/siteOwner/galleries/:id/request', () => {
   it('saves the note, moves an added or live ability to requested, and keeps the note out of the audit log', async () => {
     for (const status of ['added', 'live']) {
       await resetState();
@@ -864,5 +867,115 @@ describe('POST /api/siteOwner/galleries/:id/request', () => {
       assert.equal(res.status, 404);
       assert.deepEqual(res.body, GALLERY_NOT_FOUND);
     }
+  });
+});
+
+describe('PATCH /api/siteOwner/galleries/:id/request', () => {
+  it('replaces the note and puts a live ability back to requested, recording the edit', async () => {
+    const lastRequest = new Date(Date.now() - 60 * 60 * 1000);
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'galleries', {
+      status: 'live',
+      requestedAt: lastRequest,
+    });
+    const gallery = await createGallery(website, {
+      requestNote: 'On the home page',
+      requestedAt: lastRequest,
+    });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'On the Portfolio page',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.requestNote, 'On the Portfolio page');
+    assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.equal(stored.status, 'requested');
+    const events = await auditEvents();
+    assert.deepEqual(events, [
+      galleryEvent(owner, 'gallery.request_updated', gallery.id, website.id),
+      abilityRequested(owner, ability),
+    ]);
+    assert.ok(!JSON.stringify(events).includes('Portfolio'));
+  });
+
+  it('gives a note to a gallery backfilled without one', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { requestedAt: new Date() });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'Here',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.requestNote, 'Here');
+  });
+
+  it("returns 409 when the gallery's message hasn't been sent yet", async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website);
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'Here',
+    });
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.body, { error: { message: "This gallery hasn't been requested yet." } });
+  });
+
+  it('returns 400 on fields.requestNote for a blank note', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { requestedAt: new Date() });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: ' ',
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body.error.fields, { requestNote: 'Request note is required.' });
+  });
+
+  it("returns 404 for another owner's gallery or a deleted one", async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const { website: notMine } = await ownerWithGalleries();
+    const theirs = await createGallery(notMine, { requestedAt: new Date() });
+    const deleted = await createGallery(website, {
+      requestedAt: new Date(),
+      deletedAt: new Date(),
+    });
+
+    for (const id of [theirs.id, deleted.id]) {
+      const res = await as(owner, 'patch', `/api/siteOwner/galleries/${id}/request`).send({
+        requestNote: 'Here',
+      });
+
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, GALLERY_NOT_FOUND);
+    }
+  });
+});
+
+describe('gallery request emails', () => {
+  it("emails the admin, naming the gallery, after its message is sent and after it's edited", async (t) => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    t.after(() => delete process.env.RESEND_API_KEY);
+    await createAdmin({ email: 'rich@example.com' });
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { galleryName: 'Our Interior' });
+    const path = `/api/siteOwner/galleries/${gallery.id}/request`;
+
+    await as(owner, 'post', path).send({ requestNote: 'On the home page' });
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 1));
+    await as(owner, 'patch', path).send({ requestNote: 'On the Portfolio page' });
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 2));
+
+    const [first, second] = fetchMock.mock.calls.map((call) => JSON.parse(call.arguments[1].body));
+    assert.deepEqual(first.to, ['rich@example.com']);
+    assert.equal(first.reply_to, owner.email);
+    assert.match(first.subject, /^New request: Photo Galleries "Our Interior" on /);
+    assert.match(first.text, /On the home page/);
+    assert.match(second.subject, /^Updated request: Photo Galleries "Our Interior" on /);
+    assert.match(second.text, /On the Portfolio page/);
   });
 });

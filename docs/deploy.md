@@ -39,29 +39,30 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 
 Every variable the backend reads, per deployed environment. The values that aren't secret are written in `render.yaml`. Secrets and ids are `sync: false` there: Render asks for each one once, when its service is created (if it doesn't, it is set on the service by hand), and they are copied straight from 1Password (3DWD Production), never through a chat, an issue or a commit (`docs/security.md` → Secrets). A secret added after creation is set on the service by hand, since later syncs never ask.
 
-Production's three services each read only their own variables (`render.yaml`): the API reads all but the backup ones; `3dwd-sweep-uploads` reads `NODE_ENV`, `DATABASE_URL` and the four `CLOUDINARY_*`; `3dwd-backup-database` reads `DATABASE_URL`, `BACKUP_PUBLIC_KEY` and the four `R2_*`. All three also read `SENTRY_DSN`, entered on each. Render's environment groups can't hold `sync: false` values, so the Cloudinary pair is entered on both the API and the sweep.
+Production's three services each read only their own variables (`render.yaml`): the API reads all but the backup ones; `3dwd-sweep-uploads` reads `NODE_ENV`, `DATABASE_URL` and the four `CLOUDINARY_*`; `3dwd-backup-database` reads `DATABASE_URL`, `BACKUP_PUBLIC_KEY` and the four `R2_*`. All three also read `SENTRY_DSN`, entered on each; only the API reads `RESEND_API_KEY`. Render's environment groups can't hold `sync: false` values, so the Cloudinary pair is entered on both the API and the sweep.
 
-| Variable                | Staging                                 | Production                                        |
-| ----------------------- | --------------------------------------- | ------------------------------------------------- |
-| `PORT`                  | set by Render                           | set by Render                                     |
-| `NODE_ENV`              | `production`                            | `production`                                      |
-| `DATABASE_URL`          | from staging's Postgres (`render.yaml`) | from production's Postgres (`render.yaml`)        |
-| `GOOGLE_CLIENT_ID`      | the OAuth client ID                     | the OAuth client ID                               |
-| `JWT_SECRET`            | its own, freshly generated              | its own, freshly generated                        |
-| `SECRET_ENCRYPTION_KEY` | its own, freshly generated              | its own, freshly generated, backed up             |
-| `CORS_ORIGIN`           | `https://staging.3dwebdev.com`          | `https://3dwebdev.com`                            |
-| `COOKIE_DOMAIN`         | `.3dwebdev.com`                         | `.3dwebdev.com`                                   |
-| `CLOUDINARY_CLOUD_NAME` | 3DWD's cloud name                       | 3DWD's cloud name                                 |
-| `CLOUDINARY_API_KEY`    | the dev pair                            | the production pair                               |
-| `CLOUDINARY_API_SECRET` | the dev pair                            | the production pair, backed up                    |
-| `CLOUDINARY_FOLDER`     | `3dwd-dev`                              | `3dwd`                                            |
-| `SEED_ADMIN_EMAIL`      | the admin's Google email                | the admin's Google email                          |
-| `BACKUP_PUBLIC_KEY`     | not set                                 | the backup public key from step 10 (not a secret) |
-| `R2_ACCOUNT_ID`         | not set                                 | the Cloudflare account id                         |
-| `R2_ACCESS_KEY_ID`      | not set                                 | the R2 token's access key id                      |
-| `R2_SECRET_ACCESS_KEY`  | not set                                 | the R2 token's secret                             |
-| `R2_BUCKET`             | not set                                 | `3dwd-backups`                                    |
-| `SENTRY_DSN`            | not set (Sentry off)                    | the Sentry project's DSN, on all three services   |
+| Variable                | Staging                                 | Production                                         |
+| ----------------------- | --------------------------------------- | -------------------------------------------------- |
+| `PORT`                  | set by Render                           | set by Render                                      |
+| `NODE_ENV`              | `production`                            | `production`                                       |
+| `DATABASE_URL`          | from staging's Postgres (`render.yaml`) | from production's Postgres (`render.yaml`)         |
+| `GOOGLE_CLIENT_ID`      | the OAuth client ID                     | the OAuth client ID                                |
+| `JWT_SECRET`            | its own, freshly generated              | its own, freshly generated                         |
+| `SECRET_ENCRYPTION_KEY` | its own, freshly generated              | its own, freshly generated, backed up              |
+| `CORS_ORIGIN`           | `https://staging.3dwebdev.com`          | `https://3dwebdev.com`                             |
+| `COOKIE_DOMAIN`         | `.3dwebdev.com`                         | `.3dwebdev.com`                                    |
+| `CLOUDINARY_CLOUD_NAME` | 3DWD's cloud name                       | 3DWD's cloud name                                  |
+| `CLOUDINARY_API_KEY`    | the dev pair                            | the production pair                                |
+| `CLOUDINARY_API_SECRET` | the dev pair                            | the production pair, backed up                     |
+| `CLOUDINARY_FOLDER`     | `3dwd-dev`                              | `3dwd`                                             |
+| `SEED_ADMIN_EMAIL`      | the admin's Google email                | the admin's Google email                           |
+| `BACKUP_PUBLIC_KEY`     | not set                                 | the backup public key from step 10 (not a secret)  |
+| `R2_ACCOUNT_ID`         | not set                                 | the Cloudflare account id                          |
+| `R2_ACCESS_KEY_ID`      | not set                                 | the R2 token's access key id                       |
+| `R2_SECRET_ACCESS_KEY`  | not set                                 | the R2 token's secret                              |
+| `R2_BUCKET`             | not set                                 | `3dwd-backups`                                     |
+| `SENTRY_DSN`            | not set (Sentry off)                    | the Sentry project's DSN, on all three services    |
+| `RESEND_API_KEY`        | not set (request emails off)            | Resend's sending-only key, on the API only (Email) |
 
 `NODE_ENV=production` on staging makes `lib/config.js` check it like production: https `CORS_ORIGIN` and a cookie domain. Each environment's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` is its own; none is reused from local or the other environment.
 
@@ -86,6 +87,16 @@ A production failure reaches Rich by email (issue #50, `docs/security.md` → Co
 - **Render:** failure notifications on `3dwd-api-production` deploys and on both cron jobs. None for staging, whose failures are the safety net working.
 - **Uptime monitor (UptimeRobot):** checks `https://api.3dwebdev.com/api/health` every few minutes, outside Render. Render's health check only gates a deploy; it doesn't watch the live API. It also checks each live client website's home page (Onboarding a client website, step 5), since Vercel emails a failed deployment but doesn't watch a live site.
 - **Sentry:** production only (`SENTRY_DSN` on the three services; empty on staging and locally, so nothing is sent). The API reports unexpected 500s and uncaught errors, and both cron jobs report a failed run (`lib/sentry.js`). A failed revalidation call is a warning, one Sentry issue per website: the client website is usually up but set up wrong (a webhook secret that doesn't match, a missing `/api/revalidate` route, a redirect), so its site owner's changes silently never appear. Its "new issue" alert emails the admin. After `SENTRY_DSN` is first set, run `npm run sentry:check` once from the API's Render Shell and find the test event in Sentry, with no request data in it.
+
+### Email
+
+The admin's request emails (`docs/endpoints.md` → Request Emails) go out through Resend from `notifications@3dwebdev.com`, production only. `3dwebdev.com` receives no mail: Resend's records sit on `send`, `rsend` and `resend._domainkey`, so they don't touch the apex. One-time setup, Rich (Feature 13):
+
+1. A Resend account with 2FA, and its row in `docs/security.md` → Access.
+2. Resend → Domains → add `3dwebdev.com`. At Namecheap → Advanced DNS → Host Records (no Mail Settings change, no MX), add the records its Records tab shows exactly as given (2026-11-02): a TXT at `resend._domainkey` (DKIM), and for SPF two CNAMEs, `send` → `send.forge.rmta.net` and `rsend` → `rsend.forge.rmta.net`. Hosts are entered without `.3dwebdev.com`. Then a DMARC TXT at `_dmarc`: `v=DMARC1; p=none;` to start, tightened to `p=quarantine` once a few weeks of mail pass. Turn on Enable Sending and wait until Resend shows the domain Verified (usually minutes, up to 72 hours).
+3. Resend → API Keys → a key with **Sending access** only, limited to `3dwebdev.com`. Save it in 1Password (3DWD Production).
+4. After the merge, click Manual Sync (the new `RESEND_API_KEY` entry) and enter the key on `3dwd-api-production`, then release.
+5. Check on production: send or edit a request message on a website you own as a site owner, and the email arrives at the admin's address with Reply-To set to that site owner.
 
 ## Deployment checklist
 
