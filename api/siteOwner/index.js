@@ -157,6 +157,7 @@ router.get('/websites', async (req, res) => {
           galleryName: true,
           slug: true,
           status: true,
+          placement: true,
           requestedAt: true,
           createdAt: true,
         },

@@ -60,6 +60,7 @@ function abilityEvent(owner, action, ability, state) {
       kind: ability.kind,
       status: 'added',
       turnedOn: true,
+      placement: null,
       removed: false,
       ...state,
     },
@@ -149,6 +150,7 @@ describe('POST /api/siteOwner/abilities', () => {
         kind: 'galleries',
         status: 'added',
         turnedOn: true,
+        placement: null,
         requestNote: null,
         requestedAt: null,
         createdAt: stored.createdAt.toISOString(),
@@ -245,14 +247,12 @@ describe('POST /api/siteOwner/abilities', () => {
     assert.deepEqual(await revalidationBody(), { websiteId: website.id, ability: 'galleries' });
   });
 
-  it('starts again at added, keeping the galleries deleted, more than 30 days after removal', async () => {
+  it('keeps its status and switch, and the galleries deleted, more than 30 days after removal', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const removedAt = new Date(Date.now() - 31 * DAY_MS);
     const ability = await createAbility(website, 'galleries', {
       status: 'live',
       turnedOn: false,
-      requestNote: 'A gallery page',
-      requestedAt: removedAt,
       removedAt,
     });
     await createGallery(website, { deletedAt: removedAt });
@@ -264,17 +264,17 @@ describe('POST /api/siteOwner/abilities', () => {
 
     assert.equal(res.status, 201);
     assert.equal(res.body.data.id, ability.id);
-    assert.equal(res.body.data.status, 'added');
-    assert.equal(res.body.data.turnedOn, true);
-    assert.equal(res.body.data.requestNote, null);
-    assert.equal(res.body.data.requestedAt, null);
+    assert.equal(res.body.data.status, 'live');
+    assert.equal(res.body.data.turnedOn, false);
     assert.equal(await prisma.gallery.count({ where: { deletedAt: null } }), 0);
-    assert.deepEqual(await auditEvents(), [abilityEvent(owner, 'ability.added', ability)]);
+    assert.deepEqual(await auditEvents(), [
+      abilityEvent(owner, 'ability.added', ability, { status: 'live', turnedOn: false }),
+    ]);
   });
 });
 
 describe('POST /api/siteOwner/abilities/:id/request', () => {
-  it('moves an added ability to requested with its note, keeping the note out of the audit log', async () => {
+  it("requests posts' placement with its note, keeping the status and the note out of the audit log", async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const ability = await createAbility(website, 'posts');
 
@@ -283,12 +283,13 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
     });
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.status, 'requested');
+    assert.equal(res.body.data.status, 'added');
+    assert.equal(res.body.data.placement, 'requested');
     assert.equal(res.body.data.requestNote, 'On the News page,\nunder the header.');
     assert.ok(res.body.data.requestedAt);
     const events = await auditEvents();
     assert.deepEqual(events, [
-      abilityEvent(owner, 'ability.requested', ability, { status: 'requested' }),
+      abilityEvent(owner, 'ability.requested', ability, { placement: 'requested' }),
     ]);
     assert.ok(!JSON.stringify(events).includes('News page'));
   });
@@ -297,12 +298,13 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
     const lastRequest = new Date(Date.now() - DAY_MS);
     const requestedSite = await createOwnerWithWebsite();
     const requested = await createAbility(requestedSite.website, 'posts', {
-      status: 'requested',
+      placement: 'requested',
       requestedAt: lastRequest,
     });
     const liveSite = await createOwnerWithWebsite();
     const live = await createAbility(liveSite.website, 'posts', {
       status: 'live',
+      placement: 'live',
       requestedAt: lastRequest,
     });
     // The older post stays, so the newer one isn't a new first post.
@@ -326,10 +328,11 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
 
   it('requests posts again after every post was deleted and a new first post saved', async () => {
     const lastRequest = new Date(Date.now() - DAY_MS);
-    for (const status of ['live', 'requested']) {
+    for (const placement of ['live', 'requested']) {
       const { owner, website } = await createOwnerWithWebsite();
       const ability = await createAbility(website, 'posts', {
-        status,
+        status: 'live',
+        placement,
         requestNote: 'Old place',
         requestedAt: lastRequest,
       });
@@ -344,7 +347,8 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
       });
 
       assert.equal(res.status, 200);
-      assert.equal(res.body.data.status, 'requested');
+      assert.equal(res.body.data.status, 'live');
+      assert.equal(res.body.data.placement, 'requested');
       assert.equal(res.body.data.requestNote, 'New place');
       assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
     }
@@ -400,11 +404,12 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
 });
 
 describe('PATCH /api/siteOwner/abilities/:id/request', () => {
-  it('replaces the note of live posts and puts them back to requested, recording the edit', async () => {
+  it('replaces the note of live posts and puts their placement back to requested, recording the edit', async () => {
     const lastRequest = new Date(Date.now() - DAY_MS);
     const { owner, website } = await createOwnerWithWebsite();
     const ability = await createAbility(website, 'posts', {
       status: 'live',
+      placement: 'live',
       requestNote: 'On the home page',
       requestedAt: lastRequest,
     });
@@ -414,12 +419,16 @@ describe('PATCH /api/siteOwner/abilities/:id/request', () => {
     });
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.status, 'requested');
+    assert.equal(res.body.data.status, 'live');
+    assert.equal(res.body.data.placement, 'requested');
     assert.equal(res.body.data.requestNote, 'On the News page');
     assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
     const events = await auditEvents();
     assert.deepEqual(events, [
-      abilityEvent(owner, 'ability.request_updated', ability, { status: 'requested' }),
+      abilityEvent(owner, 'ability.request_updated', ability, {
+        status: 'live',
+        placement: 'requested',
+      }),
     ]);
     assert.ok(!JSON.stringify(events).includes('News page'));
   });
@@ -427,7 +436,7 @@ describe('PATCH /api/siteOwner/abilities/:id/request', () => {
   it('edits a note that is still requested', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const ability = await createAbility(website, 'posts', {
-      status: 'requested',
+      placement: 'requested',
       requestNote: 'Old place',
       requestedAt: new Date(),
     });
@@ -443,10 +452,7 @@ describe('PATCH /api/siteOwner/abilities/:id/request', () => {
   it('returns 409 for posts not requested yet and for a Photo Galleries ability', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const posts = await createAbility(website, 'posts');
-    const galleries = await createAbility(website, 'galleries', {
-      status: 'requested',
-      requestedAt: new Date(),
-    });
+    const galleries = await createAbility(website, 'galleries', { status: 'live' });
 
     const notYet = await as(owner, 'patch', `/api/siteOwner/abilities/${posts.id}/request`).send({
       requestNote: 'Here',
@@ -546,7 +552,7 @@ describe('posts request emails', () => {
     await waitFor(() => assert.equal(fetchMock.mock.callCount(), 1));
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.status, 'requested');
+    assert.equal(res.body.data.placement, 'requested');
   });
 });
 
@@ -598,7 +604,7 @@ describe('PATCH /api/siteOwner/abilities/:id/turnedOn', () => {
 
   it('returns 409 before the ability is live', async () => {
     const { owner, website } = await createOwnerWithWebsite();
-    const ability = await createAbility(website, 'posts', { status: 'requested' });
+    const ability = await createAbility(website, 'posts', { placement: 'requested' });
 
     const res = await as(owner, 'patch', `/api/siteOwner/abilities/${ability.id}/turnedOn`).send({
       turnedOn: false,

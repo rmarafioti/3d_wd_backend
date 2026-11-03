@@ -153,14 +153,16 @@ describe('GET /api/siteOwner/websites', () => {
       galleryName: 'Art',
       slug: 'art',
       requestedAt: new Date('2026-11-02T00:00:00.000Z'),
+      placement: 'requested',
     });
     await createGallery(alpha, { galleryName: 'Deleted', deletedAt: new Date() });
-    const postsAbility = await createAbility(alpha, 'posts', { status: 'live' });
-    const galleriesAbility = await createAbility(alpha, 'galleries', {
-      status: 'requested',
-      requestNote: 'A gallery page',
+    const postsAbility = await createAbility(alpha, 'posts', {
+      status: 'live',
+      placement: 'live',
+      requestNote: 'The News page',
       requestedAt: new Date('2026-11-01T00:00:00.000Z'),
     });
+    const galleriesAbility = await createAbility(alpha, 'galleries');
     await createAbility(beta, 'galleries', { removedAt: new Date() });
 
     const res = await as(owner, 'get', '/api/siteOwner/websites');
@@ -179,18 +181,20 @@ describe('GET /api/siteOwner/websites', () => {
               kind: 'posts',
               status: 'live',
               turnedOn: true,
-              requestNote: null,
-              requestedAt: null,
+              placement: 'live',
+              requestNote: 'The News page',
+              requestedAt: '2026-11-01T00:00:00.000Z',
               createdAt: postsAbility.createdAt.toISOString(),
               updatedAt: postsAbility.updatedAt.toISOString(),
             },
             {
               id: galleriesAbility.id,
               kind: 'galleries',
-              status: 'requested',
+              status: 'added',
               turnedOn: true,
-              requestNote: 'A gallery page',
-              requestedAt: '2026-11-01T00:00:00.000Z',
+              placement: null,
+              requestNote: null,
+              requestedAt: null,
               createdAt: galleriesAbility.createdAt.toISOString(),
               updatedAt: galleriesAbility.updatedAt.toISOString(),
             },
@@ -219,6 +223,7 @@ describe('GET /api/siteOwner/websites', () => {
               galleryName: 'Art',
               slug: 'art',
               status: 'published',
+              placement: 'requested',
               requestedAt: '2026-11-02T00:00:00.000Z',
               createdAt: newerGallery.createdAt.toISOString(),
             },
@@ -227,6 +232,7 @@ describe('GET /api/siteOwner/websites', () => {
               galleryName: 'Interior',
               slug: 'interior',
               status: 'draft',
+              placement: null,
               requestedAt: null,
               createdAt: olderGallery.createdAt.toISOString(),
             },

@@ -1,8 +1,8 @@
 // Admin routes, mounted at /api/admin: the site owner account list (with each website's abilities,
 // its post summaries: names and statuses, and its gallery summaries: counts and crop flags; never
 // content), the active website picker,
-// Create an Account, Link a Website, setting a requested ability live, and the read-only audit
-// event list and its months. Every route requires a signed-in administrator.
+// Create an Account, Link a Website, setting an ability live and setting a gallery live, and the
+// read-only audit event list and its months. Every route requires a signed-in administrator.
 // api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
 // secret exist only in the one response that creates the new website they belong to.
 // Every change writes its audit events (lib/audit.js) inside the same transaction.
@@ -16,6 +16,7 @@ const { createAccountSchema } = require('../../validation/account');
 const { websiteChoiceSchema } = require('../../validation/website');
 const { listAuditEventsSchema } = require('../../validation/auditEvent');
 const { abilityStatusSchema } = require('../../validation/ability');
+const { galleryPlacementSchema } = require('../../validation/gallery');
 const { normalizeUrl, urlVariants } = require('../../lib/normalizeUrl');
 const { findFreeMediaFolder } = require('../../lib/mediaFolder');
 const {
@@ -47,6 +48,7 @@ const ADMIN_GALLERY_SELECT = {
   id: true,
   galleryName: true,
   status: true,
+  placement: true,
   requestNote: true,
   images: { select: { thumbnailX: true, mobileX: true } },
 };
@@ -422,8 +424,11 @@ router.post('/accounts/:id/websites', async (req, res) => {
   }
 });
 
-// PATCH /api/admin/abilities/:id/status — body { status: 'live' }. Sets a requested ability live
-// once the client website shows its content. A removed ability is a 404.
+// PATCH /api/admin/abilities/:id/status — body { status: 'live' }. Sets an ability live once its
+// code is wired into the client website. Photo Galleries goes live on its own, with no request;
+// each gallery is then set live by the route below. Posts are one switch (Rich, 2026-11-03,
+// issue #71): their request form must be waiting, and setting them live places them too. A
+// removed ability is a 404.
 router.patch('/abilities/:id/status', async (req, res) => {
   const { status } = validate(abilityStatusSchema, req.body ?? {});
 
@@ -432,15 +437,17 @@ router.patch('/abilities/:id/status', async (req, res) => {
     select: ABILITY_SELECT,
   });
   if (!ability) throw new ServerError(404, 'Ability not found.');
-  if (ability.status === 'live') throw new ServerError(409, 'This ability is already live.');
-  if (ability.status === 'added') {
+  const isPosts = ability.kind === 'posts';
+  const isLive = isPosts ? ability.placement === 'live' : ability.status === 'live';
+  if (isLive) throw new ServerError(409, 'This ability is already live.');
+  if (isPosts && ability.placement === null) {
     throw new ServerError(409, "This ability hasn't been requested yet.");
   }
 
   const updated = await prisma.$transaction(async (tx) => {
     const live = await tx.websiteAbility.update({
       where: { id: ability.id },
-      data: { status },
+      data: isPosts ? { status, placement: 'live' } : { status },
       select: ABILITY_SELECT,
     });
     await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_LIVE, live);
@@ -448,6 +455,54 @@ router.patch('/abilities/:id/status', async (req, res) => {
   });
 
   res.json({ data: toAbility(updated) });
+});
+
+// PATCH /api/admin/galleries/:id/placement — body { placement: 'live' }. Sets a requested gallery
+// live once it is placed and styled on the client website and the site owner approved the
+// mock-up. Its Photo Galleries ability must be live first: the gallery sits in its component.
+// A deleted gallery is a 404. Nothing public changes, so there's no revalidation.
+router.patch('/galleries/:id/placement', async (req, res) => {
+  const { placement } = validate(galleryPlacementSchema, req.body ?? {});
+
+  const gallery = await prisma.gallery.findFirst({
+    where: { id: req.params.id, deletedAt: null },
+    select: {
+      id: true,
+      websiteId: true,
+      placement: true,
+      website: {
+        select: { abilities: { where: { kind: 'galleries' }, select: { status: true } } },
+      },
+    },
+  });
+  if (!gallery) throw new ServerError(404, 'Gallery not found.');
+  // A gallery that isn't deleted always has its ability (removing it deletes the galleries). If the
+  // row were ever missing (SQL by hand, a bug), it reads as not live: a 409 the admin can act on.
+  if (gallery.website.abilities[0]?.status !== 'live') {
+    throw new ServerError(409, 'Set Photo Galleries live first.');
+  }
+  if (gallery.placement === 'live') throw new ServerError(409, 'This gallery is already live.');
+  if (gallery.placement === null) {
+    throw new ServerError(409, "This gallery hasn't been requested yet.");
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await recordAuditEvent(tx, req, {
+      action: AUDIT_ACTIONS.GALLERY_LIVE,
+      actorId: req.user.id,
+      actorEmail: req.user.email,
+      targetType: 'gallery',
+      targetId: gallery.id,
+      metadata: { websiteId: gallery.websiteId },
+    });
+    return tx.gallery.update({
+      where: { id: gallery.id },
+      data: { placement },
+      select: ADMIN_GALLERY_SELECT,
+    });
+  });
+
+  res.json({ data: toAdminGallerySummary(updated) });
 });
 
 module.exports = router;

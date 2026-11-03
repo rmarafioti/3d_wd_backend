@@ -191,6 +191,7 @@ describe('POST /api/siteOwner/galleries', () => {
       title: 'Inside the shop',
       copy: 'Line one\nLine two',
       status: 'published',
+      placement: null,
       requestNote: null,
       requestedAt: null,
       createdAt: data.createdAt,
@@ -726,6 +727,22 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
     assert.deepEqual(await revalidationBody(), { websiteId: website.id, galleryId: gallery.id });
   });
 
+  it('leaves the ability as it was when a requested gallery is deleted (issue #71)', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'galleries');
+    const gallery = await createGallery(website);
+    await as(owner, 'post', `/api/siteOwner/galleries/${gallery.id}/request`).send({
+      requestNote: 'The about page',
+    });
+
+    const res = await as(owner, 'delete', `/api/siteOwner/galleries/${gallery.id}`);
+
+    assert.equal(res.status, 204);
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.equal(stored.status, 'added');
+    assert.equal(stored.updatedAt.getTime(), ability.updatedAt.getTime());
+  });
+
   it('treats a deleted gallery as gone on every route', async () => {
     const { owner, website } = await ownerWithGalleries();
     const gallery = await createGallery(website);
@@ -758,27 +775,8 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
   });
 });
 
-// The ability event a request message writes beside the gallery's, when the ability's status
-// changes.
-function abilityRequested(owner, ability, turnedOn = true) {
-  return {
-    action: 'ability.requested',
-    actorId: owner.id,
-    actorEmail: owner.email,
-    targetType: 'ability',
-    targetId: ability.id,
-    metadata: {
-      websiteId: ability.websiteId,
-      kind: 'galleries',
-      status: 'requested',
-      turnedOn,
-      removed: false,
-    },
-  };
-}
-
 describe('POST /api/siteOwner/galleries/:id/request', () => {
-  it('saves the note, moves an added or live ability to requested, and keeps the note out of the audit log', async () => {
+  it("saves the note, puts the gallery's placement to requested, and leaves the ability", async () => {
     for (const status of ['added', 'live']) {
       await resetState();
       const { owner, website } = await createOwnerWithWebsite();
@@ -791,37 +789,17 @@ describe('POST /api/siteOwner/galleries/:id/request', () => {
 
       assert.equal(res.status, 200);
       assert.equal(res.body.data.id, gallery.id);
+      assert.equal(res.body.data.placement, 'requested');
       assert.equal(res.body.data.requestNote, 'On the Portfolio page,\nbelow the intro.');
       assert.ok(res.body.data.requestedAt);
       const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-      assert.equal(stored.status, 'requested');
-      assert.equal(stored.requestedAt.toISOString(), res.body.data.requestedAt);
-      assert.equal(stored.requestNote, null);
+      assert.equal(stored.status, status);
+      assert.equal(stored.placement, null);
+      assert.equal(stored.requestedAt, null);
       const events = await auditEvents();
-      assert.deepEqual(events, [
-        galleryEvent(owner, 'gallery.requested', gallery.id, website.id),
-        abilityRequested(owner, ability),
-      ]);
+      assert.deepEqual(events, [galleryEvent(owner, 'gallery.requested', gallery.id, website.id)]);
       assert.ok(!JSON.stringify(events).includes('Portfolio'));
     }
-  });
-
-  it('writes only the gallery event when the ability is already requested', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const requestedAt = new Date('2026-11-01T00:00:00.000Z');
-    const ability = await createAbility(website, 'galleries', { status: 'requested', requestedAt });
-    const gallery = await createGallery(website);
-
-    const res = await as(owner, 'post', `/api/siteOwner/galleries/${gallery.id}/request`).send({
-      requestNote: 'Here',
-    });
-
-    assert.equal(res.status, 200);
-    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-    assert.deepEqual(stored.requestedAt, requestedAt);
-    assert.deepEqual(await auditEvents(), [
-      galleryEvent(owner, 'gallery.requested', gallery.id, website.id),
-    ]);
   });
 
   it('returns 409 when the gallery has already been requested', async () => {
@@ -871,16 +849,14 @@ describe('POST /api/siteOwner/galleries/:id/request', () => {
 });
 
 describe('PATCH /api/siteOwner/galleries/:id/request', () => {
-  it('replaces the note and puts a live ability back to requested, recording the edit', async () => {
+  it('replaces the note and puts a live gallery back to requested, leaving the ability', async () => {
     const lastRequest = new Date(Date.now() - 60 * 60 * 1000);
     const { owner, website } = await createOwnerWithWebsite();
-    const ability = await createAbility(website, 'galleries', {
-      status: 'live',
-      requestedAt: lastRequest,
-    });
+    const ability = await createAbility(website, 'galleries', { status: 'live' });
     const gallery = await createGallery(website, {
       requestNote: 'On the home page',
       requestedAt: lastRequest,
+      placement: 'live',
     });
 
     const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}/request`).send({
@@ -888,14 +864,14 @@ describe('PATCH /api/siteOwner/galleries/:id/request', () => {
     });
 
     assert.equal(res.status, 200);
+    assert.equal(res.body.data.placement, 'requested');
     assert.equal(res.body.data.requestNote, 'On the Portfolio page');
     assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
     const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-    assert.equal(stored.status, 'requested');
+    assert.equal(stored.status, 'live');
     const events = await auditEvents();
     assert.deepEqual(events, [
       galleryEvent(owner, 'gallery.request_updated', gallery.id, website.id),
-      abilityRequested(owner, ability),
     ]);
     assert.ok(!JSON.stringify(events).includes('Portfolio'));
   });

@@ -110,9 +110,15 @@ const galleryStatusSchema = z.object({ status });
 // The request message sent once after a gallery is created: where on the site it should go.
 const requestGallerySchema = z.object({ requestNote: requiredText('Request note', 1000) });
 
+// The admin's Set a Gallery Live: live is the only placement the admin sets.
+const galleryPlacementSchema = z.object({
+  placement: z.literal('live', { error: 'Placement must be live.' }),
+});
+
 module.exports = {
   createGallerySchema,
   updateGallerySchema,
   galleryStatusSchema,
   requestGallerySchema,
+  galleryPlacementSchema,
 };
