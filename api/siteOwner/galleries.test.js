@@ -1,10 +1,4 @@
-// Request tests for the site owner gallery routes (api/siteOwner/galleries.js): create, read, edit,
-// status, delete, and sending or editing the request message. Covers the role guard, the Photo
-// Galleries ability create needs, the ownership rule (another owner's, an inactive website's or a
-// deleted gallery is a 404), validation including the crop rules, the image src folder rule, the
-// slug (made once, -2 on a clash, never changed), the image list reconcile, the audit event and
-// revalidation call after every change, and the admin's request email. fetch is mocked in every
-// test.
+// Request tests for the site owner gallery routes (api/siteOwner/galleries.js).
 require('../../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');

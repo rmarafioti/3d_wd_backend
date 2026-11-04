@@ -1,9 +1,4 @@
-// Request tests for the public routes (api/public/index.js): a client website fetching its posts
-// and its galleries by slug with its API key. Covers every 401, that only this website's published
-// posts come back, newest first, each body in order, that the PublicPost shape never carries
-// postName, item ids or secrets, a gallery's images with their cropped versions and its 404s, and
-// both rate limits (per website for a valid key, per address for a refused one), and that an
-// ability turned off (or galleries removed) hides its content.
+// Request tests for the public routes (api/public/index.js).
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');

@@ -1,6 +1,5 @@
-// Zod schemas for a website's abilities: add one (Posts or Photo Galleries), send its request
-// form, turn it on or off, and the admin setting it live. Limits match the Validation rules in
-// docs/endpoints.md.
+// Zod schemas for a website's abilities: add one, send its request form, turn it on or off, and
+// the admin setting it live.
 const { z } = require('zod');
 const { requiredText, websiteId } = require('./fields');
 

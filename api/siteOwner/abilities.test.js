@@ -1,9 +1,4 @@
-// Request tests for the site owner ability routes (api/siteOwner/abilities.js): add, request (and
-// edit the request), turn on or off, and remove. Covers the role guard and CSRF, the ownership
-// rule (another owner's, an inactive website's or a removed ability is a 404), validation, every
-// 409, removing Photo Galleries (its galleries deleted with the ability's time) and adding it back
-// (restored within 30 days, started again after), the audit events with the ability's full state,
-// revalidation, and the admin's request email. fetch is mocked in every test.
+// Request tests for the site owner ability routes (api/siteOwner/abilities.js).
 require('../../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');

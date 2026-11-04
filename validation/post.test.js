@@ -1,7 +1,5 @@
-// Boundary tests for the create post schema (validation/post.js), run through validate() so each
-// case checks the same 400 envelope and field keys a request gets. The edit and status schemas
-// share these fields and are covered by the request tests in api/siteOwner/index.test.js; these
-// cover every limit in docs/endpoints.md (Validation rules).
+// Boundary tests for the create post schema (validation/post.js), run through validate(), for every
+// limit in docs/endpoints.md → Validation rules.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { validate } = require('./validate');

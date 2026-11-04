@@ -1,6 +1,5 @@
-// Seeds the administrator account. Safe to run more than once: an existing account with the
-// same email is skipped. Refuses to run against production unless --confirm-production is passed.
-// Run with `npm run seed` (or `npm run seed -- --confirm-production` in production).
+// Seeds the administrator account (`npm run seed`). Safe to re-run; refuses production unless
+// --confirm-production is passed.
 
 // Load .env before seedData and the Prisma client read process.env.
 require('dotenv/config');

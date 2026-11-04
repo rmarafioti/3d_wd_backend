@@ -1,22 +1,5 @@
-// Site owner gallery routes, mounted at /api/siteOwner/galleries by api/siteOwner/index.js after
-// its requireAuth and requireRole('site_owner') guards: create, read, edit, draft or publish, and
-// delete a photo gallery, and send or edit its request message. Every change writes its audit
-// event (lib/audit.js) inside the same transaction, then revalidates the client website after
-// commit (the request message changes nothing public, so it doesn't; it emails the admin instead,
-// services/requestEmail.js).
-//
-// A gallery is created only on a website that has the Photo Galleries ability (./abilities.js).
-// The other routes need no check: removing the ability deletes the website's galleries.
-// Each gallery's request message (where on the site it goes) is sent once, after it is created,
-// and can be edited after when the site owner changes their mind. Either puts the gallery's own
-// placement to requested, so the admin places it or moves it, then sets it live (api/admin).
-// Nothing here changes the ability: its status says only whether its code is wired (issue #71).
-//
-// Ownership (lib/ownership.js): a gallery belongs to the site owner when its website does and it
-// isn't deleted. Anything else is a 404 "Gallery not found.", identical to "doesn't exist".
-// A gallery's slug is made once at create (lib/slug.js) and never changes. A gallery's name is
-// unique among the website's galleries that aren't deleted, ignoring case: two galleries with the
-// same name would be impossible to tell apart on the dashboard. The frontend checks it first.
+// Site owner gallery routes, mounted at /api/siteOwner/galleries: create, read, edit, draft or
+// publish, and delete a photo gallery, and send or edit its request message.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -124,8 +107,9 @@ async function writeImages(tx, galleryId, images) {
   }
 }
 
-// Throws the 409 when another gallery on the website, not deleted, has this name in any case.
-// `exceptId` is the gallery being edited, which may keep its own name.
+// Throws the 409 when another gallery on the website, not deleted, has this name in any case:
+// two galleries with one name can't be told apart on the dashboard. `exceptId` is the gallery
+// being edited, which may keep its own name.
 async function assertNameAvailable(tx, websiteId, galleryName, exceptId) {
   const taken = await tx.gallery.findFirst({
     where: {

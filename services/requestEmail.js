@@ -1,16 +1,5 @@
-// Emails the admin when a site owner sends or edits a request message: where on their website
-// posts or a gallery should go (Feature 13, issue #65). Sent through Resend's REST API from
-// notifications@3dwebdev.com to every active admin, with Reply-To set to the site owner, so the
-// admin's reply (the styling mock-up) starts a thread with them. Plain text only: names, the
-// ability and the note. No ids, no post or gallery content, no secrets, no link but the dashboard.
-//
-// Fire-and-forget, like services/revalidate.js: routes call it after their transaction has
-// committed and after responding, without awaiting it. It catches every error itself and never
-// rejects, so a failed send can never affect the site owner's request. The note stays on the admin
-// dashboard either way, so a lost email loses nothing.
-//
-// Production only: with RESEND_API_KEY empty (locally, in tests and on staging) nothing is sent.
-// Logs and Sentry get the website id only, never an address, the key or the note.
+// Emails the admin through Resend when a site owner sends or edits a request message.
+// Fire-and-forget: it never rejects, and nothing is sent while RESEND_API_KEY is empty.
 const prisma = require('../prisma');
 const { reportWarning } = require('../lib/sentry');
 

@@ -3,6 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  checkHeader,
   checkEmDash,
   checkNodePrefix,
   checkSecretColumns,
@@ -12,6 +13,55 @@ const {
 
 const ENDPOINTS_DOC =
   '| 404 | Post not found. |\n| 409 | This account is already linked to [Website Name]. |';
+
+describe('checkHeader', () => {
+  it('allows a two-line header', () => {
+    const text = '// What the file is for,\n// in two lines.\nconst a = 1;';
+
+    assert.deepEqual(checkHeader('lib/x.js', text), []);
+  });
+
+  it('flags a three-line header on its third line', () => {
+    const text = '// One.\n// Two.\n// Three.\nconst a = 1;';
+
+    assert.deepEqual(checkHeader('lib/x.js', text), [
+      { file: 'lib/x.js', line: 3, rule: 'header comment over two lines' },
+    ]);
+  });
+
+  it('counts an empty comment line inside the header', () => {
+    const text = '// One.\n//\n// Three.\nconst a = 1;';
+
+    assert.equal(checkHeader('lib/x.js', text).length, 1);
+  });
+
+  it('ends the header at a blank line', () => {
+    const text = '// One.\n// Two.\n\n// A comment above the code.\nconst a = 1;';
+
+    assert.deepEqual(checkHeader('lib/x.js', text), []);
+  });
+
+  it('skips a shebang', () => {
+    const text = '#!/usr/bin/env bash\n# One.\n# Two.\necho hi';
+
+    assert.deepEqual(checkHeader('x/open.sh', text), []);
+  });
+
+  it('reads # comments in a YAML file', () => {
+    const text = '# One.\n# Two.\n# Three.\nname: CI';
+
+    assert.deepEqual(checkHeader('.github/workflows/ci.yml', text), [
+      { file: '.github/workflows/ci.yml', line: 3, rule: 'header comment over two lines' },
+    ]);
+  });
+
+  it("skips the guard hook files, which stay identical to the frontend's", () => {
+    const text = '// One.\n// Two.\n// Three.\n';
+
+    assert.deepEqual(checkHeader('.claude/hooks/guard.js', text), []);
+    assert.deepEqual(checkHeader('.claude/hooks/guard.test.js', text), []);
+  });
+});
 
 describe('checkEmDash', () => {
   it('flags an em dash in a user-facing string', () => {

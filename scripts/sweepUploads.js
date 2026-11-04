@@ -1,7 +1,5 @@
-// Entry point for `npm run sweep:uploads`: deletes unused Cloudinary uploads
-// (services/sweepUploads.js). Run by hand locally; once deployed, a daily Render cron job runs it.
-// Logs counts only. Exits 1 on any failure, and reports it to Sentry in production
-// (lib/sentry.js), so a failed run is an alert.
+// Entry point for `npm run sweep:uploads` (services/sweepUploads.js), run daily by a Render cron
+// job. Logs counts only; on a failure exits 1 and reports to Sentry.
 require('dotenv/config');
 const { initSentry, reportError, flushSentry } = require('../lib/sentry');
 const { missingEnv } = require('../lib/config');

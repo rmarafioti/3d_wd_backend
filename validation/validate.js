@@ -1,8 +1,5 @@
-// Shared validation helper. Every route runs its zod schema through validate(), so a failed
-// check always leaves the server as the same 400 envelope:
-// { error: { message: 'Please fix the highlighted fields.', fields: { fieldName: 'message' } } }
-// Field keys are the full path to the input, joined with dots: top-level fields keep their own
-// name ("email"), nested ones point at the exact input ("body.0.text", "body.1.image.src").
+// Shared validation helper: validate() turns a failed zod check into the 400 envelope with fields
+// keyed by full path, and blankToUndefined trims text and treats blank as empty.
 const { ServerError } = require('../errors');
 
 // Returns the parsed (trimmed, transformed) data, or throws the 400 with one message per field.

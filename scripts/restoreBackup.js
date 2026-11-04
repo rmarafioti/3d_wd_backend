@@ -1,8 +1,5 @@
-// Entry point for `npm run backup:restore`:
-//   npm run backup:restore -- --file <dump.enc> --key <private key .pem> --target <database URL>
-// It decrypts a backup downloaded from the R2 bucket and restores it into an empty database
-// (docs/deploy.md → Restoring a backup). It refuses this environment's own DATABASE_URL and any
-// database that already has tables, so it can't overwrite a live database by mistake.
+// Entry point for `npm run backup:restore -- --file <dump.enc> --key <.pem> --target <db URL>`:
+// decrypts a backup into an empty database, never this environment's own (docs/deploy.md).
 require('dotenv/config');
 const childProcess = require('node:child_process');
 const fs = require('node:fs');

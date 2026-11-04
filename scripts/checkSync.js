@@ -1,12 +1,5 @@
-// Entry point for `npm run check:sync`: compares what must be identical in the backend and the
-// frontend (CLAUDE.md → Documentation Sync, the identical tier) and prints any difference.
-// /doc-sync runs it first, so each sync starts from the facts. Compared:
-//   - the API Contract section of docs/endpoints.md against the frontend's docs/api.md
-//   - .claude/hooks/guard.js and guard.test.js against the frontend's copies
-//   - docs/process.md (the shared process) against the frontend's copy, whole
-// The backend side is this working tree; the frontend side is its origin/main, read with
-// `git show` after a fetch, so the frontend's working tree is never read or touched. Read-only:
-// it edits nothing in either repo. Exits 1 when anything differs or is missing.
+// Entry point for `npm run check:sync`: diffs what must be identical in the backend and the
+// frontend (the API Contract, the guard hook, docs/process.md) against ../3d_wd. Read-only.
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -82,6 +75,8 @@ function readBackendFile(file) {
   return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : null;
 }
 
+// The frontend side is its origin/main, read with `git show` after a fetch, so its working tree
+// is never read or touched.
 function readFrontendFile(file) {
   try {
     return execFileSync('git', ['-C', FRONTEND_DIR, 'show', `origin/main:${file}`], {

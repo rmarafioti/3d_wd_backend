@@ -1,6 +1,5 @@
-// Zod schemas for choosing a website on Create an Account and Link a Website:
-// the body carries either { websiteId } (link an existing website) or { websiteName, websiteUrl }
-// (create a new one) — exactly one of the two, never both, never neither.
+// Zod schemas for choosing a website on Create an Account and Link a Website: an existing
+// { websiteId } or a new { websiteName, websiteUrl }, exactly one of the two.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 

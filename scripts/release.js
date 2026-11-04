@@ -1,16 +1,5 @@
-// Entry point for `npm run release`: releases both repos to production, backend first
-// (docs/deploy.md → Every deploy after launch). Rich runs it on his Mac once staging looks right;
-// CI never does. It releases each repo's origin/main commit, never the local working tree:
-//   1. checks both repos' main commits have built on staging, and asks about new migrations
-//   2. pushes the backend's main to production, then waits for Render to report it live
-//   3. pushes the frontend's main to its production branch, then waits for Vercel
-//   4. tags each repo that went live with this run's release tag, an annotated tag holding the
-//      release notes, pushed like the production branch (with git, not the gh token)
-// It stops before the frontend if the backend's CI or deploy fails, so production keeps running
-// the previous version. Release tags are release-YYYY-MM-DD (UTC), -2, -3… for a second release
-// that day, the same name in both repos (docs/process.md → Releases). Uses `git`, and `gh`
-// (signed in to GitHub) to read deploy states; no .env, no database. --dry-run checks and prints
-// every step, the tag messages included, without pushing or tagging.
+// Entry point for `npm run release [-- --dry-run]`: releases both repos to production, backend
+// first, then tags the release (docs/deploy.md → Every deploy after launch).
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const readline = require('node:readline/promises');

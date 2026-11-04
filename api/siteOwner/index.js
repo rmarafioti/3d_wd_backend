@@ -1,15 +1,5 @@
-// Site owner routes, mounted at /api/siteOwner: the site owner's websites with their abilities and
-// post and gallery summaries, post create / read / edit / draft or publish / delete, and the
-// signature for uploading a website's images to Cloudinary. The gallery and ability routes are
-// their own routers (./galleries.js, ./abilities.js), mounted here behind the same guards. Every
-// route requires a signed-in site owner. Every post change writes its audit event (lib/audit.js)
-// inside the same transaction.
-//
-// Ownership (lib/ownership.js): the account always comes from req.user (the session), never from
-// the request. A website belongs to the site owner when an account_website row links them AND the
-// website is active; a post belongs to them when its website does. Anything else is a 404,
-// identical to "doesn't exist", so ids can't be probed. A deleted post (deletedAt set) is a 404 on
-// every route.
+// Site owner routes, mounted at /api/siteOwner: websites, post create / read / edit / status /
+// delete and upload signing, with the gallery and ability routers mounted behind the same guards.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');

@@ -1,9 +1,9 @@
-// Zod schema for the admin's audit event list (GET /api/admin/auditEvents). It reads the query
-// string, so every value arrives as a string: `limit` is coerced to a number, and a parameter sent
-// twice (an array) fails its string check. All three are optional; the route fills the defaults.
+// Zod schema for the admin's audit event list query (GET /api/admin/auditEvents).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 
+// Every query value arrives as a string: `limit` is coerced to a number, and a parameter sent
+// twice (an array) fails its string check. All three are optional; the route fills the defaults.
 const listAuditEventsSchema = z.object({
   // A UTC calendar month, YYYY-MM.
   month: z.preprocess(

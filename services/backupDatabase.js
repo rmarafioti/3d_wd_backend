@@ -1,9 +1,5 @@
-// The database backup (docs/deploy.md → Render services), run by `npm run backup:database`.
-// pg_dump writes the whole database in its compressed custom format, the dump is encrypted with
-// the backup public key (lib/crypto.js) and uploaded to the R2 bucket (lib/r2.js) under backups/.
-// Every object key is timestamped, so a run never overwrites an earlier backup.
-// The dump is held in memory, which is fine while it is small: switch to a multipart upload once
-// it passes 100 MB (docs/scaling.md §6, Backup size).
+// The database backup run by `npm run backup:database`: pg_dump, encrypted with the backup public
+// key and uploaded to R2 under backups/ (docs/deploy.md → Render services).
 const childProcess = require('node:child_process');
 const { Writable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');

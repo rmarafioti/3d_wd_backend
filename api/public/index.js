@@ -1,10 +1,5 @@
-// Public routes, mounted at /api/public: called server-side by a client's website with its API
-// key (Authorization: Bearer <apiKey>), for its published posts and its galleries by slug.
-// An ability the site owner turned off (api/siteOwner/abilities.js) hides its content here: no
-// posts, or a 404 for every gallery. Galleries also need the ability not removed.
-// No cookie, no CSRF header, no CORS needed.
-// Rate limited twice (lib/rateLimit.js): refused keys per IP, before the key check, and each
-// website's calls per website, after it.
+// Public routes, mounted at /api/public: a client website's published posts and its galleries by
+// slug, called server-side with its API key.
 const express = require('express');
 const prisma = require('../../prisma');
 const requireApiKey = require('../../middleware/requireApiKey');

@@ -96,7 +96,7 @@ For each file, against `CLAUDE.md` → Code Style:
 
 - File shape: header comment → requires (packages first, then local) → module setup → `UPPER_SNAKE` constants → private helpers → routes or main function → `module.exports`. Entry points require `dotenv/config` first.
 - Route shape: validate → existence / ownership check → Prisma call → `res.json` / `res.status(201).json` → `revalidate(...)` unawaited; a one-line `// METHOD /api/path — what it does.` comment above each route.
-- **`npm run check:rules`** (`scripts/checkRules.js`) proves the rules a search can: no em dash in a user-facing string, Node built-ins as `node:x`, the secret columns only in their files, no `$queryRawUnsafe`, and every `ServerError` message in `docs/endpoints.md`. Run it once for the whole repo; each line it prints is a finding. The checks below are the ones it can't make.
+- **`npm run check:rules`** (`scripts/checkRules.js`) proves the rules a search can: file headers of at most two lines, no em dash in a user-facing string, Node built-ins as `node:x`, the secret columns only in their files, no `$queryRawUnsafe`, and every `ServerError` message in `docs/endpoints.md`. Run it once for the whole repo; each line it prints is a finding. The checks below are the ones it can't make.
 - Exports: a router file exports its `router`; a middleware or service its single function; `lib/` and `validation/` an object of named functions.
 - Functions: declarations for middleware, helpers and lib functions; arrows only inline.
 - Naming: `requireX`, `xSchema` / `xShape`, `assertX`, `toX` / `fromX`, `findX`, `input`, `tx`, booleans as questions, the docs' vocabulary.
@@ -132,7 +132,7 @@ A helper used far above where it is defined without reason, a constant declared 
 
 ### Step 5: Comments are necessary and true (Checklist 5)
 
-Every comment in a reviewed file, against the code next to it, and each file's header against what the file does now. Finding: a comment that is untrue, restates the code, or is missing on a file header or a non-obvious block.
+Every comment in a reviewed file, against the code next to it, and each file's header against what the file does now (its length is `npm run check:rules`'s; here only whether it is true and says what the file is for, with no history). Finding: a comment that is untrue, restates the code, or is missing on a file header or a non-obvious block.
 
 ### Step 6: Docs match code — whole repo (Checklist 6)
 

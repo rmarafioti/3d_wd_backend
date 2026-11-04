@@ -1,11 +1,5 @@
-// Admin routes, mounted at /api/admin: the site owner account list (with each website's abilities,
-// its post summaries: names and statuses, and its gallery summaries: counts and crop flags; never
-// content), the active website picker,
-// Create an Account, Link a Website, setting an ability live and setting a gallery live, and the
-// read-only audit event list and its months. Every route requires a signed-in administrator.
-// api_key_hash and webhook_secret_encrypted are never selected here; the plaintext key and
-// secret exist only in the one response that creates the new website they belong to.
-// Every change writes its audit events (lib/audit.js) inside the same transaction.
+// Admin routes, mounted at /api/admin: the site owner accounts, the website picker, Create an
+// Account, Link a Website, setting an ability or a gallery live, and the audit events.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');

@@ -1,6 +1,5 @@
-// Boundary tests for the Create an Account schema (validation/account.js), which includes the
-// website choice from validation/website.js. Link a Website's websiteChoiceSchema is built from
-// the same shape and refine, so these cases cover it too.
+// Boundary tests for the Create an Account schema (validation/account.js), whose website choice
+// Link a Website shares, so these cover it too.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { validate } = require('./validate');

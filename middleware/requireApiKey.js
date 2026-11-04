@@ -1,6 +1,5 @@
-// Public endpoint guard: resolves the client website from `Authorization: Bearer <apiKey>`.
-// The key is hashed (SHA-256) and looked up by api_key_hash, so the plaintext key is never
-// stored or compared directly. Never log the header or the key.
+// Public endpoint guard: resolves the client website from `Authorization: Bearer <apiKey>` by the
+// key's SHA-256 hash, so the plaintext key is never stored or compared.
 const prisma = require('../prisma');
 const { ServerError } = require('../errors');
 const { hashApiKey } = require('../lib/crypto');

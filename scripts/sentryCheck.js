@@ -1,7 +1,5 @@
-// Entry point for `npm run sentry:check`: sends one labelled test error through the app's own
-// Sentry setup (lib/sentry.js, its scrubbing included), to prove production reports reach Sentry.
-// Run once from a production service's Render Shell after SENTRY_DSN is set, then find the event
-// in Sentry. Exits 1 when SENTRY_DSN isn't set or the event couldn't be sent.
+// Entry point for `npm run sentry:check`: sends one labelled test error through lib/sentry.js, to
+// prove production reports reach Sentry (docs/deploy.md).
 require('dotenv/config');
 const { initSentry, reportError, flushSentry } = require('../lib/sentry');
 

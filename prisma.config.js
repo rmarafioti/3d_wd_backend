@@ -1,6 +1,7 @@
-// Prisma CLI configuration (Prisma 7). Tells the CLI where the schema, migrations and seed
-// script live, and which database to connect to. Prisma 7 does not load .env on its own,
-// so dotenv is loaded here first.
+// Prisma CLI configuration: where the schema, migrations and seed script live, and which database
+// to connect to.
+
+// Prisma 7 does not load .env on its own, so dotenv is loaded here first.
 require('dotenv/config');
 const { defineConfig } = require('prisma/config');
 
