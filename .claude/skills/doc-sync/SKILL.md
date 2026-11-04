@@ -60,16 +60,16 @@ This repo's docs must match this repo's code before anything is compared, or the
 
 Read each backend section and its frontend counterpart side by side. The frontend may summarize; it may not contradict or leave out a rule it depends on.
 
-| Backend                                                                       | Frontend                                                                              |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `CLAUDE.md` → Project Overview, roles                                         | `CLAUDE.md` → Project Overview                                                        |
-| `docs/endpoints.md` → Session Cookie, CSRF, Middleware Stack (429)            | `CLAUDE.md`, `docs/flows.md`                                                          |
-| `docs/endpoints.md` → Validation rules, Error messages                        | `docs/flows.md`, `CLAUDE.md` → Patterns                                               |
-| `CLAUDE.md` → Features, Planned Later                                         | `CLAUDE.md` → Features, Planned Later (same list)                                     |
-| `docs/scaling.md`                                                             | `docs/scaling.md`                                                                     |
-| `docs/deploy.md` → Environments, Every deploy after launch, Rolling back      | `docs/deploy.md`                                                                      |
-| `CLAUDE.md` → Issue Workflow, Version Control, Releases, Code Review → Output | `CLAUDE.md` → the same sections                                                       |
-| `CLAUDE.md` → Current progress (Now, Next)                                    | `CLAUDE.md` → Current progress (its own state, but no contradiction of the backend's) |
+| Backend                                                                             | Frontend                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `CLAUDE.md` → Project Overview, roles                                               | `CLAUDE.md` → Project Overview                                                        |
+| `docs/endpoints.md` → Session Cookie, CSRF, Middleware Stack (429)                  | `CLAUDE.md`, `docs/flows.md`                                                          |
+| `docs/endpoints.md` → Validation rules, Error messages                              | `docs/flows.md`, `CLAUDE.md` → Patterns                                               |
+| `CLAUDE.md` → Features, Planned Later                                               | `CLAUDE.md` → Features, Planned Later (same list)                                     |
+| `docs/scaling.md`                                                                   | `docs/scaling.md`                                                                     |
+| `docs/deploy.md` → Environments, Every deploy after launch, Rolling back            | `docs/deploy.md`                                                                      |
+| `CLAUDE.md` → Issue Workflow, Version Control, Releases, and `/code-sweep` → Output | `CLAUDE.md` → the same sections                                                       |
+| `CLAUDE.md` → Current progress (Now, Next)                                          | `CLAUDE.md` → Current progress (its own state, but no contradiction of the backend's) |
 
 Finding: a contradiction, or a rule the frontend depends on that it leaves out.
 
@@ -110,7 +110,7 @@ List each of Stevie's md files that this sync's findings will change. Rich copie
 
 ## 8. Output
 
-1. **Findings** in the `CLAUDE.md` → Code Review → Output format, most important first: **file:line** (with the repo), the **tier** (identical, must agree, frontend-only, Stevie) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
+1. **Findings** in the `/code-sweep` Output format, most important first: **file:line** (with the repo), the **tier** (identical, must agree, frontend-only, Stevie) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
 2. **A handoff for each repo with findings**, in the Workflow Checklist → Step rhythm's form, for a reader with no context: what changed in the backend and on which branch, each fix to make with the backend text to match, and a "done when" checklist. Shown to Rich first; sent with `SendMessage` once he agrees.
 3. **Client repo md files** to copy from Stevie (step 7), or "none".
 4. **What was checked:** each step and its result in one line, with the commits read (`origin/main` of each repo). A sync with no findings still reports this.

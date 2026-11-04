@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # /code-sweep
 
-The procedure for `CLAUDE.md` → Code Review. `CLAUDE.md` holds the rules (the Checklist, Output and Scope); this file holds how to check each one, step by step, so every run is the same. A change to the Checklist, its Scope or this procedure changes both files in the same PR.
+The procedure for `CLAUDE.md` → Code Review. `CLAUDE.md` holds the Checklist, imported every session so its rules also guide writing code; this file is the only copy of the review's Scope and Output, and holds how to check each item, step by step, so every run is the same. A change to the Checklist changes both files in the same PR.
 
 Arguments: `$ARGUMENTS`
 
@@ -47,7 +47,7 @@ Record the review's end commit now: `git rev-parse --short origin/main` (for `di
 
 ## 4. Scope
 
-Covered (kept in step with `CLAUDE.md` → Code Review → Scope):
+Covered:
 
 - `index.js`, `app.js`, `eslint.config.js`, `prisma.config.js`, `package.json`
 - `api/`, `middleware/`, `validation/`, `lib/`, `services/`, `errors/`, `scripts/`
@@ -57,6 +57,8 @@ Covered (kept in step with `CLAUDE.md` → Code Review → Scope):
 - `.github/workflows/`, `.github/reminders/`
 - `render.yaml`, `Dockerfile.backup`, `.dockerignore`, `docker-compose.yml`
 - `CLAUDE.md`, `docs/`, `README.md`, `.env.example`
+
+A `diff` review covers only that branch's diff, plus anything the diff duplicates or makes dead elsewhere.
 
 Left out: `prisma/migrations/` (generated, and append-only), `node_modules/`, `.claude/settings.local.json` (personal), `.env` (never read).
 
@@ -213,7 +215,7 @@ Stop the dev server afterwards. Also run `npm audit` (dev included) and list mod
 
 ## 8. Output
 
-The `CLAUDE.md` → Code Review → Output format, exactly:
+Findings are a list, most important first. A finding's type is **bug** (behaviour is wrong), **cleanup** (behaviour-neutral) or **doc** (docs or comments only); one that needs Rich to make a style or spec decision is a **decision**, with no fix proposed until he does. `/doc-sync` reports in the same format. Exactly:
 
 1. **Findings**, most important first (bugs, then decisions, then cleanups, then docs). Each one:
    - **file:line**

@@ -259,7 +259,7 @@ Rejected examples (`400` on `body.N.text`):
 
 ## Middleware Stack
 
-`app.js` first sets `app.set('trust proxy', 2)`: on Render (staging and production) two proxies sit in front of the API, Cloudflare and then Render's load balancer, and each appends to `X-Forwarded-For`. So `req.ip`, which the rate limits and the audit log need, is the client's address two entries from the end. It is a count, never `true`, because Render keeps an `X-Forwarded-For` the client sends, so the entries further left can be faked. Locally there is one proxy (Next's dev rewrite) and Express stops at the leftmost entry. Found on staging, where a count of 1 recorded Cloudflare's address (`docs/deploy.md` → Deployment checklist step 19).
+`app.js` first sets `app.set('trust proxy', 2)`: on Render (staging and production) two proxies sit in front of the API, Cloudflare and then Render's load balancer, and each appends to `X-Forwarded-For`. So `req.ip`, which the rate limits and the audit log need, is the client's address two entries from the end. It is a count, never `true`, because Render keeps an `X-Forwarded-For` the client sends, so the entries further left can be faked. Locally there is one proxy (Next's dev rewrite) and Express stops at the leftmost entry. Found on staging, where a count of 1 recorded Cloudflare's address (`docs/launch-record.md` step 19).
 
 Applied in `app.js` / `api/index.js`, in this order:
 
@@ -532,7 +532,7 @@ The ability routes live in `api/siteOwner/abilities.js`, mounted at `/api/siteOw
 
 1. Validate → `400` on `fields.requestNote`. Ownership check → `404`.
 2. A galleries ability → `409` "Photo Galleries are requested one gallery at a time."
-3. `placement` must be `null`, or the website's oldest post that isn't deleted must have been created after `requestedAt` (a new first post) → otherwise `409` "This ability has already been requested."
+3. `placement` must be `null`, or the website's oldest post that isn't deleted must have been created after `requestedAt` (a new first post) → otherwise `409` "This ability has already been requested." The backend doesn't check that the website has a post: the frontend's dialog keeps that order, and a request sent before any post only flags the dashboard early.
 4. One transaction: set `placement` to `requested`, and `requestNote` and `requestedAt` (replacing any earlier ones), and write `ability.requested` (without the note). The `status` is left as it is.
 5. Return `200 { data: Ability }`, then call `sendRequestEmail` (Request Emails) after commit, not awaited.
 

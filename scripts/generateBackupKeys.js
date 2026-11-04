@@ -1,5 +1,5 @@
 // Entry point for `npm run backup:keygen -- --out <folder>`: makes the backup key pair
-// (docs/deploy.md → Deployment checklist step 10). Writes two files into a folder outside this
+// (docs/launch-record.md step 10). Writes two files into a folder outside this
 // repo, so a private key can never be committed, and prints only their paths: no key reaches
 // the terminal, a chat or a log.
 const fs = require('node:fs');
