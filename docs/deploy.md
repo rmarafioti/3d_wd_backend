@@ -121,7 +121,7 @@ Restoring over production is never done by this script. If it is ever needed, it
    - lists any new migrations and asks before going on. Before a migration that drops or rewrites data, take a backup first: Trigger Run on `3dwd-backup-database`, and confirm the dump is in R2 (`docs/scaling.md` §8);
    - pushes the backend's `main` to `production`. CI runs on it, then Render deploys the API (migrations first) and rebuilds both cron jobs from the same commit. It waits until Render reports the API live, up to 20 minutes;
    - then pushes the frontend's `main` to its `production` branch and waits for Vercel;
-   - then tags each repo that went live with the run's release tag (`CLAUDE.md` → Releases), even after a stop, so a backend that went live before the frontend failed is still tagged. A repo with nothing new is skipped and not tagged.
+   - then tags each repo that went live with the run's release tag (`docs/process.md` → Releases), even after a stop, so a backend that went live before the frontend failed is still tagged. A repo with nothing new is skipped and not tagged.
 
    If CI or the Render deploy fails, it stops before the frontend, and production keeps the previous version. Backend first is what a contract change needs: the backend accepts both the old and the new shape before the frontend uses the new one (`docs/scaling.md` §4).
 

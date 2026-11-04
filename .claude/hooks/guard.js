@@ -1,17 +1,19 @@
-// Claude Code PreToolUse hook: the enforced half of CLAUDE.md → Version Control. Registered in
-// .claude/settings.json for the Bash, Read and Grep tools. It reads the tool call as JSON on stdin
-// and answers "deny" (never allowed) or "ask" (only with Rich's approval at the permission prompt),
-// with the reason Claude is shown. Any other call gets no output, so the normal permissions apply.
-// It reads the whole command text, so it catches what a deny rule's prefix match misses: a command
-// after `cd x &&`, inside a subshell, or behind `git -C <dir>`. It is a guard against mistakes, not
-// a sandbox: a script that does the same thing from inside a file isn't seen. The same file is
-// copied unchanged into the frontend repo.
+// Claude Code PreToolUse hook: the enforced half of docs/process.md → Version Control. Registered
+// in .claude/settings.json for the Bash, Read and Grep tools. It reads the tool call as JSON on
+// stdin and answers "deny" (never allowed) or "ask" (only with Rich's approval at the permission
+// prompt), with the reason Claude is shown. Any other call gets no output, so the normal
+// permissions apply. It reads the whole command text, so it catches what a deny rule's prefix match
+// misses: a command after `cd x &&`, inside a subshell, or behind `git -C <dir>`. It is a guard
+// against mistakes, not a sandbox: a script that does the same thing from inside a file isn't seen.
+// The same file is copied unchanged into the frontend repo.
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '']);
 const PROTECTED_BRANCHES = new Set(['main', 'production']);
-const RELEASE_TAGS_RULE = 'release tags are pushed only by npm run release (CLAUDE.md → Releases).';
+const RELEASE_TAGS_RULE =
+  'release tags are pushed only by npm run release (docs/process.md → Releases).';
 const ENV_FILE = /(^|[\s/'"=<>(,:])\.env(\.[\w-]+)?(?=$|[\s'")<>,;|&])/g;
-// Backticks aren't counted as quotes: Markdown wraps `.env` in them, and code opens a path in ' or ".
+// Backticks aren't counted as quotes: Markdown wraps `.env` in them, and code opens a path in
+// ' or ".
 const QUOTED_ENV_PATH = /['"](?:[^'"\s]*\/)?\.env(?!\.example)(\.[\w-]+)?['"]/;
 // Commands that can print or copy a file's contents (a node or python one-liner too).
 const FILE_READERS = new Set([
@@ -50,14 +52,14 @@ const HTTP_DELETE = /(-X\s*|--request[\s=]+|method:\s*)['"]?DELETE\b/i;
 function deny(rule) {
   return {
     decision: 'deny',
-    reason: `Blocked by the guard hook (CLAUDE.md → Version Control): ${rule}`,
+    reason: `Blocked by the guard hook (docs/process.md → Version Control): ${rule}`,
   };
 }
 
 function ask(rule) {
   return {
     decision: 'ask',
-    reason: `Needs Rich's approval (CLAUDE.md → Version Control): ${rule}`,
+    reason: `Needs Rich's approval (docs/process.md → Version Control): ${rule}`,
   };
 }
 

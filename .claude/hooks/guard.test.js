@@ -1,5 +1,5 @@
-// Tests for the guard hook (.claude/hooks/guard.js): every deny and ask rule in CLAUDE.md →
-// Version Control, the spellings a deny rule's prefix match would miss, and the everyday commands
+// Tests for the guard hook (.claude/hooks/guard.js): every deny and ask rule in docs/process.md
+// → Version Control, the spellings a deny rule's prefix match would miss, and the everyday commands
 // that must pass untouched. One test runs the script itself to check the stdin → stdout wiring.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
