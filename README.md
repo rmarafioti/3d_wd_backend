@@ -103,6 +103,7 @@ Before committing:
 ```
 npm run format             # Prettier
 npm run lint               # ESLint
+npm run check:rules        # the Code Style rules a search can prove (scripts/checkRules.js)
 npm audit --omit=dev       # no high or critical advisories
 npm test                   # test suite
 ```

@@ -86,3 +86,24 @@ The first deploy, start to finish, in order. **[Rich]** is done outside the code
 29. [x] **[Claude]** `docs/launch`: retire `docs/scaling.md` §0 (breaking changes now go through expand → migrate → contract) and the "until the first production deploy" lines in `CLAUDE.md`, add a production baseline beside the local one, and hand off so the frontend retires its own §0. In the master doc, mark the one-time sections as the record of the launch (the Runbook's build order, this checklist) and retire what no longer applies. Done 2026-10-28: the repo side on `docs/launch` (both repos), then the master doc on `docs/master-doc-sync`, a full Documentation Sync that re-copied every copy tab from both repos' `main`.
 30. [ ] **[Rich + Claude]** Reassess staging. It is kept for now (Rich, 2026-10-28), at $13.30/mo, until its cost can be justified: once go-to-market is finished and more clients sign on, or existing clients sign on to the pricing tiers. If it is deleted: remove its environment from `render.yaml` on a branch, then delete its services and database in Render. Production stays on the `production` branch either way, and a deleted staging is added back before the first breaking change (`docs/scaling.md` §8).
 31. [ ] **[Rich]** Onboard the VIP clients one at a time.
+
+## Security pre-deploy checklist (Rich)
+
+Done by hand before the first production deploy. Tick each one here when done:
+
+- [x] 2FA on the Google admin account, GitHub, Vercel, Cloudinary, the domain registrar and 1Password (2026-10-23)
+- [x] 1Password set up with the Dev, Production and Clients vaults, and recovery codes printed and kept offline (2026-10-23)
+- [x] Dependabot alerts and secret scanning turned on in both repos (2026-10-23: alerts, security updates and grouped security updates on, self-hosted runners off; secret scanning and push protection on)
+- [x] The Access table (`docs/security.md`) filled in (2026-10-23; Render's row added 2026-10-26, `docs/launch-record.md` step 11)
+- [x] Branch protection on `main` in both repos: changes only through a PR, CI's `check` must pass (2026-10-23, checked on GitHub 2026-10-24; admins can bypass it, Accepted risks)
+
+## Security deploy steps
+
+The security steps that need Render or production values (the new Cloudinary key pairs, fresh production secrets backed up in 1Password, the backups and a test restore, the proxy hop count) were steps in the launch checklist, in the order they were done (`docs/launch-record.md`).
+
+## Security checks at launch
+
+The frontend's Content Security Policy and headers (`docs/security.md` → Frontend):
+
+- Rich browser-tested it on a production build with no CSP violations (2026-10-22).
+- Checked on production on 2026-10-27 (frontend PR #33): `curl -I` shows the headers on static and dynamic pages, and `www` and `http` redirect to `https://3dwebdev.com` (308). securityheaders.com rates `/` A and `/sign-in` A+; Mozilla HTTP Observatory rates B+. The only flags are the ones decided above: `'unsafe-inline'` scripts on the static landing page, `'unsafe-inline'` styles everywhere, no HSTS `preload`.

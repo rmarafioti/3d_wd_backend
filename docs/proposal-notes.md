@@ -1,6 +1,14 @@
 # Proposal Notes
 
-Notes for us, not for the reader, kept beside the Proposal (a tab of Rich's Google Doc, with Build vs Buy). When a section of the Proposal is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating the Proposal. Not imported from `CLAUDE.md`: it is read only when working on the proposal.
+Notes for us, not for the reader, kept beside the Proposal. When a section of the Proposal is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating the Proposal; it is read only when working on it.
+
+## The master doc
+
+Rich's Google Doc, outside the repos, holds only the business, edited when the business changes rather than on a sync (`CLAUDE.md` → Documentation Sync):
+
+- **Proposal:** 3D Web Dev's business proposal, shared with colleagues and engineer friends for insight and feedback: the mission, who it's for, how Rich works with clients, the clients so far, the Client Portal, pricing, how Rich finds clients, and what is still being validated. 3D Web Dev is the business; the Client Portal is the tool, built because every client needed to post to their own site (three asked, and Rich recommended it to the fourth).
+- **Build vs Buy:** engineering decisions, not a go-to-market comparison. Its CMS child tab is why the Client Portal was built rather than using a headless CMS, and its Drag and Drop child tab (not started) is why client websites are custom builds rather than a site builder. When a feature resolves an item on the CMS tab's "Where we're behind" list, it moves into the table, once Rich next edits the doc.
+- **Glossary:** Rich's own explanations of the terms, A to W, not in any repo and not synced.
 
 The Proposal is 3D Web Dev's business proposal, version 1, written 2026-10-25 from Rich's answers after a B2B sales friend's review of the pitch. That review asked four questions: what expensive problem it solves, what it delivers that existing solutions don't, whether it can be delivered profitably as it grows, and how it will be marketed and sold.
 
@@ -12,13 +20,13 @@ General to specific, top to bottom, like the code: the mission and Rich's backgr
 
 The evidence that would answer the review's questions 1 and 3 with real numbers:
 
-- **Client questionnaire** (the four owners): written, below (Client questionnaire). Whether they would pay for Hosting is asked in person, not in writing.
+- **Client questionnaire** (the four owners): written, below (Client questionnaire). GB Grooming and Legacy Tattoo have answered: their inquiries before and after launch, GB Grooming's hours saved and what changed, and both quotes are in the Proposal's Clients. The Pet Bodega and Estudio Castelo are still to answer. Whether they would pay for Hosting is asked in person, not in writing.
 - **Rich's worksheet:** hours per project, the effective hourly rate on each build, monthly support time, the hours each week Rich has for 3D Web Dev alongside his full-time job, and from those, how many builds and Partner clients he can carry.
 - **More UX moments** like the "Book now" button, from the four projects (Rich). Once there are a few, they go back into the Proposal together (decided 2026-10-25); one example alone read oddly.
 
-The Proposal's "What I'm validating next" list is ordered by what can be gathered soonest: the client and Rich's own numbers first, then the clients posting on their own, a feature one client wants reused by another, and last, whether clients move to Hosting or Partner after the Portal's first year.
+The Proposal's "What I'm validating next" list leads with the four clients posting to their sites on their own, now that the Portal is live and they are being onboarded; then the clients' numbers and Rich's own, a feature built for one client used by another (starting with photo galleries), and last, whether clients move to Hosting or Partner once their site has run on the Portal for a year.
 
-Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $425 a year in total, so two clients on Hosting cover them." (Updated 2026-10-27 from Render's prices, Pricing → Fixed costs.) It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
+Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $585 a year in total, so three clients on Hosting cover them." (Updated 2026-11-04: staging is kept through onboarding, Pricing → Fixed costs. Without staging it is about $425, and two clients cover it.) It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
 
 ## Feedback on v1 (Mark, 2026-10-26)
 
@@ -96,11 +104,13 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 ### The 3DWD Client Portal
 
 - Named "the 3DWD Client Portal" throughout the Proposal (Rich, 2026-10-25), with no "3D Web Dev (3DWD)" introduction.
+- Since 2026-11-04 the section says the Portal has been live since October 2026, first on a pilot site, with the four clients being onboarded, and that owners also manage their own photo galleries. The Portal grows by client request (business hours as the example), and a capability built for one client can be offered to every client.
 - Left out on purpose (2026-10-25): what goes on behind the screen (each owner sees only their own sites, every sign-in and change is recorded, photos are resized, pages are built ahead of time). It repeats What I do; the detail is in Supporting material. Also left out: formatting, archiving, and more than one site per owner, since no client uses that yet. Bring it back when one does.
 
 ### Pricing
 
-- **Fixed costs:** Hosting covers them, about $425 a year for the Client Portal's servers (Vercel Pro $240 and Render about $184: production's API $7, Postgres and its disk $6.30 and two cron jobs at their $1 minimum, about $15.30 a month, from Render's review screen on 2026-10-26), shared by every client. Staging adds $13.30 a month while it is kept (`docs/deploy.md` → Hosting and plans). It runs through launch and is then deleted; keeping it is revisited once go-to-market is finished and more clients sign on, or existing clients sign on to the pricing tiers (Rich, 2026-10-27). At $240 a year per client, four clients bring in $960.
+- **Fixed costs:** Hosting covers them, about $425 a year for the Client Portal's servers (Vercel Pro $240 and Render about $184: production's API $7, Postgres and its disk $6.30 and two cron jobs at their $1 minimum, about $15.30 a month, from Render's review screen on 2026-10-26), shared by every client. Staging adds $13.30 a month (about $160 a year) while it is kept (`docs/deploy.md` → Hosting and plans), so fixed costs are about $585 a year and three clients on Hosting cover them, not two. Staging is kept through onboarding, so a bad update is caught before it reaches a client in their first weeks, and revisited once onboarding runs smoothly (Rich, 2026-11-04, issue #77). At $240 a year per client, four clients bring in $960.
+- **Existing clients' $50 year:** the four existing clients stay on $50 a year for hosting until their site has run on the Portal for a year, counted per client from the date its site was deployed, then move to Hosting or Partner. New clients start on Hosting or Partner.
 - **Market figures behind the ranges (2026):** small business builds mostly $1,500 to $8,000 with a freelancer; mid-level US freelance rates about $60 to $100 an hour; freelance care plans about $50 to $300 a month. Most sources are agencies and vendors, so the figures are estimates. Sources: [Upwork](https://www.upwork.com/resources/how-much-does-it-cost-to-build-website), [Project Cost Estimator](https://projectcostestimator.com/freelance-website-cost), [FatLab](https://fatlabwebsupport.com/blog/website-maintenance/website-maintenance-packages-compared-your-complete-buyers-guide/), [goLance](https://golance.com/hiring/best-freelance-web-developers-hourly-rate).
 - **How Pricing is laid out (Rich, 2026-10-25):** three parts, matching how a client is billed: Website builds (Starter, Business site, Full build; fixed quotes), Changes after launch (hourly, a sentence, not a one-row table), and Hosting plans (Hosting, Partner; recurring, on top of the build). Every site on a hosting plan gets the 3DWD Client Portal, so it isn't a Full build feature. Hosting plans are billed yearly only, with no monthly price: $640 a year for Partner would be an awkward $53.33 a month.
 - **How the prices were set (2026-10-25):** Starter and Business were set a little under the market ranges. Partner is four quarterly one-hour check-ins at $100 on top of Hosting ($240 + $400 = $640).
@@ -109,7 +119,7 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 ### Supporting material
 
 - **Still to write:** "Why not a drag-and-drop platform", a comparison for business owners. It says "drag-and-drop platforms" and names no platform (decided 2026-10-25). Client stories keep the platform names (Squarespace, Wix), since they are history.
-- **Where the technical detail lives:** the two repos on GitHub (`3d_wd_backend` and `3d_wd`, their `CLAUDE.md` and `docs/`), and Build vs Buy (CMS, and Drag and Drop, not started). The master doc's How It's Built and deploy-era tabs were retired (issue #62).
+- **Where the technical detail lives:** the two repos on GitHub (`3d_wd_backend` and `3d_wd`, their `CLAUDE.md` and `docs/`), and Build vs Buy (CMS, and Drag and Drop, not started). The master doc's other tabs are deleted; it holds only the Proposal, Build vs Buy and a Glossary (The master doc, above).
 
 ### For the landing page
 

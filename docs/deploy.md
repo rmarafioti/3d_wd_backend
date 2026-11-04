@@ -1,8 +1,8 @@
 # Deploy
 
-How the backend is hosted, how every deploy since launch runs, and how a client website is onboarded. The checklist the first production deploy followed (launched 2026-10-28) is the record in `docs/launch-record.md`, not imported. Imported from `CLAUDE.md` via `@docs/deploy.md`. The frontend keeps its own `docs/deploy.md`.
+How the backend is hosted, how every deploy since launch runs, and how a client website is onboarded. The checklist the first production deploy followed is the record in `docs/launch-record.md`. Read on demand (`CLAUDE.md` → Read before). The frontend keeps its own `docs/deploy.md`.
 
-The decisions here were made on 2026-10-24. The backend was first planned on Railway; on 2026-10-26 Railway had closed new sign-ups, so it moved to Render, the other host considered. `docs/security.md` holds the controls, secrets and access this file relies on; `docs/scaling.md` holds the rules for changing the system once it is live.
+`docs/security.md` holds the controls, secrets and access this file relies on; `docs/scaling.md` holds the rules for changing the system once it is live.
 
 ## Hosting and plans
 
@@ -14,7 +14,7 @@ The decisions here were made on 2026-10-24. The backend was first planned on Rai
 | Cloudflare R2 | Free (10 GB)                         | Encrypted nightly database backups                        | Backups outgrow 10 GB                                             |
 
 - **Vercel is Pro from launch.** Vercel's fair use rules allow Hobby for non-commercial personal use only, and "commercial" includes being paid to host a site. Client websites pay a hosting fee, so the frontend and every client website live in a Vercel Pro team.
-- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. Render's review screen (`docs/launch-record.md` step 15, 2026-10-26) priced staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the two cron jobs, about $15.30/mo. About $28.60/mo while staging and production both run, as they do since launch, and about $15.30/mo if staging is deleted. Staging is kept for now and reassessed once its cost can be justified (`CLAUDE.md` → Current progress → Next).
+- **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds two cron jobs, billed by the minute with a $1/mo minimum each. Render prices staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the two cron jobs, about $15.30/mo. About $28.60/mo while staging and production both run, and about $15.30/mo if staging is deleted. Staging is kept for now and reassessed once its cost can be justified (`CLAUDE.md` → Current progress → Next).
 - **No free Postgres:** Render's free databases expire after 30 days and have no backups, so both environments use the smallest paid plan.
 - **Database backups:** a paid Render Postgres has point-in-time recovery for the past 3 days on the Hobby workspace (7 on Pro), plus logical exports kept 7 days. The backend also makes its own, kept 30 days outside Render: `backup-database` (Render services). `docs/security.md` → Accepted risks.
 - **Hobby includes 2 custom domains:** `api.3dwebdev.com` and `api-staging.3dwebdev.com`.
@@ -72,7 +72,7 @@ Production's three services each read only their own variables (`render.yaml`): 
 
 One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a `production` environment. Everything in it is defined in `render.yaml` at the repo root (a Render Blueprint): Render creates the services from it, so the configuration is reviewed in PRs like code. The Blueprint uses **Manual Sync**: after a merge that changes `render.yaml`, click Manual Sync in Render to apply it. Code deploys and the pre-deploy migration don't wait for it: staging's run on every merge to `main`, production's on every push to `production`. Every service runs in the `virginia` region, next to Vercel's default functions region. The Node version comes from `.nvmrc` (24), the same file CI reads.
 
-- **API** (`3dwd-api-staging` and `3dwd-api-production`): a Starter web service. Staging deploys from `main`, production from `production`, each once CI's check has passed on that branch (`autoDeployTrigger: checksPass`). CI runs on pushes to `main` and `production` for this reason: on the first release (2026-10-29) a commit that had passed only on `main` didn't start the production deploy. Besides its custom domain, staging's is also served at `https://threedwd-api-staging.onrender.com` (Render prefixes `threedwd-`, since a hostname can't start with a digit).
+- **API** (`3dwd-api-staging` and `3dwd-api-production`): a Starter web service. Staging deploys from `main`, production from `production`, each once CI's check has passed on that branch (`autoDeployTrigger: checksPass`). CI runs on pushes to `main` and `production` for this reason: a commit that has passed only on `main` doesn't start the production deploy. Besides its custom domain, staging's is also served at `https://threedwd-api-staging.onrender.com` (Render prefixes `threedwd-`, since a hostname can't start with a digit).
   - Build: `npm ci --include=dev`. `NODE_ENV=production` is set at build time too, which makes npm omit devDependencies, and the Prisma CLI is one.
   - Pre-deploy: `npx prisma migrate deploy`, run once per deploy before the new version takes traffic (`docs/scaling.md` §7). If it fails, the deploy fails and the previous version keeps running.
   - Start: `npm start`. Health check: `GET /api/health`, which gates the switch to the new version (zero-downtime deploys).
@@ -84,7 +84,7 @@ Cron schedules are in UTC.
 
 ### Alerts
 
-A production failure reaches Rich by email (issue #50, `docs/security.md` → Controls in place):
+A production failure reaches Rich by email (`docs/security.md` → Controls in place):
 
 - **Render:** failure notifications on `3dwd-api-production` deploys and on both cron jobs. None for staging, whose failures are the safety net working.
 - **Uptime monitor (UptimeRobot):** checks `https://api.3dwebdev.com/api/health` every few minutes, outside Render. Render's health check only gates a deploy; it doesn't watch the live API. It also checks each live client website's home page (Onboarding a client website, step 5), since Vercel emails a failed deployment but doesn't watch a live site.
@@ -92,10 +92,10 @@ A production failure reaches Rich by email (issue #50, `docs/security.md` → Co
 
 ### Email
 
-The admin's request emails (`docs/endpoints.md` → Request Emails) go out through Resend from `notifications@3dwebdev.com`, production only. `3dwebdev.com` receives no mail: Resend's records sit on `send`, `rsend` and `resend._domainkey`, so they don't touch the apex. One-time setup, Rich (Feature 13):
+The admin's request emails (`docs/endpoints.md` → Request Emails) go out through Resend from `notifications@3dwebdev.com`, production only. `3dwebdev.com` receives no mail: Resend's records sit on `send`, `rsend` and `resend._domainkey`, so they don't touch the apex. One-time setup, Rich:
 
 1. A Resend account with 2FA, and its row in `docs/security.md` → Access.
-2. Resend → Domains → add `3dwebdev.com`. At Namecheap → Advanced DNS → Host Records (no Mail Settings change, no MX), add the records its Records tab shows exactly as given (2026-11-02): a TXT at `resend._domainkey` (DKIM), and for SPF two CNAMEs, `send` → `send.forge.rmta.net` and `rsend` → `rsend.forge.rmta.net`. Hosts are entered without `.3dwebdev.com`. Then a DMARC TXT at `_dmarc`: `v=DMARC1; p=none;` to start, tightened to `p=quarantine` once a few weeks of mail pass. Turn on Enable Sending and wait until Resend shows the domain Verified (usually minutes, up to 72 hours).
+2. Resend → Domains → add `3dwebdev.com`. At Namecheap → Advanced DNS → Host Records (no Mail Settings change, no MX), add the records its Records tab shows exactly as given: a TXT at `resend._domainkey` (DKIM), and for SPF two CNAMEs, `send` → `send.forge.rmta.net` and `rsend` → `rsend.forge.rmta.net`. Hosts are entered without `.3dwebdev.com`. Then a DMARC TXT at `_dmarc`: `v=DMARC1; p=none;` to start, tightened to `p=quarantine` once a few weeks of mail pass. Turn on Enable Sending and wait until Resend shows the domain Verified (usually minutes, up to 72 hours).
 3. Resend → API Keys → a key with **Sending access** only, limited to `3dwebdev.com`. Save it in 1Password (3DWD Production).
 4. After the merge, click Manual Sync (the new `RESEND_API_KEY` entry) and enter the key on `3dwd-api-production`, then release.
 5. Check on production: send or edit a request message on a website you own as a site owner, and the email arrives at the admin's address with Reply-To set to that site owner.

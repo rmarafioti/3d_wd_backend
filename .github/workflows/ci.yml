@@ -1,8 +1,9 @@
-# CI: the Code Review checklist's tooling checks (item 9) on every pull request and every push to
-# main or production. Branch protection requires them before a merge, and Render deploys production
-# only once a run on the production branch passes (autoDeployTrigger: checksPass; a run on main
-# alone doesn't count). The tests run against a throwaway Postgres service; testing/migrate.js
-# (pretest) creates and migrates the _test database on it.
+# CI: the Code Review checklist's tooling checks (item 9) and the rules a search can prove
+# (npm run check:rules), on every pull request and every push to main or production. Branch
+# protection requires them before a merge, and Render deploys production only once a run on the
+# production branch passes (autoDeployTrigger: checksPass; a run on main alone doesn't count). The
+# tests run against a throwaway Postgres service; testing/migrate.js (pretest) creates and migrates
+# the _test database on it.
 name: CI
 
 on:
@@ -46,6 +47,7 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm run check:rules
       - run: npm run format:check
       - run: npm audit --omit=dev --audit-level=high
       - run: npm test

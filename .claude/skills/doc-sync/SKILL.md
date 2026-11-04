@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # /doc-sync
 
-The procedure for `CLAUDE.md` → Documentation Sync. `CLAUDE.md` holds the rules (when to sync, the tiers, the client guide); this file holds the steps, so every run is the same. A change to Documentation Sync, or to the Code Review checks step 2 reuses, changes both files in the same PR.
+The procedure for `CLAUDE.md` → Documentation Sync. `CLAUDE.md` holds when to sync; this file is the only copy of how (the tiers, the client guide rule and the steps), so every run is the same. A change to Documentation Sync, or to the Code Review checks step 2 reuses, changes both files in the same PR.
 
 ## 1. Purpose and when
 
-Three repos describe the same system: this backend (the source of truth), the frontend `3d_wd`, and Stevie The Dog (`stevie_the_dog`), the client-side pilot whose `docs/client-website.md` is the client guide: every client repo copies and tailors it, and its facts come from the backend docs. The sync keeps them from drifting. It finds differences; fixes are made in each repo by its own session.
+Three repos describe the same system: this backend (the source of truth), the frontend `3d_wd`, and Stevie The Dog (`stevie_the_dog`), the client-side pilot whose `docs/client-website.md` is the client guide: every client repo copies and tailors it, and its facts come from the backend docs, so Stevie's session changes it only from a sync's handoff, and Rich copies the result into the other client repos. The sync keeps them from drifting. It finds differences; fixes are made in each repo by its own session.
 
 Run it:
 
@@ -23,7 +23,7 @@ Not in the middle of other work, and not on a branch with changes not yet on `ma
 
 ## 2. Arguments
 
-None. The master doc isn't synced: its Client Portal tabs were retired (issue #62, `CLAUDE.md` → Documentation Sync).
+None. The master doc isn't synced: it holds only the business (`CLAUDE.md` → Documentation Sync).
 
 ## 3. Preconditions, checked first
 
@@ -62,7 +62,7 @@ The frontend's other docs point to the backend's rules rather than restating the
 
 - **Backend facts:** each backend fact the frontend's docs state (a route, a status code, a message, a limit, a field, a cookie or CSRF rule, an environment or release step) is still true. Don't audit their UI content.
 - **Features:** its Features list matches `CLAUDE.md` → Features, one line per Feature, the frontend-only Features included.
-- **Planned Later:** it points to `CLAUDE.md` → Planned Later rather than keeping its own list.
+- **Planned Later:** it points to the backend's `later` issues (`CLAUDE.md` → Planned Later) rather than keeping its own list.
 - **Current progress:** its own state, with no contradiction of the backend's Now and Next.
 
 Finding: a stale backend fact, a Feature missing or different, or a restated rule that belongs in a pointer.

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # /code-sweep
 
-The procedure for `CLAUDE.md` → Code Review. `CLAUDE.md` holds the Checklist, imported every session so its rules also guide writing code; this file is the only copy of the review's Scope and Output, and holds how to check each item, step by step, so every run is the same. A change to the Checklist changes both files in the same PR.
+The procedure for `CLAUDE.md` → Code Review. `CLAUDE.md` holds the Checklist, loaded every session so its rules also guide writing code; this file is the only copy of the review's Scope and Output, and holds how to check each item, step by step, so every run is the same. A change to the Checklist changes both files in the same PR.
 
 Arguments: `$ARGUMENTS`
 
@@ -84,6 +84,10 @@ head -3 <each test file>                                                        
 
 Each step names what counts as a finding; anything else is not one.
 
+### First, for every file: can this go?
+
+Before judging how a file is written, ask whether it, or any part of it, needs to exist: the whole file, an export or helper with one caller that could live inline, an option or flag nothing sets, a parameter always passed the same value, a branch no input reaches, a config entry or env var nothing reads, a test that proves nothing a request test doesn't, a doc section nothing needs. Removing is the cheapest fix there is. Finding: **cleanup** (what goes, and what it leaves behind), or a **decision** when whether it's needed is Rich's call.
+
 Commands: use quoted globs (`--include='*.js'`), since the shell is zsh. The guard hook reads a command whole, so a `grep` whose search text spells out a forbidden command (a push to `production`, a force push, a `.env` path) is refused like the command itself: search for a shorter, distinctive part of the phrase instead.
 
 ### Step 1: Style is consistent (Checklist 1)
@@ -92,13 +96,12 @@ For each file, against `CLAUDE.md` → Code Style:
 
 - File shape: header comment → requires (packages first, then local) → module setup → `UPPER_SNAKE` constants → private helpers → routes or main function → `module.exports`. Entry points require `dotenv/config` first.
 - Route shape: validate → existence / ownership check → Prisma call → `res.json` / `res.status(201).json` → `revalidate(...)` unawaited; a one-line `// METHOD /api/path — what it does.` comment above each route.
-- Node built-ins required as `node:x`, never a bare `x` (`grep -rn -E "require\('(fs|fs/promises|os|path|crypto|child_process|stream|stream/promises|readline|readline/promises|util|url|http|https|net|dns|zlib|events|assert|assert/strict|buffer|timers)'\)" --include='*.js' --exclude-dir=node_modules .`). A hit inside a string isn't a require: `.claude/hooks/guard.test.js` holds `node -e "…require('fs')…"` commands the hook must refuse, and it stays identical to the frontend's copy.
+- **`npm run check:rules`** (`scripts/checkRules.js`) proves the rules a search can: no em dash in a user-facing string, Node built-ins as `node:x`, the secret columns only in their files, no `$queryRawUnsafe`, and every `ServerError` message in `docs/endpoints.md`. Run it once for the whole repo; each line it prints is a finding. The checks below are the ones it can't make.
 - Exports: a router file exports its `router`; a middleware or service its single function; `lib/` and `validation/` an object of named functions.
 - Functions: declarations for middleware, helpers and lib functions; arrows only inline.
 - Naming: `requireX`, `xSchema` / `xShape`, `assertX`, `toX` / `fromX`, `findX`, `input`, `tx`, booleans as questions, the docs' vocabulary.
 - Input only through `validate()` (no hand trimming, lowercasing or checks in a route; login's `safeParse` is the exception). Errors thrown as `ServerError`, never sent by hand.
-- No em dashes in user-facing strings: `grep -rn '—' --include='*.js' --exclude='*.test.js' api middleware errors validation lib` and check each hit inside an error message.
-- Raw SQL only as a tagged `$queryRaw` with a comment saying why: `grep -rn -E 'queryRaw|executeRaw' --include='*.js' --exclude-dir=node_modules .`
+- Raw SQL only as a tagged `$queryRaw` with a comment saying why (`check:rules` refuses the unsafe forms): `grep -rn -E 'queryRaw|executeRaw' --include='*.js' --exclude-dir=node_modules .`
 - Comment lines within the 100-character width. Prettier wraps code but never comments, so `npm run format:check` doesn't catch them. Count characters, not bytes (`→` and `×` are one character):
 
   ```
@@ -140,7 +143,7 @@ Every comment in a reviewed file, against the code next to it, and each file's h
 - **Env:** `REQUIRED_ENV` in `lib/config.js` and the env vars from step 2 match `.env.example`, `docs/deploy.md` → Environment variables and `render.yaml`.
 - **Schema:** `prisma/schema.prisma` matches `docs/setup.md` → Schema (tables, columns, enums, indexes).
 - **Audit actions:** `AUDIT_ACTIONS` in `lib/audit.js` matches the Audit Log table in `docs/endpoints.md`.
-- **Error messages:** every `ServerError` message appears word for word in `docs/endpoints.md`, and every message in "Error messages the frontend displays" is thrown somewhere. List them with:
+- **Error messages:** every `ServerError` message appears word for word in `docs/endpoints.md` (`npm run check:rules`), and every message in "Error messages the frontend displays" is thrown somewhere. For the second, list the thrown ones with:
 
   ```
   grep -rn -A1 'new ServerError(' --include='*.js' --exclude='*.test.js' --exclude-dir=node_modules .
@@ -160,7 +163,7 @@ One check per rule from `CLAUDE.md` (Role Ownership Check Rule, Anti-Patterns, P
 
 - Account from the session: in `api/siteOwner/` and `api/admin/`, no `req.body.accountId`, `req.query.accountId` or similar; ownership through `lib/ownership.js`. `grep -rn -E 'req\.(body|query|params)\.(accountId|userId|role)' api`.
 - "Not yours" is `404`: every ownership failure throws the same 404 message as not found.
-- Secrets selected only in their places: `grep -rln -E 'apiKeyHash|webhookSecretEncrypted' --include='*.js' --exclude='*.test.js' --exclude-dir=node_modules --exclude-dir=testing .` lists only `middleware/requireApiKey.js`, `services/revalidate.js` and `api/admin/index.js` (which writes them on create and must never select them). Read each hit.
+- Secrets selected only in their places: `npm run check:rules` keeps `apiKeyHash` and `webhookSecretEncrypted` inside `middleware/requireApiKey.js`, `services/revalidate.js` and `api/admin/index.js` (which writes them on create and must never select them). Read each use in those three.
 - The plaintext key and secret only in the creation response (`credentials` in `api/admin/index.js`).
 - Nothing logs a secret or headers: read every `console.` call (`grep -rn 'console\.' --include='*.js' --exclude='*.test.js' --exclude-dir=node_modules .`) for keys, secrets, tokens, `headers`, `authorization` or a database URL.
 - The JWT only in `Set-Cookie`: no `token` in any `res.json`.
@@ -187,6 +190,7 @@ Run each and keep its output:
 
 ```
 npm run lint
+npm run check:rules
 npm run format:check
 npm audit --omit=dev --audit-level=high
 npm test
