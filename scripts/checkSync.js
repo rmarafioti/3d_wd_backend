@@ -3,6 +3,7 @@
 // /doc-sync runs it first, so each sync starts from the facts. Compared:
 //   - the API Contract section of docs/endpoints.md against the frontend's docs/api.md
 //   - .claude/hooks/guard.js and guard.test.js against the frontend's copies
+//   - docs/process.md (the shared process) against the frontend's copy, whole
 // The backend side is this working tree; the frontend side is its origin/main, read with
 // `git show` after a fetch, so the frontend's working tree is never read or touched. Read-only:
 // it edits nothing in either repo. Exits 1 when anything differs or is missing.
@@ -29,6 +30,7 @@ const PAIRS = [
     backend: '.claude/hooks/guard.test.js',
     frontend: '.claude/hooks/guard.test.js',
   },
+  { name: 'shared process', backend: 'docs/process.md', frontend: 'docs/process.md' },
 ];
 
 function git(dir, args) {

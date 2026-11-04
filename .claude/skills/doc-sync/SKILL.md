@@ -38,7 +38,7 @@ Check each in order. If one fails, stop and tell Rich which, and how to fix it. 
 - **Backend (the truth):** `CLAUDE.md`, every file in `docs/` but `docs/proposal-notes.md` (the business Proposal's notes, not synced), `README.md`, `.env.example`.
 - **Frontend:** `CLAUDE.md`, `AGENTS.md`, `README.md`, every file in `docs/` (`git -C ../3d_wd ls-tree --name-only origin/main docs/`).
 - **Stevie The Dog:** `CLAUDE.md` and `docs/client-website.md`.
-- **The other client repos** (`good_boys_website`, `legacy_tattoo` and the rest): not read. Rich copies Stevie's revised md files into them by hand; the sync only lists which ones changed (step 7).
+- **The other client repos** (`good_boys_website`, `legacy_tattoo` and the rest): not read. Rich copies Stevie's revised md files into them by hand; the sync only lists which ones changed (step 6).
 
 ## 5. Steps
 
@@ -54,30 +54,20 @@ This repo's docs must match this repo's code before anything is compared, or the
 
 ### Step 3: Identical tier
 
-`npm run check:sync`. It compares the API Contract section of `docs/endpoints.md` with the frontend's `docs/api.md`, and the guard hook and its tests with the frontend's copies. Each `differs` or `missing` is a finding, with the diff it printed.
+`npm run check:sync`. It compares the API Contract section of `docs/endpoints.md` with the frontend's `docs/api.md`, the guard hook and its tests, and `docs/process.md` (the shared process) with the frontend's copies. Each `differs` or `missing` is a finding, with the diff it printed.
 
-### Step 4: Frontend, must-agree tier
+### Step 4: Frontend docs
 
-Read each backend section and its frontend counterpart side by side. The frontend may summarize; it may not contradict or leave out a rule it depends on.
+The frontend's other docs point to the backend's rules rather than restating them (the shared process is `docs/process.md`, checked in step 3). Check:
 
-| Backend                                                                             | Frontend                                                                              |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `CLAUDE.md` → Project Overview, roles                                               | `CLAUDE.md` → Project Overview                                                        |
-| `docs/endpoints.md` → Session Cookie, CSRF, Middleware Stack (429)                  | `CLAUDE.md`, `docs/flows.md`                                                          |
-| `docs/endpoints.md` → Validation rules, Error messages                              | `docs/flows.md`, `CLAUDE.md` → Patterns                                               |
-| `CLAUDE.md` → Features, Planned Later                                               | `CLAUDE.md` → Features, Planned Later (same list)                                     |
-| `docs/scaling.md`                                                                   | `docs/scaling.md`                                                                     |
-| `docs/deploy.md` → Environments, Every deploy after launch, Rolling back            | `docs/deploy.md`                                                                      |
-| `CLAUDE.md` → Issue Workflow, Version Control, Releases, and `/code-sweep` → Output | `CLAUDE.md` → the same sections                                                       |
-| `CLAUDE.md` → Current progress (Now, Next)                                          | `CLAUDE.md` → Current progress (its own state, but no contradiction of the backend's) |
+- **Backend facts:** each backend fact the frontend's docs state (a route, a status code, a message, a limit, a field, a cookie or CSRF rule, an environment or release step) is still true. Don't audit their UI content.
+- **Features:** its Features list matches `CLAUDE.md` → Features, one line per Feature, the frontend-only Features included.
+- **Planned Later:** it points to `CLAUDE.md` → Planned Later rather than keeping its own list.
+- **Current progress:** its own state, with no contradiction of the backend's Now and Next.
 
-Finding: a contradiction, or a rule the frontend depends on that it leaves out.
+Finding: a stale backend fact, a Feature missing or different, or a restated rule that belongs in a pointer.
 
-### Step 5: Frontend-only tier
-
-The rest of the frontend's docs (UI, components, routing, its own progress line). Don't audit their content: check only that each backend fact they state (a route, a status code, a message, a limit, a field) is still true. Finding: a stale backend fact.
-
-### Step 6: Stevie The Dog, must-agree tier
+### Step 5: Stevie The Dog
 
 `docs/client-website.md` and `CLAUDE.md` against:
 
@@ -89,7 +79,7 @@ The rest of the frontend's docs (UI, components, routing, its own progress line)
 
 Finding: a contradiction, or a public feature the backend serves that the client guide doesn't describe yet (galleries, until the guide gains `getGallery(slug)`).
 
-### Step 7: Client repos
+### Step 6: Client repos
 
 List each of Stevie's md files that this sync's findings will change. Rich copies them, then tailors them, into the other client repos by hand. This may change if a better workflow is found.
 
@@ -110,9 +100,9 @@ List each of Stevie's md files that this sync's findings will change. Rich copie
 
 ## 8. Output
 
-1. **Findings** in the `/code-sweep` Output format, most important first: **file:line** (with the repo), the **tier** (identical, must agree, frontend-only, Stevie) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
-2. **A handoff for each repo with findings**, in the Workflow Checklist → Step rhythm's form, for a reader with no context: what changed in the backend and on which branch, each fix to make with the backend text to match, and a "done when" checklist. Shown to Rich first; sent with `SendMessage` once he agrees.
-3. **Client repo md files** to copy from Stevie (step 7), or "none".
+1. **Findings** in the `/code-sweep` Output format, most important first: **file:line** (with the repo), the **tier** (identical, frontend docs, Stevie) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
+2. **A handoff for each repo with findings**, in `docs/process.md` → Cross-Repo Handoff's form, for a reader with no context: what changed in the backend and on which branch, each fix to make with the backend text to match, and a "done when" checklist. Shown to Rich first; sent with `SendMessage` once he agrees.
+3. **Client repo md files** to copy from Stevie (step 6), or "none".
 4. **What was checked:** each step and its result in one line, with the commits read (`origin/main` of each repo). A sync with no findings still reports this.
 
 ## 9. After
@@ -128,6 +118,6 @@ List each of Stevie's md files that this sync's findings will change. Rich copie
 - [ ] Both sessions open, and every precondition checked
 - [ ] Step 2 run, with this repo's drift reported
 - [ ] `npm run check:sync` run
-- [ ] Every must-agree row of step 4, step 5, and every source of step 6 compared
+- [ ] Every check of step 4 and every source of step 5 compared
 - [ ] Client repo md files listed
 - [ ] Findings, handoffs and what was checked reported

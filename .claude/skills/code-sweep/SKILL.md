@@ -105,7 +105,7 @@ For each file, against `CLAUDE.md` → Code Style:
   node -e "for (const f of process.argv.slice(1)) require('node:fs').readFileSync(f, 'utf8').split('\n').forEach((l, i) => { if (l.length > 100 && l.trim().startsWith('//')) console.log(f + ':' + (i + 1)); })" $(git ls-files '*.js' | grep -v migrations)
   ```
 
-  A long comment in `.claude/hooks/` is fixed in both repos together, since those files are identical to the frontend's (`.claude/hooks/guard.js:14` is one, left until the next change to the hook).
+  A long comment in `.claude/hooks/` or `docs/process.md` is fixed in both repos together, since those files are identical to the frontend's.
 
 Finding: a file that breaks a written rule, or two files doing the same thing two ways where no rule decides it (a **decision**: the rule gets written first).
 
