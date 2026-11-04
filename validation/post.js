@@ -1,9 +1,5 @@
-// Zod schemas for posts: create, edit (full form submission) and status (draft / published).
-// A post's body is an ordered list of elements, each a paragraph or an image. Paragraph text is
-// stored as typed; every [text](url) link in it is checked (docs/endpoints.md → Paragraph
-// formatting).
-// Optional text fields and postDate come out as null when blank, null or missing, so they are
-// stored and returned as null. Limits match the Validation rules in docs/endpoints.md.
+// Zod schemas for posts: create, edit and status, with a body of paragraph and image elements
+// (docs/endpoints.md → Validation rules).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 const { requiredText, optionalText, httpsUrl, itemId, websiteId, imageShape } = require('./fields');

@@ -1,12 +1,5 @@
 // Entry point for `npm run check:rules`: the Code Style and Anti-Pattern rules a search can prove,
-// checked over every tracked .js file, so CI enforces them instead of a reviewer reading for them
-// (CLAUDE.md → Code Review → Checklist; /code-sweep runs it). The rules:
-//   - no em dash in a user-facing string (only comments may hold one)
-//   - Node built-ins required with the node: prefix
-//   - apiKeyHash / webhookSecretEncrypted only in the files that need them
-//   - no $queryRawUnsafe / $executeRawUnsafe outside the test helpers
-//   - every ServerError message appears word for word in docs/endpoints.md
-// Read-only. Prints each violation as file:line and exits 1 when there is any.
+// checked over every tracked file they apply to. Prints each violation as file:line; exits 1.
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const { builtinModules } = require('node:module');
@@ -28,6 +21,12 @@ const SECRET_FILES = [
 // The guard hook's tests hold, as strings, commands the hook must refuse (some with a bare
 // require('fs')), and the file stays identical to the frontend's, so the require rule skips it.
 const REQUIRE_RULE_SKIPS = ['.claude/hooks/guard.test.js'];
+
+// The guard hook files stay identical to the frontend's copies, so the header rule skips them.
+const HEADER_RULE_SKIPS = ['.claude/hooks/guard.js', '.claude/hooks/guard.test.js'];
+
+// A file's header comment: at most this many lines on what the file is for.
+const MAX_HEADER_LINES = 2;
 
 // This checker and its test spell out every pattern they look for, so no rule reads them.
 const CHECKER_FILES = ['scripts/checkRules.js', 'scripts/checkRules.test.js'];
@@ -51,6 +50,19 @@ function codePart(line) {
   if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return '';
   const trailing = line.indexOf(' //');
   return trailing === -1 ? line : line.slice(0, trailing);
+}
+
+// The header is the run of comment lines at the top of a file (after a shebang), ended by a blank
+// line or code. YAML and shell files comment with #, JavaScript with //.
+function checkHeader(file, text) {
+  if (HEADER_RULE_SKIPS.includes(file)) return [];
+  const marker = file.endsWith('.js') ? '//' : '#';
+  const lines = text.split('\n');
+  const start = lines[0].startsWith('#!') ? 1 : 0;
+  let end = start;
+  while (end < lines.length && lines[end].trim().startsWith(marker)) end += 1;
+  if (end - start <= MAX_HEADER_LINES) return [];
+  return [{ file, line: start + MAX_HEADER_LINES + 1, rule: 'header comment over two lines' }];
 }
 
 function checkEmDash(file, text) {
@@ -158,8 +170,11 @@ function checkServerErrorMessages(file, text, endpointsDoc) {
 }
 
 function checkFile(file, text, endpointsDoc) {
-  if (CHECKER_FILES.includes(file)) return [];
+  const header = checkHeader(file, text);
+  // The other rules read JavaScript only, and never this checker's own files.
+  if (!file.endsWith('.js') || CHECKER_FILES.includes(file)) return header;
   return [
+    ...header,
     ...checkEmDash(file, text),
     ...checkNodePrefix(file, text),
     ...checkSecretColumns(file, text),
@@ -169,7 +184,8 @@ function checkFile(file, text, endpointsDoc) {
 }
 
 function main() {
-  const files = execFileSync('git', ['-C', REPO_DIR, 'ls-files', '*.js'], { encoding: 'utf8' })
+  const patterns = ['*.js', '*.yml', '*.yaml', '*.sh'];
+  const files = execFileSync('git', ['-C', REPO_DIR, 'ls-files', ...patterns], { encoding: 'utf8' })
     .split('\n')
     .filter((file) => file && !file.startsWith('prisma/migrations/'));
   const endpointsDoc = fs.readFileSync(path.join(REPO_DIR, 'docs/endpoints.md'), 'utf8');
@@ -190,6 +206,7 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  checkHeader,
   checkEmDash,
   checkNodePrefix,
   checkSecretColumns,

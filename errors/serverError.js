@@ -1,6 +1,5 @@
-// Custom error class for expected failures (401, 403, 404, 409, 400...).
-// Routes and middleware throw it; the error handler in errors/index.js turns it into the
-// { error: { message, fields? } } envelope with the matching status code.
+// Custom error class for expected failures (400, 401, 403, 404, 409): routes and middleware throw
+// it, and the handler in errors/index.js turns it into the error envelope.
 class ServerError extends Error {
   /**
    * @param {number} status  HTTP status code to respond with

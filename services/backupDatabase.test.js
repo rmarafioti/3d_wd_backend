@@ -1,6 +1,5 @@
-// Tests for the database backup (services/backupDatabase.js). pg_dump is played by a mocked
-// child_process.spawn and R2 by a mocked fetch, so neither is needed to run the suite. What is
-// uploaded must decrypt back to exactly what pg_dump wrote, and any failure must reject.
+// Tests for the database backup (services/backupDatabase.js), with pg_dump a mocked spawn and R2 a
+// mocked fetch: the upload decrypts back to the dump, and any failure rejects.
 require('../testing/setup');
 const { describe, it, before, after, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');

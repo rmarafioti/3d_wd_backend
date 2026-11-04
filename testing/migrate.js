@@ -1,6 +1,5 @@
-// Runs before `npm test` (the pretest script): creates the test database if it doesn't exist yet,
-// then applies every migration to it with `prisma migrate deploy`. testing/setup.js has already
-// checked that DATABASE_URL points at a "_test" database.
+// Runs before `npm test` (pretest): creates the test database if needed and applies every
+// migration with `prisma migrate deploy`.
 require('./setup');
 const { execFileSync } = require('node:child_process');
 const { Client } = require('pg');

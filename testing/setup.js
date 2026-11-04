@@ -1,8 +1,5 @@
-// Test environment. Required first by every test file (and by testing/migrate.js), the way entry
-// points require dotenv/config first, so it runs before anything reads process.env.
-// It points the app at the test database and refuses any database whose name doesn't end in
-// "_test": the suite truncates every table, so it must never reach the dev database.
-// The other values are fixed, so tests never depend on a developer's .env.
+// Test environment, required first by every test file: the test database (its name must end in
+// "_test") and fixed values, so tests never depend on a developer's .env.
 require('dotenv/config');
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;

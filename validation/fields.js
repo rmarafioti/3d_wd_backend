@@ -1,7 +1,5 @@
-// Zod field builders shared by the post and gallery schemas (and the upload sign body), so a rule
-// more than one uses (a required or optional text field, an https URL, an item id, the website id,
-// an uploaded image's fields) can't drift between them.
-// Text is trimmed and blank counts as empty (blankToUndefined); optional text comes out as null.
+// Zod field builders shared by the post, gallery and upload schemas, so a rule more than one uses
+// can't drift between them.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 

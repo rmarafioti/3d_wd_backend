@@ -1,7 +1,5 @@
 // Tests for the restore script's safety refusals (scripts/restoreBackup.js), run as the real
 // script.
-// Both refusals happen before the backup or key is read, so no pg_restore or backup file is needed.
-// The test database always has tables (pretest migrates it), so it plays a live database.
 require('../testing/setup');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,6 +17,8 @@ function runRestore(target, databaseUrl) {
   );
 }
 
+// Both refusals happen before the backup or key is read, so no pg_restore or backup file is
+// needed. The test database always has tables (pretest migrates it), so it plays a live database.
 describe('restoreBackup', () => {
   it("refuses this environment's own DATABASE_URL", () => {
     const result = runRestore(process.env.TEST_DATABASE_URL, process.env.TEST_DATABASE_URL);

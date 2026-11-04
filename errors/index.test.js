@@ -1,7 +1,4 @@
 // Tests for the single error handler (errors/index.js), called directly with a stub response.
-// Expected errors (ServerError, with or without fields) are covered by every request test; an
-// unexpected error can't be triggered through a real request without mocking our own code, so
-// only the generic 500 is tested here.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { errorHandler } = require('./index');
@@ -20,6 +17,8 @@ function stubResponse() {
   };
 }
 
+// Expected errors are covered by every request test. An unexpected one can't be triggered through
+// a real request without mocking our own code, so only the generic 500 is tested here.
 describe('errorHandler', () => {
   it('hides an unexpected error behind the generic 500 and logs it', (t) => {
     const errorLog = t.mock.method(console, 'error', () => {});

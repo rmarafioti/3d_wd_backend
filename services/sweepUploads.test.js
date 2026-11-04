@@ -1,7 +1,5 @@
-// Tests for the upload cleanup (services/sweepUploads.js). Cloudinary's Admin API is played by a
-// mocked fetch; the database is the real test database. Only uploads more than 24 hours old that
-// no kept post or gallery image row refers to are deleted, and only under this environment's root
-// folder. A deleted post's or gallery's images are kept for 30 days after its deletion.
+// Tests for the upload cleanup (services/sweepUploads.js): Cloudinary's Admin API is a mocked
+// fetch, and the database is the real test database.
 require('../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');

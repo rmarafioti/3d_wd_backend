@@ -1,7 +1,4 @@
 // Session guard: verifies the `session` cookie, loads the account and sets req.user.
-// A token whose sv (session version) no longer matches the account was ended by a logout.
-// Any failure clears the cookie, because the frontend's proxy redirects on cookie *presence*
-// and a dead cookie must not be left behind.
 const prisma = require('../prisma');
 const { ServerError } = require('../errors');
 const { SESSION_COOKIE, verifySession, sessionCookieOptions } = require('../lib/jwt');
@@ -33,6 +30,8 @@ async function requireAuth(req, res, next) {
   }
 
   if (!account || !account.active) {
+    // Any failure clears the cookie: the frontend's proxy redirects on the cookie's presence, so a
+    // dead one must not be left behind.
     res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
     throw new ServerError(401, SESSION_EXPIRED);
   }

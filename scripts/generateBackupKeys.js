@@ -1,7 +1,5 @@
-// Entry point for `npm run backup:keygen -- --out <folder>`: makes the backup key pair
-// (docs/launch-record.md step 10). Writes two files into a folder outside this
-// repo, so a private key can never be committed, and prints only their paths: no key reaches
-// the terminal, a chat or a log.
+// Entry point for `npm run backup:keygen -- --out <folder>`: writes the backup key pair outside
+// this repo and prints only the paths, so no key reaches a commit, the terminal or a log.
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseArgs } = require('node:util');

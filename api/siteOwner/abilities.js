@@ -1,21 +1,5 @@
-// Site owner ability routes, mounted at /api/siteOwner/abilities by api/siteOwner/index.js after
-// its requireAuth and requireRole('site_owner') guards: add an ability to a website, send or edit
-// its request form, turn it on or off, and remove it. An ability belongs to a website, like a post
-// or gallery. Posts are every website's from the start and can't be removed; Photo Galleries are
-// added here. Every change writes its audit event (lib/abilities.js) inside the same transaction.
-//
-// An ability's status moves added → live, set by the admin once its code is wired into the client
-// website. Where its content goes is its placement, apart from the status (issue #71,
-// lib/abilities.js): posts have one, on the ability, requested by the request form (after the
-// first post, after a new first post, or edited) and set live by the admin with the ability;
-// each gallery has its own (./galleries.js). Sending or editing a request emails the admin after
-// responding, unawaited (services/requestEmail.js). On / Off is the site owner's switch once it is
-// live: off hides the ability's content from the public API. Removing Photo Galleries deletes the
-// website's galleries; adding it back within 30 days restores them, while their images still
-// exist. Either way it comes back with its status and switch: removing doesn't unwire the code.
-//
-// Ownership (lib/abilities.js → findOwnedAbility): the ability's website is the site owner's and
-// active, and the ability isn't removed. Anything else is a 404 "Ability not found.".
+// Site owner ability routes, mounted at /api/siteOwner/abilities: add an ability to a website,
+// send or edit its request form, turn it on or off, and remove it.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');

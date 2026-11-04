@@ -1,14 +1,5 @@
-# Reminders: opens an issue for each routine job on a calendar (CLAUDE.md → Reminders), so GitHub
-# emails Rich and the issue is the to-do. Times are UTC.
-#   - restore drill: the 1st of January, April, July and October
-#   - dependency audit: the 1st of every month, opened only when the full npm audit (dev
-#     dependencies included) finds a moderate, high or critical advisory
-#   - Documentation Sync and code sweep: every other Monday (even ISO weeks; GitHub's cron has no
-#     "every 2 weeks", so the job runs weekly and skips odd weeks; after a year with a week 53, the
-#     gap is 3 weeks once)
-# A reminder isn't opened while the previous one of its kind is still open. Each job can be run by
-# hand from the Actions tab (workflow_dispatch), which skips the even-week check. Uses only this
-# workflow's GITHUB_TOKEN; the issue bodies are the templates in .github/reminders/.
+# Reminders: opens an issue for each routine job on a calendar (CLAUDE.md → Reminders), with the
+# issue bodies in .github/reminders/.
 name: Reminders
 
 on:
@@ -81,6 +72,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GitHub's cron has no "every 2 weeks", so this job runs weekly and skips odd ISO weeks
+      # (after a year with a week 53, the gap is 3 weeks once). A run by hand skips the check.
       - name: Open the Documentation Sync and code sweep reminders (even ISO weeks)
         run: |
           if [ "${{ github.event_name }}" = schedule ] && [ $(( 10#$(date -u +%V) % 2 )) -ne 0 ]; then

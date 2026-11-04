@@ -1,8 +1,4 @@
-// Request tests for the admin routes (api/admin/index.js): the account list, the website picker,
-// Create an Account, Link a Website and the audit event list. Covers the role guard, each website's
-// gallery summaries in the account list, every documented 400/404/409, credentials only on a new
-// website, the audit events each change writes, the audit list's months and pages, the months that
-// have events, and that no secret ever reaches a response.
+// Request tests for the admin routes (api/admin/index.js).
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');

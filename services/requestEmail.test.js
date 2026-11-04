@@ -1,8 +1,5 @@
-// Tests for services/requestEmail.js, the admin's email when a site owner sends or edits a request
-// message. The route tests prove it is sent after each request route; these cover what the routes
-// can't reach easily: the Resend call itself, its plain-text content, the recipients read from the
-// database, nothing sent without a key, and a failure logged with the
-// website id only and never rejecting. fetch is mocked in every test.
+// Tests for services/requestEmail.js: the Resend call, its content and recipients, no send without
+// a key, and a failure logged with the website id only.
 require('../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
