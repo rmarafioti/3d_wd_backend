@@ -45,7 +45,6 @@ const POST_SELECT = {
   header: true,
   subHeader: true,
   postDate: true,
-  active: true,
   status: true,
   createdAt: true,
   updatedAt: true,
@@ -77,7 +76,6 @@ function toPost(post) {
     header: post.header,
     subHeader: post.subHeader,
     postDate: toDateOnly(post.postDate),
-    active: post.active,
     status: post.status,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -144,7 +142,6 @@ router.get('/websites', async (req, res) => {
           id: true,
           postName: true,
           postDate: true,
-          active: true,
           status: true,
           createdAt: true,
         },
@@ -195,7 +192,6 @@ router.post('/posts', async (req, res) => {
         subHeader: input.subHeader,
         postDate: fromDateOnly(input.postDate),
         status: input.status,
-        active: input.status === 'published',
       },
       select: { id: true },
     });
@@ -262,8 +258,8 @@ router.patch('/posts/:id', async (req, res) => {
   revalidate(post.websiteId, { postId: post.id });
 });
 
-// PATCH /api/siteOwner/posts/:id/status — set a post to draft or published ({ status }, or the
-// legacy { active }). A draft is hidden from the client website; the site owner still sees it.
+// PATCH /api/siteOwner/posts/:id/status — set a post to draft or published. A draft is hidden from
+// the client website; the site owner still sees it.
 router.patch('/posts/:id/status', async (req, res) => {
   const { status } = validate(postStatusSchema, req.body ?? {});
 
@@ -275,7 +271,7 @@ router.patch('/posts/:id/status', async (req, res) => {
     await recordPostEvent(tx, req, action, post);
     return tx.post.update({
       where: { id: post.id },
-      data: { status, active: status === 'published' },
+      data: { status },
       select: POST_SELECT,
     });
   });

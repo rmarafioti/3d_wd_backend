@@ -7,7 +7,6 @@ const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../prisma');
 const { SESSION_COOKIE, signSession } = require('../lib/jwt');
 const { resetRateLimits } = require('../lib/rateLimit');
-const { resetEmailCap } = require('../lib/emailCap');
 const {
   generateApiKey,
   generateWebhookSecret,
@@ -32,14 +31,12 @@ function unique() {
   return sequence;
 }
 
-// Run in beforeEach: every test starts from an empty database, empty rate limit counts and no
-// request emails counted against the daily cap.
+// Run in beforeEach: every test starts from an empty database and empty rate limit counts.
 async function resetState() {
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
   );
   await resetRateLimits();
-  resetEmailCap();
 }
 
 // Run in each file's after hook, so the Prisma connection pool doesn't keep the process alive.
@@ -104,8 +101,7 @@ function imageElement(image) {
 }
 
 // Creates a post with its body, inserted in list order, in one transaction. `body` is a list of
-// paragraph() / imageElement() items. `status` sets the legacy active in step, as the routes do.
-// Returns the post with its images (in body order).
+// paragraph() / imageElement() items. Returns the post with its images (in body order).
 function createPost(website, { body = [paragraph()], status = 'published', ...overrides } = {}) {
   return prisma.$transaction(async (tx) => {
     const post = await tx.post.create({
@@ -113,7 +109,6 @@ function createPost(website, { body = [paragraph()], status = 'published', ...ov
         websiteId: website.id,
         postName: 'Post',
         status,
-        active: status === 'published',
         ...overrides,
       },
     });

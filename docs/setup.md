@@ -62,7 +62,6 @@ Table post {
   post_date  date     [null]       // optional date shown on the website so readers know how recent the post is
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
-  active     bool     [not null, default: true]   // being retired for status (Feature 8); written to match it
   status     post_status [not null, default: 'published']  // draft or published; only published posts are public
   deleted_at datetime [null]       // set by Delete a Post: the post is gone from every route, the row stays
   created_at datetime [not null, default: now()]
@@ -201,7 +200,6 @@ Enum ability_kind {
 
 Enum ability_status {
   added
-  requested   // no longer written (issue #71); kept until a later cleanup
   live
 }
 

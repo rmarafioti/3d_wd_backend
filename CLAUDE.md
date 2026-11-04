@@ -85,7 +85,6 @@ root
 │   ├── config.js             *startup config check: required env vars, secret strength
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt, backup encryption
 │   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
-│   ├── emailCap.js           *the request email's daily cap per website (in memory)
 │   ├── galleryImages.js      *gallery image crop columns ↔ Crop, cropped versions for the public API
 │   ├── jwt.js                *sign/verify session JWT, cookie options
 │   ├── mediaFolder.js        *website media_folder name from its URL, -2/-3 on a clash
@@ -128,7 +127,7 @@ root
 │   ├── settings.json         *Claude Code permissions and the guard hook: merging and releasing denied (Version Control)
 │   ├── hooks/guard.js        *PreToolUse guard: denies or asks before destructive git, database and storage commands
 │   └── skills/               *project skills, run only when Rich types them
-│       ├── code-sweep/       */code-sweep: the Code Review checklist and procedure (full, since a commit, or a diff)
+│       ├── code-sweep/       */code-sweep: the Code Review procedure, Scope and Output (full, since a commit, or a diff)
 │       └── doc-sync/         */doc-sync: the Documentation Sync procedure (backend, frontend, Stevie)
 ├── docker-compose.yml        *local Postgres
 ├── render.yaml               *Render Blueprint: API + Postgres per environment, production's cron jobs
@@ -151,7 +150,7 @@ root
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 13 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-03-3`.
   - **How work runs:** from a GitHub issue Rich writes (Issue Workflow); breaking changes through expand → migrate → contract (`docs/scaling.md` §0, §3); production released with `npm run release` from this repo after staging, backend first, each release tagged (Releases).
   - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept for now, at $13.30/mo (Next 8).
-  - **In progress:** issue #73, the audit cleanup before `build-spec`: this repo's session docs trimmed (`docs/trim-session-docs`), then the legacy fields dropped, then the shared process (Next 7).
+  - **In progress:** issue #73, the audit cleanup before `build-spec`: the session docs trimmed and the legacy fields dropped; the shared process is next (Next 7).
 - **Next:**
   1. Rich retires the master doc's Client Portal tabs (the copy tabs, Deployment, Runbook, "Client to Website", "Client - Claude.md"), keeping Proposal and Build vs Buy. The frontend drops its master doc mentions (frontend issue #65), and Stevie's `CLAUDE.md` and `.prettierignore` stop calling its guide a copy of the master doc (a handoff to its session).
   2. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
@@ -159,12 +158,12 @@ root
   4. The first real reminders: the code sweep (`/code-sweep 7a42142`) and Documentation Sync on 2026-11-09, the dependency audit on 2026-12-01 (it will list the five moderate dev advisories), the restore drill on 2027-01-01.
   5. `build-spec` (issue #69): the template repo, with its own plan.
   6. Launch step 31 (Rich, `docs/launch-record.md`): onboard the four waiting client websites one at a time, by `docs/deploy.md` → Onboarding a client website.
-  7. Issue #73's other two branches: `chore/drop-legacy-fields` drops post `active` (Feature 8's contract step, recomputing `status` from `active` first; the frontend no longer sends or reads it), the unused `requested` value in `ability_status` and the request email cap, and tightens `docs/endpoints.md`, with a backup before its release; `docs/shared-process` moves the process shared with the frontend into `docs/process.md` (with 3d_wd#69).
+  7. Issue #73's last branch: `docs/shared-process` moves the process shared with the frontend into `docs/process.md` (with 3d_wd#69). Before releasing `chore/drop-legacy-fields`, back up production (Trigger Run on `3dwd-backup-database`), since it drops a column.
   8. Launch step 30: reassess staging once its cost can be justified.
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
-  - "Test Post 1", written and edited at launch (`docs/launch-record.md` step 28), live on Stevie's site (`status` `published` once Feature 8's backfill runs)
+  - "Test Post 1", written and edited at launch (`docs/launch-record.md` step 28), live on Stevie's site (`status` `published`)
   - the `audit_event` rows since launch, kept (audit rows are never deleted)
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
@@ -186,11 +185,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-03** `chore/drop-legacy-fields` (issue #73; frontend issue #70): post `active` (Feature 8's contract step, `drop_post_active`), the unused `ability_status` value `requested` (`drop_ability_status_requested`) and the request email cap are removed, and `docs/endpoints.md`'s per-route sections stop repeating the contract. Breaking for the app API only; the frontend never sent or read `active`. 568 tests.
 - **2026-11-03** `docs/trim-session-docs` (issue #73): what loads every session is cut by about a quarter, with no rule lost. The progress table becomes this list, Now short bullets and each Feature one line; the older entries, the MVP Build Order and the Features as recorded move word for word to `docs/history.md`, the deploy checklist to `docs/launch-record.md`, and `docs/client-website-test.md` is no longer imported. The Workflow Checklist's repeated checks fold into the self-review, the Code Review Output and Scope live only in `/code-sweep`, decisions are recorded once (in the PR), and the name and date notes on rules are gone. Docs only.
 - **2026-11-03** `fix/onboarding-ui` (issue #71; frontend issue #67, the lead): an ability's `status` is only `added` → `live` (its code is wired), and a new `placement` (`requested` → `live`) sits on each gallery and, for posts, on the ability, so deleting a requested gallery no longer leaves the ability `requested`. New `PATCH /api/admin/galleries/:id/placement`; 575 tests.
 - **2026-11-03** `docs/master-doc-scope` (issue #62; frontend issue #65): the master doc stops copying the repos; only its Proposal and Build vs Buy tabs stay current, `/doc-sync` loses its `master` mode, and Stevie's `docs/client-website.md` is the client guide. Docs only.
 - **2026-11-02** `feat/ability-emails` (issue #65; frontend issue #63): Feature 13, Request emails: the admin is emailed through Resend each time a site owner sends or edits a request message, Reply-To the site owner, and a sent message can be edited (two new `PATCH` routes). 567 tests.
-- **2026-11-02** `chore/production-alerts` (issue #50; frontend issue #61): production failures reach Rich by email, through Render's notifications, UptimeRobot and Sentry (production only, every event scrubbed; `npm run sentry:check`). 543 tests.
 
 ## Features
 
@@ -203,7 +202,7 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 5. **Image uploads** (`feat/image-uploads`): signed uploads into 3DWD's Cloudinary, one folder per website, and the daily upload cleanup (`docs/setup.md` → Image Hosting).
 6. **Admin audit log view** (`feat/admin-audit-log`, issue #41): the admin's read-only Audit Events page, one UTC month at a time.
 7. **Delete a post** (`feat/delete-post`, issue #44): soft delete with `deletedAt`; images swept 30 days later.
-8. **Post status** (`feat/post-status`, issue #46): `draft` / `published` replaces `active`; expand and migrate done, the contract step is issue #73 (Next 7).
+8. **Post status** (`feat/post-status`, issue #46): `draft` / `published` replaces `active`, which issue #73 dropped (the contract step).
 9. **Streamlined post flow** (frontend only, frontend issue #46): step dialogs and a review view.
 10. **Photo galleries** (`feat/photo-gallery`, issue #52): galleries of up to 30 images with optional crops, fetched by slug.
 11. **Faster photo submit** (`feat/faster-photo-submit`, frontend issue #55; backend issue #60): photos shrunk in the browser before upload (`docs/endpoints.md` → API Contract, Notes).
@@ -214,10 +213,10 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 
 Ideas Rich has chosen for later. Not scheduled and not to be built yet. Each becomes a numbered Feature (see Features) when it starts. The frontend's `CLAUDE.md` keeps the same list; this one is the source of truth.
 
-- **Admin action hub.** While Create an Account is the only admin action, `/admin` is that form. Once there are more admin actions, `/admin` becomes a main page asking "What would you like to do?", with a choice of actions, each opening its own page: Create an Account, Deactivate an Account, Roll a Secret, Roll a Key. Build it together with the first new admin action (the last three are currently Out of Scope).
+- **Admin action hub.** `/admin` is a menu page ("Choose an action from the menu."), and each admin action is its own page and Navbar link (Create an Account at `/admin/createAccount`, Audit Events). Still to come, each built when needed: Deactivate an Account, Roll a Secret, Roll a Key (Out of Scope for now).
 - **Post preview v2 (true preview on the client website).** The client website renders an unsaved post with its own styling, through Next.js draft mode unlocked by a short-lived signed token. Needs a new public endpoint that returns one draft post, and an update to the client template. It builds on Feature 8's `status` (draft / published): once deletion is its own action (Feature 7), hidden and draft are the same state, so no second flag is needed.
 - **Scheduled publish.** The site owner picks a date on a calendar, and the post goes live on their website on that date. Two dates, never confused: `postDate` is the date the site owner chooses to show (or not) on the post readers see; `publish_at` is the date the site owner assigns for the post to go live. Planned design: a nullable `publish_at` beside `status`, and a post is live when `status` is `published` and `publish_at` is empty or past, worked out when posts are read, so no job has to flip rows and a missed run can't hide a post. The client website only rebuilds when revalidated, so a Render cron job (every 15 minutes or so) calls `revalidate` for each post whose `publish_at` has passed since its last run, with a marker so none is sent twice. The picked date becomes midnight in the site owner's time zone. Builds on Feature 8.
-- **More abilities.** Feature 12 built the abilities (`website_ability`) with Posts and Photo Galleries. Business Hours is the next candidate: a new `ability_kind` value, its own table and routes (`docs/scaling.md` §5), and the same added → requested → live flow. Rich wires it into the client website on a branch and can send the client that branch's Vercel preview URL with the mockup. An ability's optional fields sit behind "More options", so the basic form stays short. Undoing a mistaken `live` (back to `requested`) would be a second `status` value on the admin route, which was shaped for it.
+- **More abilities.** Feature 12 built the abilities (`website_ability`) with Posts and Photo Galleries. Business Hours is the next candidate: a new `ability_kind` value, its own table and routes (`docs/scaling.md` §5), and the same flow: status `added` → `live` once its code is wired, and placement `requested` → `live` for where its content goes. Rich wires it into the client website on a branch and can send the client that branch's Vercel preview URL with the mockup. An ability's optional fields sit behind "More options", so the basic form stays short. Undoing a mistaken `live` would be a second value on the admin route, which was shaped for it.
 - **Site owner collaboration.** Site owners suggest new add-ons, or optional fields for existing ones. Approved suggestions are built once and offered to every site owner. Rich curates: a suggestion is built when at least two businesses want it, or it clearly helps several. Sharing between site owners is opt-in or anonymized. It starts outside the software (a shared suggestion board) and moves into the app once there are roughly 10–20 site owners. Feature creep until live use with the early adopters shows owners want it. Not built before then.
 - **Audit analytics.** If the app grows: audit events are extracted from the API into a data warehouse, transformed with dbt, and surfaced as metrics in a Data Studio dashboard, to review how the Client Portal is used (issue #41's stretch goal). Builds on Feature 6's audit event list.
 - **End an account's sessions.** An admin action, beside the Audit Events page, that increments an account's `session_version` (`docs/security.md` → Session revocation), so a compromised account is signed out without SQL from the Render Shell.
@@ -275,7 +274,7 @@ Account + website + its posts ability + account_website, website + its posts abi
 Every sign-in, sign-out and change writes its `audit_event` through `recordAuditEvent` (`lib/audit.js`), with the transaction client `tx`, inside the same `prisma.$transaction` as the change it records (`docs/endpoints.md` → Audit Log). A new route that changes data adds its action to `AUDIT_ACTIONS` and the table in `docs/endpoints.md`.
 
 **Never a hard delete:**
-Soft delete via an `active` boolean is the standard for every client-facing resource (account, website, post). A website's abilities don't use it either: a removed one has `removedAt` set and is added back on the same row. Posts and galleries don't use it: they are set to draft or published through the API (`status`; Feature 8 keeps a post's legacy `active` in step until it is dropped, and galleries never had one). A post or gallery the site owner deletes is stamped with `deletedAt`, never removed: every route then treats it as not found, and the upload cleanup deletes its images from Cloudinary 30 days later. Accounts and websites have no API for this in the MVP — they are flipped by hand (Prisma Studio locally, SQL from the Render Shell when deployed) — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
+Soft delete via an `active` boolean is the standard for accounts and websites. A website's abilities don't use it either: a removed one has `removedAt` set and is added back on the same row. Posts and galleries don't use it: they are set to draft or published through the API (`status`). A post or gallery the site owner deletes is stamped with `deletedAt`, never removed: every route then treats it as not found, and the upload cleanup deletes its images from Cloudinary 30 days later. Accounts and websites have no API for this in the MVP — they are flipped by hand (Prisma Studio locally, SQL from the Render Shell when deployed) — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
 
 **One error envelope:**
 Routes throw; the single error handler in `errors/` turns every error into `{ error: { message, fields? } }` with the status codes in `docs/endpoints.md`. Express 5 forwards rejected async handlers to it automatically.
@@ -407,7 +406,7 @@ The workflow learned here, made general for any project, becomes the `build-spec
 Write a test when the code carries a rule that someone could break without noticing:
 
 - **A spec or contract rule:** anything `docs/endpoints.md` states — every status code and `error.message` in "Error messages the frontend displays", the `{ data }` / `{ error: { message, fields? } }` envelopes with `fields` keyed by full path (`body.1.image.src`), the CSRF header returning `403` "Request blocked.", blank optional fields stored and returned as `null`, validation limits.
-- **Branching logic:** a function, middleware or route handler that behaves differently by input or state (new vs existing website, active vs inactive account / website / post, at vs over the image limit).
+- **Branching logic:** a function, middleware or route handler that behaves differently by input or state (new vs existing website, active vs inactive account / website, draft vs published post, at vs over the image limit).
 - **Shared code:** anything in `lib/`, `middleware/`, `validation/`, `services/` or `errors/` gets coverage, directly or through a request test — one bug there breaks every caller.
 - **A security or one-time rule:** the account always comes from the session, never from client input; another owner's post, website or account is `404`, not `403`; `apiKeyHash` / `webhookSecretEncrypted` never appear in a response; `credentials` appear only when a new website is created; the session cookie carries the documented flags and the JWT never appears in a body; the public API accepts only a valid Bearer key for an active website, returns only published posts and never `postName`.
 - **A bug that was fixed:** write the failing test first, then fix the code, so it can't come back.

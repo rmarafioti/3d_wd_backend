@@ -27,8 +27,7 @@ enum ElementType {
   @@map("element_type")
 }
 
-// Whether a post is live on its client website. Replaces post.active (expand → migrate → contract,
-// docs/scaling.md §3).
+// Whether a post is live on its client website.
 enum PostStatus {
   draft
   published
@@ -54,11 +53,9 @@ enum AbilityKind {
 }
 
 // Whether an ability's code is wired into the client website: added by the site owner, then set
-// live by the admin. `requested` is no longer written (issue #71: where its content goes is
-// Placement); it stays until a later cleanup, since removing an enum value is breaking.
+// live by the admin. Where its content goes is Placement.
 enum AbilityStatus {
   added
-  requested
   live
 
   @@map("ability_status")
@@ -131,8 +128,6 @@ model Post {
   postDate  DateTime?  @map("post_date") @db.Date // optional date shown on the website
   header    String? // optional public headline
   subHeader String?    @map("sub_header")
-  // Being retired for status: every write sets the two in step until active is dropped.
-  active    Boolean    @default(true)
   status    PostStatus @default(published)
   deletedAt DateTime?  @map("deleted_at") // set by Delete a Post; the post is gone from every route
   createdAt DateTime   @default(now()) @map("created_at")

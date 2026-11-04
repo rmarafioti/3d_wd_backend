@@ -1,7 +1,7 @@
 // Tests for services/requestEmail.js, the admin's email when a site owner sends or edits a request
 // message. The route tests prove it is sent after each request route; these cover what the routes
 // can't reach easily: the Resend call itself, its plain-text content, the recipients read from the
-// database, nothing sent without a key, the daily cap per website, and a failure logged with the
+// database, nothing sent without a key, and a failure logged with the
 // website id only and never rejecting. fetch is mocked in every test.
 require('../testing/setup');
 const { describe, it, beforeEach, afterEach, after, mock } = require('node:test');
@@ -33,11 +33,11 @@ afterEach(() => {
 });
 after(disconnect);
 
-// A site owner's website with live posts and a request note on them.
+// A site owner's website whose posts were requested, with the note on where they go.
 async function postsRequest(note = 'On the News page') {
   const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
   const ability = await createAbility(website, 'posts', {
-    status: 'requested',
+    placement: 'requested',
     requestNote: note,
     requestedAt: new Date(),
   });
@@ -125,31 +125,6 @@ describe('sendRequestEmail', () => {
     await sendRequestEmail(website.id, { siteOwnerId: owner.id, abilityId: ability.id });
 
     assert.equal(fetchMock.mock.callCount(), 0);
-  });
-
-  it('sends at most 10 emails a day per website, while another website still sends', async (t) => {
-    const errors = t.mock.method(console, 'error', () => {});
-    await createAdmin();
-    const busy = await postsRequest();
-    const other = await postsRequest();
-
-    for (let i = 0; i < 11; i += 1) {
-      await sendRequestEmail(busy.website.id, {
-        siteOwnerId: busy.owner.id,
-        abilityId: busy.ability.id,
-      });
-    }
-    await sendRequestEmail(other.website.id, {
-      siteOwnerId: other.owner.id,
-      abilityId: other.ability.id,
-    });
-
-    assert.equal(fetchMock.mock.callCount(), 11);
-    assert.equal(errors.mock.callCount(), 1);
-    assert.equal(
-      errors.mock.calls[0].arguments[0],
-      `Request email skipped for website ${busy.website.id}: over the daily cap`,
-    );
   });
 
   it('logs a failed send with the website id only, and never rejects', async (t) => {

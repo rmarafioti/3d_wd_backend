@@ -204,7 +204,6 @@ describe('GET /api/siteOwner/websites', () => {
               id: newer.id,
               postName: 'Newer',
               postDate: '2026-10-01',
-              active: true,
               status: 'published',
               createdAt: newer.createdAt.toISOString(),
             },
@@ -212,7 +211,6 @@ describe('GET /api/siteOwner/websites', () => {
               id: older.id,
               postName: 'Older',
               postDate: null,
-              active: false,
               status: 'draft',
               createdAt: older.createdAt.toISOString(),
             },
@@ -288,7 +286,6 @@ describe('POST /api/siteOwner/posts', () => {
     assert.equal(res.status, 201);
     const post = res.body.data;
     assert.deepEqual(Object.keys(post).sort(), [
-      'active',
       'body',
       'createdAt',
       'header',
@@ -307,7 +304,6 @@ describe('POST /api/siteOwner/posts', () => {
     assert.equal(post.header, 'Hello');
     assert.equal(post.subHeader, 'World');
     assert.equal(post.postDate, '2026-10-07');
-    assert.equal(post.active, true);
     assert.equal(post.status, 'published');
     const storedImages = await prisma.image.findMany({ where: { postId: post.id } });
     const imageId = (src) => storedImages.find((image) => image.src === src).id;
@@ -339,7 +335,7 @@ describe('POST /api/siteOwner/posts', () => {
     await revalidationCall();
   });
 
-  it('creates a draft when status is draft, with active false', async () => {
+  it('creates a draft when status is draft', async () => {
     const { owner, website } = await createOwnerWithWebsite();
 
     const res = await as(owner, 'post', '/api/siteOwner/posts').send(
@@ -348,41 +344,9 @@ describe('POST /api/siteOwner/posts', () => {
 
     assert.equal(res.status, 201);
     assert.equal(res.body.data.status, 'draft');
-    assert.equal(res.body.data.active, false);
     const stored = await prisma.post.findUnique({ where: { id: res.body.data.id } });
     assert.equal(stored.status, 'draft');
-    assert.equal(stored.active, false);
     await revalidationCall();
-  });
-
-  it('creates a draft when the legacy active is false', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-
-    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
-      newPost(website, { active: false }),
-    );
-
-    assert.equal(res.status, 201);
-    assert.equal(res.body.data.status, 'draft');
-    assert.equal(res.body.data.active, false);
-    await revalidationCall();
-  });
-
-  it("returns 400 when status and active don't match, and saves nothing", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-
-    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
-      newPost(website, { status: 'draft', active: true }),
-    );
-
-    assert.equal(res.status, 400);
-    assert.deepEqual(res.body, {
-      error: {
-        message: 'Please fix the highlighted fields.',
-        fields: { status: "Status and active don't match." },
-      },
-    });
-    assert.equal(await prisma.post.count(), 0);
   });
 
   it('calls the website revalidation webhook with its secret after creating', async () => {
@@ -525,7 +489,6 @@ describe('GET /api/siteOwner/posts/:id', () => {
         header: 'Hello',
         subHeader: null,
         postDate: null,
-        active: true,
         status: 'published',
         createdAt: post.createdAt.toISOString(),
         updatedAt: post.updatedAt.toISOString(),
@@ -674,13 +637,12 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
     const post = await createPost(website);
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
-      editPost({ websiteId: otherOwnWebsite.id, status: 'draft', active: false }),
+      editPost({ websiteId: otherOwnWebsite.id, status: 'draft' }),
     );
 
     assert.equal(res.status, 200);
     assert.equal(res.body.data.websiteId, website.id);
     assert.equal(res.body.data.status, 'published');
-    assert.equal(res.body.data.active, true);
     await revalidationCall();
   });
 
@@ -782,25 +744,21 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
 });
 
 describe('PATCH /api/siteOwner/posts/:id/status', () => {
-  it('records drafting and publishing in the audit log, for status and the legacy active', async () => {
+  it('records drafting and publishing in the audit log', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
     const path = `/api/siteOwner/posts/${post.id}/status`;
 
     await as(owner, 'patch', path).send({ status: 'draft' });
     await as(owner, 'patch', path).send({ status: 'published' });
-    await as(owner, 'patch', path).send({ active: false });
-    await as(owner, 'patch', path).send({ active: true });
 
     assert.deepEqual(await auditEvents(), [
-      postEvent(owner, 'post.drafted', post.id, website.id),
-      postEvent(owner, 'post.published', post.id, website.id),
       postEvent(owner, 'post.drafted', post.id, website.id),
       postEvent(owner, 'post.published', post.id, website.id),
     ]);
   });
 
-  it('sets a post to draft, with active false, and returns the Post shape', async () => {
+  it('sets a post to draft and returns the Post shape', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
 
@@ -811,15 +769,13 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.data.id, post.id);
     assert.equal(res.body.data.status, 'draft');
-    assert.equal(res.body.data.active, false);
     assert.equal(res.body.data.websiteName, website.websiteName);
     const stored = await prisma.post.findUnique({ where: { id: post.id } });
     assert.equal(stored.status, 'draft');
-    assert.equal(stored.active, false);
     await revalidationCall();
   });
 
-  it('publishes a draft, with active true', async () => {
+  it('publishes a draft', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website, { status: 'draft' });
 
@@ -829,43 +785,10 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
 
     assert.equal(res.status, 200);
     assert.equal(res.body.data.status, 'published');
-    assert.equal(res.body.data.active, true);
     await revalidationCall();
   });
 
-  it('sets a post to draft from the legacy { active: false }', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const post = await createPost(website);
-
-    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
-      active: false,
-    });
-
-    assert.equal(res.status, 200);
-    assert.equal(res.body.data.status, 'draft');
-    assert.equal(res.body.data.active, false);
-    const stored = await prisma.post.findUnique({ where: { id: post.id } });
-    assert.equal(stored.status, 'draft');
-    await revalidationCall();
-  });
-
-  it("returns 400 when status and active don't match, and leaves the post unchanged", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const post = await createPost(website);
-
-    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
-      status: 'draft',
-      active: true,
-    });
-
-    assert.equal(res.status, 400);
-    assert.deepEqual(res.body.error.fields, { status: "Status and active don't match." });
-    const stored = await prisma.post.findUnique({ where: { id: post.id } });
-    assert.equal(stored.status, 'published');
-    assert.deepEqual(await auditEvents(), []);
-  });
-
-  it('returns 400 on status when neither status nor active is sent', async () => {
+  it('returns 400 on status when status is missing', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
 
@@ -886,23 +809,24 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     assert.deepEqual(JSON.parse(options.body), { websiteId: website.id, postId: post.id });
   });
 
-  it('returns 400 when active is not a boolean', async () => {
+  it('returns 400 on status for the retired { active }, and leaves the post unchanged', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
-      active: 'false',
+      active: false,
     });
 
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, {
       error: {
         message: 'Please fix the highlighted fields.',
-        fields: { active: 'Active must be true or false.' },
+        fields: { status: 'Status must be draft or published.' },
       },
     });
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.status, 'published');
   });
-
   it("returns 404 for another site owner's post and leaves it unchanged", async () => {
     const { owner } = await createOwnerWithWebsite();
     const { website: otherWebsite } = await createOwnerWithWebsite();
