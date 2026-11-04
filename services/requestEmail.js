@@ -10,12 +10,9 @@
 // dashboard either way, so a lost email loses nothing.
 //
 // Production only: with RESEND_API_KEY empty (locally, in tests and on staging) nothing is sent.
-// At most 10 emails per website in 24 hours (lib/emailCap.js); a message past the cap is still
-// saved, only its email is skipped. Logs and Sentry get the website id only, never an address,
-// the key or the note.
+// Logs and Sentry get the website id only, never an address, the key or the note.
 const prisma = require('../prisma');
 const { reportWarning } = require('../lib/sentry');
-const { withinEmailCap } = require('../lib/emailCap');
 
 const RESEND_URL = 'https://api.resend.com/emails';
 const FROM = '3D Web Dev <notifications@3dwebdev.com>';
@@ -74,11 +71,6 @@ async function sendRequestEmail(websiteId, { siteOwnerId, abilityId, galleryId, 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;
   try {
-    if (!withinEmailCap(websiteId)) {
-      console.error(`Request email skipped for website ${websiteId}: over the daily cap`);
-      return;
-    }
-
     const [siteOwner, website, admins, request] = await Promise.all([
       prisma.account.findUnique({
         where: { id: siteOwnerId },
