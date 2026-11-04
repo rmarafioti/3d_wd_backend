@@ -1,6 +1,6 @@
 # Endpoints
 
-Full behavioral spec for each backend endpoint. `CLAUDE.md` holds the short, always-loaded rules (ownership checks, anti-patterns, patterns); this file holds the API contract and the per-endpoint detail those rules apply to. Imported from `CLAUDE.md` via `@docs/endpoints.md`.
+Full behavioral spec for each backend endpoint. `CLAUDE.md` holds the short, always-loaded rules (ownership checks, anti-patterns, patterns); this file holds the API contract and the per-endpoint detail those rules apply to. Read on demand (`CLAUDE.md` → Read before).
 
 The API Contract section below is the **source of truth** for both repos. The frontend repo keeps an identical copy in its `docs/api.md`. Any change to the contract is made in both repos in the same piece of work.
 
@@ -259,7 +259,7 @@ Rejected examples (`400` on `body.N.text`):
 
 ## Middleware Stack
 
-`app.js` first sets `app.set('trust proxy', 2)`: on Render (staging and production) two proxies sit in front of the API, Cloudflare and then Render's load balancer, and each appends to `X-Forwarded-For`. So `req.ip`, which the rate limits and the audit log need, is the client's address two entries from the end. It is a count, never `true`, because Render keeps an `X-Forwarded-For` the client sends, so the entries further left can be faked. Locally there is one proxy (Next's dev rewrite) and Express stops at the leftmost entry. Found on staging, where a count of 1 recorded Cloudflare's address (`docs/launch-record.md` step 19).
+`app.js` first sets `app.set('trust proxy', 2)`: on Render (staging and production) two proxies sit in front of the API, Cloudflare and then Render's load balancer, and each appends to `X-Forwarded-For`. So `req.ip`, which the rate limits and the audit log need, is the client's address two entries from the end. It is a count, never `true`, because Render keeps an `X-Forwarded-For` the client sends, so the entries further left can be faked. Locally there is one proxy (Next's dev rewrite) and Express stops at the leftmost entry.
 
 Applied in `app.js` / `api/index.js`, in this order:
 
@@ -628,9 +628,9 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 | `ability.turned_on` / `ability.turned_off` | On / Off                                                                           | the site owner                | the site owner's email                                 | `ability` | the state        |
 | `ability.removed` / `ability.restored`     | Remove, Add (Abilities)                                                            | the site owner                | the site owner's email                                 | `ability` | the state        |
 
-An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, placement, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (`CLAUDE.md` → Planned Later → Audit analytics). The request note is the site owner's own text and is never in it.
+An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, placement, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (issue #83, planned for later). The request note is the site owner's own text and is never in it.
 
-Before issue #71 (2026-11-03), a gallery's request message also wrote `ability.requested` with the status `requested`, and ability events had no `placement`. Rows written before Feature 8 (2026-10-30) name a status change `post.archived` (now `post.drafted`) or `post.activated` (now `post.published`). Audit rows are never rewritten, so both names appear in the log.
+Audit rows are never rewritten, so older rows keep earlier names and shapes: a post's status change may be `post.archived` (now `post.drafted`) or `post.activated` (now `post.published`), an ability event may have no `placement`, and a gallery's request message may have written `ability.requested` with the status `requested`.
 
 `actorEmail` is a copy of the email at the time of the event, and only ever a verified one: a Google token that fails verification records none.
 
@@ -644,12 +644,12 @@ Before issue #71 (2026-11-03), a gallery's request message also wrote `ability.r
 - Decrypt `webhook_secret_encrypted` with `lib/crypto.js`, then:
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }` for a post, `{ "websiteId": "...", "galleryId": "..." }` for a gallery, or `{ "websiteId": "...", "ability": "posts" | "galleries" }` for an ability, timeout 5 seconds (`AbortSignal.timeout(5000)`).
 - Non-2xx response, timeout or network error → log the website id and status, and report the same line to Sentry as a warning grouped per website (production only, `lib/sentry.js` → `reportWarning`). **Never** log or report the secret, the URL, the Authorization header or the request headers.
-- A client website's `/api/revalidate` route must not require `postId` (nor `galleryId`): it revalidates its whole `cms` tag whatever the body names (Stevie The Dog's route ignores the body, checked 2026-10-31).
+- A client website's `/api/revalidate` route must not require `postId` (nor `galleryId`): it revalidates its whole `cms` tag whatever the body names (Stevie The Dog's route ignores the body).
 - The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the client guide (Stevie The Dog's `docs/client-website.md`, which each client website copies).
 
 ## Request Emails
 
-`services/requestEmail.js` exports `sendRequestEmail(websiteId, { siteOwnerId, abilityId | galleryId, isUpdate })`. It emails the administrator each time a site owner sends or edits a request message (posts' request form, or a gallery's message), so the admin hears of it without watching the dashboard (Feature 13, issue #65). The approval that follows happens outside the Client Portal: the administrator replies with a styling mock-up, the client approves in that thread, and the administrator sets the ability `live` on the dashboard. No email is sent when an ability goes live.
+`services/requestEmail.js` exports `sendRequestEmail(websiteId, { siteOwnerId, abilityId | galleryId, isUpdate })`. It emails the administrator each time a site owner sends or edits a request message (posts' request form, or a gallery's message), so the admin hears of it without watching the dashboard. The approval that follows happens outside the Client Portal: the administrator replies with a styling mock-up, the client approves in that thread, and the administrator sets the ability `live` on the dashboard. No email is sent when an ability goes live.
 
 - **Provider:** Resend, `POST https://api.resend.com/emails` with `Authorization: Bearer <RESEND_API_KEY>`, called only from the backend (native `fetch`, no SDK), timeout 5 seconds.
 - **From** `3D Web Dev <notifications@3dwebdev.com>`, **to** every active admin account, **Reply-To** the site owner's email, so the administrator's reply goes straight to them. `3dwebdev.com` receives no mail, so the from address is never replied to. Every address is read from the database by id, never from a request.

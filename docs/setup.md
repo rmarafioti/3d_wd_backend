@@ -1,21 +1,6 @@
 # Setup
 
-Instructions for the setup and behavior of database functionality: schema, Prisma conventions, the test database, the crypto module and seeding. Imported from `CLAUDE.md` via `@docs/setup.md`.
-
-## Proposed MVP Functionality
-
-- An administrator can log in.
-- An administrator can create an account for a site owner, linked to a new or an existing website.
-- An administrator can link another website (new or existing) to an existing site owner account.
-- The administrator receives one-time access to a **new** website's API key and webhook secret.
-- A site owner can log in.
-- A site owner can create, edit and delete a post, and set it to draft or published.
-- A site owner can create, edit and delete a photo gallery, and set it to draft or published (Feature 10, after launch).
-- A site owner adds Photo Galleries to a website, says where each gallery and their posts go, and turns an ability on or off; the administrator sets an ability live once its code is wired, and each gallery and posts live once placed (Feature 12, Abilities; split by issue #71).
-- The administrator is emailed when a site owner sends or edits a request message, and a site owner can change where their posts or a gallery should go (Feature 13, Request emails).
-- The site owner's website fetches its published content from the app using its API key, and receives on-demand revalidation calls via its webhook whenever a post or gallery changes.
-
-Out of scope for the MVP: key/secret rotation, admin UI to deactivate accounts or websites (flip `active` by hand for now: Prisma Studio locally, SQL from the API's Render Shell when deployed), business hours. Photo galleries were added after launch (Feature 10).
+Instructions for the setup and behavior of database functionality: schema, Prisma conventions, the test database, the crypto module and seeding. Read on demand (`CLAUDE.md` → Read before). What the system does is `CLAUDE.md` → Project Overview, and what isn't built is its Out of Scope.
 
 ## Schema
 
@@ -203,7 +188,7 @@ Enum ability_status {
   live
 }
 
-Enum placement {     // where an item sits on the client website (issue #71)
+Enum placement {     // where an item sits on the client website
   requested
   live
 }
@@ -312,7 +297,7 @@ A gallery image is uploaded once. Its thumbnail and mobile versions are not sepa
 https://res.cloudinary.com/<cloud name>/image/upload/c_crop,x_200,y_0,w_800,h_800/v1760000000/3dwd/steviethedog/abc123.jpg
 ```
 
-Cloudinary builds the cropped version the first time the URL is requested and caches it, so nothing extra is stored and a changed crop costs nothing. This needs Cloudinary's "strict transformations" setting off, which it is in 3DWD's account (checked 2026-10-31); turning it on would break every cropped URL. The crop is in the stored image's pixels, so the cropped version is exactly the crop's `width` × `height`, which is what the public API returns for `<Image>`. A cropped URL has one more path segment than a stored `src` (the crop, before the version), so a client website that shows gallery crops needs the two extra `remotePatterns` entries in Client websites, below.
+Cloudinary builds the cropped version the first time the URL is requested and caches it, so nothing extra is stored and a changed crop costs nothing. This needs Cloudinary's "strict transformations" setting off, which it is in 3DWD's account; turning it on would break every cropped URL. The crop is in the stored image's pixels, so the cropped version is exactly the crop's `width` × `height`, which is what the public API returns for `<Image>`. A cropped URL has one more path segment than a stored `src` (the crop, before the version), so a client website that shows gallery crops needs the two extra `remotePatterns` entries in Client websites, below.
 
 ### Gallery slugs
 
@@ -342,7 +327,7 @@ Uploads happen at Publish and the save follows straight away, so 24 hours leaves
 
 ### Client websites
 
-A client website shows its images with `next/image`, so its `next.config` must allow their host. It allows only its own images in 3DWD's account, never all of `res.cloudinary.com`: three `remotePatterns` entries (five once it shows a gallery's crops), each with `protocol: "https"` and `hostname: "res.cloudinary.com"` (checked against Next.js 16.3.4's matcher, 2026-10-21):
+A client website shows its images with `next/image`, so its `next.config` must allow their host. It allows only its own images in 3DWD's account, never all of `res.cloudinary.com`: three `remotePatterns` entries (five once it shows a gallery's crops), each with `protocol: "https"` and `hostname: "res.cloudinary.com"`:
 
 | `pathname`                                                  | Allows                                                 |
 | ----------------------------------------------------------- | ------------------------------------------------------ |
@@ -352,7 +337,7 @@ A client website shows its images with `next/image`, so its `next.config` must a
 | `/<cloud name>/image/upload/*/*/3dwd/<media_folder>/**`     | its gallery crops, production (only with a gallery)    |
 | `/<cloud name>/image/upload/*/*/3dwd-dev/<media_folder>/**` | its gallery crops, local testing (only with a gallery) |
 
-In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (checked against Next.js 16.4.3's matcher, 2026-10-31: the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The client guide (Stevie The Dog's `docs/client-website.md`) carries the same rule.
+In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The client guide (Stevie The Dog's `docs/client-website.md`) carries the same rule.
 
 ## Seed Users
 
@@ -366,7 +351,7 @@ email : process.env.SEED_ADMIN_EMAIL   // never hardcoded; ask Rich for the valu
 role  : 'admin'
 ```
 
-Test data for MVP Build Order step 3 (`docs/history.md`) (entered through the Create an Account form — **not** seeded):
+The test site owner (entered through the Create an Account form — **not** seeded):
 
 ```
 name         : 'Richard Marafioti'
@@ -382,4 +367,4 @@ url          : 'https://www.steviethedog.com'
 - If it does not exist, the administrator is created with `role: admin` (`id`, `active`, timestamps come from schema defaults).
 - When `NODE_ENV=production`, the script refuses to run unless passed `--confirm-production` (`npm run seed -- --confirm-production`), since seeding production is a rare, deliberate action.
 - The seed does not create websites and does not call the crypto module.
-- Afterwards, check the row in Prisma Studio (`npx prisma studio`). If it's there, move on to signing in (MVP Build Order step 2, Login).
+- Afterwards, check the row in Prisma Studio (`npx prisma studio`). If it's there, move on to signing in.
