@@ -4,7 +4,7 @@ Rules for changing the system after the MVP is deployed: how to add to the schem
 
 ## 0. Launched
 
-Production launched on 2026-10-28, with Stevie The Dog as its first client website (`docs/deploy.md` → Deployment checklist). Before then, breaking changes were made in place, with no versioned public path, no expand → migrate → contract, and test rows dropped; older entries in `CLAUDE.md` that cite §0 refer to that. From launch on, every rule below applies, and a breaking or data-changing change goes through expand → migrate → contract (Section 3).
+Production launched on 2026-10-28, with Stevie The Dog as its first client website (`docs/launch-record.md`). Before then, breaking changes were made in place, with no versioned public path, no expand → migrate → contract, and test rows dropped; older entries in `CLAUDE.md` that cite §0 refer to that. From launch on, every rule below applies, and a breaking or data-changing change goes through expand → migrate → contract (Section 3).
 
 ## Who depends on what
 
@@ -101,13 +101,13 @@ The backend is stateless today (the session is a signed JWT cookie, nothing is h
 
 - **New env vars** are added to `.env.example` (with a comment), to `REQUIRED_ENV` in `lib/config.js` if the server can't run without them (with a strength check there if it is a secret), to `testing/setup.js` if tests need a fixed value, and to Render before the code that reads them is deployed (in `render.yaml`, or set on the service by hand for a secret, `docs/deploy.md` → Environment variables).
 - **Back up before destructive migrations:** run the `3dwd-backup-database` cron job by hand (Trigger Run in Render) and confirm the dump is in R2 before any migration that drops or rewrites data (`docs/deploy.md` → Every deploy after launch). `SECRET_ENCRYPTION_KEY` is backed up separately (`docs/setup.md`).
-- **Staging before the first breaking change after the production launch:** a staging environment (the `staging` environment in `render.yaml`, with its own database, and `staging.3dwebdev.com` on Vercel) where migrations and contract changes are deployed and checked before production. Staging was built and tested before the first production deploy (`docs/deploy.md` → Environments) and is kept for now, reassessed once its cost can be justified (`docs/deploy.md` step 30). If it is deleted, it is added back to `render.yaml` before the first breaking change. Production deploys from the `production` branch either way, so a release is always deliberate (`npm run release`).
+- **Staging before the first breaking change after the production launch:** a staging environment (the `staging` environment in `render.yaml`, with its own database, and `staging.3dwebdev.com` on Vercel) where migrations and contract changes are deployed and checked before production. Staging was built and tested before the first production deploy (`docs/deploy.md` → Environments) and is kept for now, reassessed once its cost can be justified (`CLAUDE.md` → Current progress → Next). If it is deleted, it is added back to `render.yaml` before the first breaking change. Production deploys from the `production` branch either way, so a release is always deliberate (`npm run release`).
 - **Rollback:** a code deploy can be rolled back; a migration cannot. That is why schema changes are additive and removals happen in a later release. How to roll back, and how far the backend can go, is `docs/deploy.md` → Rolling back.
 - **Production data changes** only through the API, a reviewed migration or a reviewed one-off script — never by hand, except the documented `active` flips for accounts and websites (SQL from the Render Shell) until endpoints exist for them.
 
 ## 9. Docs, tests and review still gate everything
 
 - Every rule in `CLAUDE.md` (Role Ownership Check, Anti-Patterns, Code Style, Code Review, Unit Tests, Workflow Checklist) applies to new work unchanged.
-- New work after the MVP is tracked as numbered features in `CLAUDE.md`, each one its own branch → plan → approval → build → verify → PR, the same rhythm as the Build Order.
+- New work after the MVP is tracked as numbered features in `CLAUDE.md`, each one its own branch → plan → approval → build → verify → PR, the same rhythm as the MVP Build Order (`docs/history.md`).
 - A feature that changes these rules updates this file in the same PR.
 - After a change to the contract, the schema or a flow, run the Documentation Sync audit (`CLAUDE.md`) once both repos have merged it.

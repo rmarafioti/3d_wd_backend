@@ -16,7 +16,7 @@ const app = express();
 // appends to X-Forwarded-For, so req.ip (the rate limits' key and the audit log's ip) is the entry
 // two from the end. A count, never `true`: Render keeps whatever X-Forwarded-For a client sends,
 // so entries further left can be faked. Locally there is one proxy (Next's dev rewrite), and
-// Express stops at the leftmost entry. Checked on staging (docs/deploy.md → checklist step 19).
+// Express stops at the leftmost entry. Checked on staging (docs/launch-record.md step 19).
 app.set('trust proxy', 2);
 
 app.use(helmet());

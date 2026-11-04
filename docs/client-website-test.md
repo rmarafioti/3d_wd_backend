@@ -1,6 +1,6 @@
 # Client Website Test
 
-The runbook for testing a client website against this backend, end to end: posts render on the website, and a post change reaches the live site within moments. Imported from `CLAUDE.md` via `@docs/client-website-test.md`.
+The runbook for testing a client website against this backend, end to end: posts render on the website, and a post change reaches the live site within moments. Not imported into `CLAUDE.md`: read it when onboarding or testing a client website (`docs/deploy.md` → Onboarding a client website).
 
 The client side (env vars, `getPosts()`, rendering, the `/api/revalidate` route) is specced in the client guide, Stevie The Dog's `docs/client-website.md`, which each client website copies as its own. This file covers only what is done from this repo's side. The backend behaviour it tests is in `docs/endpoints.md` → Public and → Revalidation.
 

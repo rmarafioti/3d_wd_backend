@@ -368,7 +368,7 @@ email : process.env.SEED_ADMIN_EMAIL   // never hardcoded; ask Rich for the valu
 role  : 'admin'
 ```
 
-Test data for Build Order step 3 (entered through the Create an Account form — **not** seeded):
+Test data for MVP Build Order step 3 (`docs/history.md`) (entered through the Create an Account form — **not** seeded):
 
 ```
 name         : 'Richard Marafioti'
@@ -384,4 +384,4 @@ url          : 'https://www.steviethedog.com'
 - If it does not exist, the administrator is created with `role: admin` (`id`, `active`, timestamps come from schema defaults).
 - When `NODE_ENV=production`, the script refuses to run unless passed `--confirm-production` (`npm run seed -- --confirm-production`), since seeding production is a rare, deliberate action.
 - The seed does not create websites and does not call the crypto module.
-- Afterwards, check the row in Prisma Studio (`npx prisma studio`). If it's there, move on to Build Order step 2, Login.
+- Afterwards, check the row in Prisma Studio (`npx prisma studio`). If it's there, move on to signing in (MVP Build Order step 2, Login).
