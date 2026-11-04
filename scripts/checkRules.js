@@ -29,6 +29,9 @@ const SECRET_FILES = [
 // require('fs')), and the file stays identical to the frontend's, so the require rule skips it.
 const REQUIRE_RULE_SKIPS = ['.claude/hooks/guard.test.js'];
 
+// This checker and its test spell out every pattern they look for, so no rule reads them.
+const CHECKER_FILES = ['scripts/checkRules.js', 'scripts/checkRules.test.js'];
+
 const SECRET_COLUMN = /\b(apiKeyHash|webhookSecretEncrypted)\b/;
 const UNSAFE_RAW_SQL = /\$(queryRawUnsafe|executeRawUnsafe)\b/;
 const REQUIRE_CALL = /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g;
@@ -155,6 +158,7 @@ function checkServerErrorMessages(file, text, endpointsDoc) {
 }
 
 function checkFile(file, text, endpointsDoc) {
+  if (CHECKER_FILES.includes(file)) return [];
   return [
     ...checkEmDash(file, text),
     ...checkNodePrefix(file, text),
