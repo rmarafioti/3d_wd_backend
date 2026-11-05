@@ -13,7 +13,7 @@ const { toBody } = require('../../lib/postBody');
 const { signUpload } = require('../../lib/cloudinary');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
-const { ABILITY_SELECT, toAbility } = require('../../lib/abilities');
+const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
@@ -107,6 +107,28 @@ function recordPostEvent(tx, req, action, post) {
     targetId: post.id,
     metadata: { websiteId: post.websiteId },
   });
+}
+
+// Once a website has no posts left (not deleted), a posts request still waiting to be placed has
+// nothing to place, so its placement, note and requestedAt are cleared; the next first post asks
+// again. A live placement is kept. Two deletes of the last two posts at the same instant each still
+// see the other post, so neither clears; the new first post rule still lets the form be sent again.
+async function clearPostsRequestIfNoPosts(tx, req, websiteId) {
+  const remaining = await tx.post.count({ where: { websiteId, deletedAt: null } });
+  if (remaining > 0) return;
+
+  const ability = await tx.websiteAbility.findFirst({
+    where: { websiteId, kind: 'posts', removedAt: null, placement: 'requested' },
+    select: { id: true },
+  });
+  if (!ability) return;
+
+  const cleared = await tx.websiteAbility.update({
+    where: { id: ability.id },
+    data: { placement: null, requestNote: null, requestedAt: null },
+    select: ABILITY_SELECT,
+  });
+  await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_REQUEST_CLEARED, cleared);
 }
 
 // GET /api/siteOwner/websites — the site owner's active websites, each with its abilities (not
@@ -280,6 +302,7 @@ router.delete('/posts/:id', async (req, res) => {
   await prisma.$transaction(async (tx) => {
     await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_DELETED, post);
     await tx.post.update({ where: { id: post.id }, data: { deletedAt: new Date() } });
+    await clearPostsRequestIfNoPosts(tx, req, post.websiteId);
   });
 
   res.status(204).end();

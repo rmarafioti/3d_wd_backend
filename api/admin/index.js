@@ -34,13 +34,14 @@ const ACCOUNT_SELECT = {
   createdAt: true,
 };
 const WEBSITE_SUMMARY_SELECT = { id: true, websiteName: true, url: true, active: true };
-// A gallery's name, status and request note (where the site owner wants it), plus one crop column
-// per kind from each of its images (at most 30), enough for toAdminGallerySummary's counts and
-// flags. Crops aren't files, so the admin can't see them in Cloudinary; this is how the admin knows
-// a site owner cropped a gallery.
+// A gallery's name, slug (the Gallery Code both dashboards show), status and request note (where
+// the site owner wants it), plus one crop column per kind from each of its images (at most 30),
+// enough for toAdminGallerySummary's counts and flags. Crops aren't files, so the admin can't see
+// them in Cloudinary; this is how the admin knows a site owner cropped a gallery.
 const ADMIN_GALLERY_SELECT = {
   id: true,
   galleryName: true,
+  slug: true,
   status: true,
   placement: true,
   requestNote: true,
@@ -186,8 +187,8 @@ function uniqueConflict(err) {
 
 // A gallery row (selected with ADMIN_GALLERY_SELECT) → the contract's AdminGallerySummary. A
 // crop's columns are all set or all null, so its x tells whether the image has that crop. A flag
-// is true only when every image has the crop (Rich, 2026-10-31): saves already refuse a mix, and
-// this keeps a row written any other way from reading as cropped.
+// is true only when every image has the crop: saves already refuse a mix, and this keeps a row
+// written any other way from reading as cropped.
 function toAdminGallerySummary({ images, ...gallery }) {
   const everyImageHas = (column) =>
     images.length > 0 && images.every((image) => image[column] !== null);
@@ -260,12 +261,15 @@ router.get('/websites', async (req, res) => {
   res.json({ data: websites });
 });
 
-// GET /api/admin/auditEvents — one UTC month of audit events, newest first, a page at a time.
-// Query: month (YYYY-MM, default the current month), limit (default 50, max 100) and cursor (the
-// previous page's nextCursor). Read-only: nothing edits or deletes audit rows.
+// GET /api/admin/auditEvents — one UTC month of audit events, or a from/to range, newest first, a
+// page at a time. Query: month (YYYY-MM, default the current month), from and to (instants, sent
+// together, replacing month), limit (default 50, max 100) and cursor (the previous page's
+// nextCursor). Read-only: nothing edits or deletes audit rows.
 router.get('/auditEvents', async (req, res) => {
   const input = validate(listAuditEventsSchema, req.query);
-  const { start, end } = toMonthRange(input.month);
+  const { start, end } = input.from
+    ? { start: input.from, end: input.to }
+    : toMonthRange(input.month);
   const limit = input.limit ?? DEFAULT_PAGE_SIZE;
 
   // UUIDv7 ids are time-ordered, so id order is creation order and the cursor is the last id seen.
@@ -420,9 +424,8 @@ router.post('/accounts/:id/websites', async (req, res) => {
 
 // PATCH /api/admin/abilities/:id/status — body { status: 'live' }. Sets an ability live once its
 // code is wired into the client website. Photo Galleries goes live on its own, with no request;
-// each gallery is then set live by the route below. Posts are one switch (Rich, 2026-11-03,
-// issue #71): their request form must be waiting, and setting them live places them too. A
-// removed ability is a 404.
+// each gallery is then set live by the route below. Posts are one switch: their request form must
+// be waiting, and setting them live places them too. A removed ability is a 404.
 router.patch('/abilities/:id/status', async (req, res) => {
   const { status } = validate(abilityStatusSchema, req.body ?? {});
 

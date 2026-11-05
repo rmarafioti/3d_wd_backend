@@ -301,17 +301,12 @@ Cloudinary builds the cropped version the first time the URL is requested and ca
 
 ### Gallery slugs
 
-A gallery's `slug` is how a client website asks for it (`GET /api/public/galleries/:slug`). Set once, when the gallery is created, and never changed, so renaming a gallery never breaks the website showing it (`lib/slug.js`):
+A gallery's `slug` is how a client website asks for it (`GET /api/public/galleries/:slug`), shown to the site owner as the Gallery Code. It is generated once, when the gallery is created, and never changed, so renaming a gallery never breaks the website showing it (`lib/slug.js`):
 
-1. Take the gallery name, remove accents, and lowercase it.
-2. Turn every run of characters other than `a`–`z` and `0`–`9` into one hyphen, keep the first 60 characters, and drop hyphens at either end. A name with nothing left becomes `gallery`.
-3. If another gallery on the same website already has that slug, deleted ones included, add `-2`, then `-3`, and so on. Other websites' galleries don't count.
+1. Draw 8 characters, each uniformly from `a`–`z` and `0`–`9` (`crypto.randomInt`), such as `k3x9p2qa`.
+2. If another gallery on the same website already has it, deleted ones included, draw again. Other websites' galleries don't count. A clash is about 1 in 2.8 trillion; the `(website_id, slug)` unique index is the backstop.
 
-| Gallery name                                  | `slug`           |
-| --------------------------------------------- | ---------------- |
-| `Our Interior!`                               | `our-interior`   |
-| `Café Art`                                    | `cafe-art`       |
-| `Our Interior` (when `our-interior` is taken) | `our-interior-2` |
+It is never made from `galleryName`. Galleries created before this rule keep the name-based slugs they were given (`our-interior`, `our-interior-2`), so anything already wired to them keeps working.
 
 ### Upload cleanup
 

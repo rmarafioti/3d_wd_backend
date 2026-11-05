@@ -203,6 +203,7 @@ describe('GET /api/admin/accounts', () => {
       {
         id: plain.id,
         galleryName: 'Plain',
+        slug: plain.slug,
         status: 'draft',
         placement: null,
         requestNote: null,
@@ -213,6 +214,7 @@ describe('GET /api/admin/accounts', () => {
       {
         id: mixed.id,
         galleryName: 'Mixed',
+        slug: mixed.slug,
         status: 'published',
         placement: null,
         requestNote: null,
@@ -223,6 +225,7 @@ describe('GET /api/admin/accounts', () => {
       {
         id: cropped.id,
         galleryName: 'Cropped',
+        slug: cropped.slug,
         status: 'published',
         placement: 'requested',
         requestNote: 'The portfolio page',
@@ -737,6 +740,53 @@ describe('GET /api/admin/auditEvents', () => {
     assert.equal(res.body.nextCursor, res.body.data[49].id);
   });
 
+  it('returns only the events from from up to, not including, to, ignoring month', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent({ createdAt: new Date('2026-11-05T04:59:59.999Z') });
+    const first = await createAuditEvent({ createdAt: new Date('2026-11-05T05:00:00.000Z') });
+    const last = await createAuditEvent({ createdAt: new Date('2026-11-06T04:59:59.999Z') });
+    await createAuditEvent({ createdAt: new Date('2026-11-06T05:00:00.000Z') });
+
+    const res = await as(
+      admin,
+      'get',
+      '/api/admin/auditEvents?month=2020-01&from=2026-11-05T05:00:00.000Z&to=2026-11-06T05:00:00.000Z',
+    );
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      res.body.data.map((event) => event.id),
+      [last.id, first.id],
+    );
+    assert.equal(res.body.nextCursor, null);
+  });
+
+  it('pages through a range with the same from and to and the returned cursor', async () => {
+    const admin = await createAdmin();
+    const first = await createAuditEvent({ createdAt: new Date('2026-11-05T06:00:00.000Z') });
+    const second = await createAuditEvent({ createdAt: new Date('2026-11-05T07:00:00.000Z') });
+    const third = await createAuditEvent({ createdAt: new Date('2026-11-05T08:00:00.000Z') });
+    await createAuditEvent({ createdAt: new Date('2026-11-07T08:00:00.000Z') });
+    const range = 'from=2026-11-05T05:00:00.000Z&to=2026-11-06T05:00:00.000Z&limit=2';
+
+    const page1 = await as(admin, 'get', `/api/admin/auditEvents?${range}`);
+    const page2 = await as(
+      admin,
+      'get',
+      `/api/admin/auditEvents?${range}&cursor=${page1.body.nextCursor}`,
+    );
+
+    assert.deepEqual(
+      page1.body.data.map((event) => event.id),
+      [third.id, second.id],
+    );
+    assert.deepEqual(
+      page2.body.data.map((event) => event.id),
+      [first.id],
+    );
+    assert.equal(page2.body.nextCursor, null);
+  });
+
   const invalidQueries = [
     ['month=2026-13', 'month', 'Enter a month as YYYY-MM.'],
     ['month=2026-1', 'month', 'Enter a month as YYYY-MM.'],
@@ -746,6 +796,17 @@ describe('GET /api/admin/auditEvents', () => {
     ['limit=1.5', 'limit', 'Limit must be a whole number from 1 to 100.'],
     ['limit=abc', 'limit', 'Limit must be a whole number from 1 to 100.'],
     ['cursor=not-a-uuid', 'cursor', 'Invalid cursor.'],
+    ['from=2026-11-05T05:00:00.000Z', 'to', 'Send from and to together.'],
+    ['to=2026-11-06T05:00:00.000Z', 'from', 'Send from and to together.'],
+    ['from=2026-11-05&to=2026-11-06T05:00:00.000Z', 'from', 'Enter a valid date and time.'],
+    ['from=2026-11-05T05:00:00.000Z&to=tomorrow', 'to', 'Enter a valid date and time.'],
+    ['from=2026-11-05T05:00:00.000Z&to=2026-11-05T05:00:00.000Z', 'to', 'To must be after from.'],
+    ['from=2026-11-06T05:00:00.000Z&to=2026-11-05T05:00:00.000Z', 'to', 'To must be after from.'],
+    [
+      'from=2026-10-01T00:00:00.000Z&to=2026-11-01T00:00:00.001Z',
+      'to',
+      'The range can be at most 31 days.',
+    ],
   ];
 
   for (const [query, field, message] of invalidQueries) {
@@ -982,6 +1043,7 @@ describe('PATCH /api/admin/galleries/:id/placement', () => {
     assert.deepEqual(res.body.data, {
       id: gallery.id,
       galleryName: 'Art',
+      slug: gallery.slug,
       status: 'published',
       placement: 'live',
       requestNote: 'The portfolio page',

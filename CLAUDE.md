@@ -316,7 +316,7 @@ root
 │   ├── rateLimit.js          *rate limiters: login, the public API, upload signing
 │   ├── retention.js          *how long deleted content stays recoverable (30 days)
 │   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush
-│   └── slug.js               *gallery slug from its name, -2/-3 on a clash within the website
+│   └── slug.js               *gallery slug: 8 random lowercase letters and digits, unique within the website
 ├── errors/                   *custom error classes + the single error handler (error envelope)
 │   ├── serverError.js
 │   └── index.js
@@ -366,7 +366,7 @@ root
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-04)
+## Current progress (as of 2026-11-05)
 
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 13 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-03-3`.
@@ -375,6 +375,7 @@ root
   - **Issue #73 done:** the session docs trimmed, the legacy fields dropped (released), and the process shared with the frontend in `docs/process.md`; `npm run check:sync` reports all four pairs identical.
   - **Issue #90 done:** every file header is one or two lines on what the file is for, with no history, and `npm run check:rules` enforces it. The frontend's half of the V1 trim (frontend issue #77) is merged.
   - **Issue #69 done:** `build-spec` is its own GitHub template repo, `rmarafioti/build-spec` (local `../build-spec`), outside the 3DWD `gh` token: Rich pushes there himself.
+  - **Issue #93 done** (frontend issue #81): deleting a website's last post clears a `requested` posts placement, new galleries get a random 8-character slug (the Gallery Code, also on `AdminGallerySummary`), and the admin's Audit Events take a `from` / `to` range for one local day. Additive; no migration.
   - **The master doc** is now the Proposal, Build vs Buy and a Glossary; its Client Portal tabs, Deployment and Client to Website included, are deleted.
 - **Next:**
   1. The frontend drops its master doc mentions (frontend issue #65), and Stevie's `CLAUDE.md` and `.prettierignore` stop calling its guide a copy of the master doc (a handoff to its session).
@@ -388,17 +389,18 @@ root
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "Test Post 1", written and edited at launch (`docs/launch-record.md` step 28), live on Stevie's site (`status` `published`)
   - the `audit_event` rows since launch, kept (audit rows are never deleted)
+  - Estudio Castelo, an active onboarded client: nothing from its account (its account, website, `account_website` link, abilities, posts, galleries or images) is ever deleted unless Rich says so.
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-03):
+- **Local database baseline** (test rows cleared on 2026-11-05):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
-  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability and no galleries (#71's two test galleries, their images and the galleries ability deleted on 2026-11-03)
+  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability and no galleries (#93's test gallery, its image and the galleries ability deleted on 2026-11-05)
   - the `audit_event` rows from local sign-ins and changes, kept: audit rows are not cleared after a test, locally or in production
 
-  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 test gallery's image. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Four client websites are waiting to onboard.
+  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 and #93 test galleries' images. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Four client websites are waiting to onboard.
 
 - **Pending notes:**
   - **Backup `pg_dump` version:** solved by `Dockerfile.backup` (Node 24 on Debian trixie, `postgresql-client-17`). Locally, the Homebrew `postgresql@17` client is used for backups (README); the Homebrew Postgres 15 server on the Mac is separate and is left as it is.
@@ -408,11 +410,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-05** `feat/ui-adjustments` (issue #93; frontend issue #81, the lead): deleting a website's last post clears a `requested` posts placement (`ability.request_cleared`), and new galleries get 8 random lowercase letters and digits as their slug, created at Serializable isolation so a same-name race still answers 409. `AdminGallerySummary` gains `slug`, and `GET /api/admin/auditEvents` takes an optional `from` / `to` range. Additive. 596 tests.
 - **2026-11-04** `chore/trim-file-headers` (issue #90): every file header is cut to one or two lines on what the file is for, with no history; a reason the code needs moves above that code, and the rest restated `docs/`. `npm run check:rules` fails a longer header (the guard hook pair skipped), and Code Style and `/code-sweep` say so. No behaviour change. 591 tests.
 - **2026-11-04** `docs/v1-trim` (issue #77; frontend issue #77): only `docs/process.md` is imported now, with a Read before table in its place, and `CLAUDE.md` is ordered by weight with each rule written once and no history inside the rules. Planned Later moves to issues labelled `later` (#78–#88), the new `npm run check:rules` enforces five Code Style rules in CI, and `/code-sweep` asks "can this go?" first. What loads every session drops from about 272 KB to about 62 KB. 584 tests.
 - **2026-11-04** `docs/shared-process` (issue #73): Issue Workflow, Cross-Repo Handoff, Version Control, Releases and the shared Reminders rule move into `docs/process.md`, identical in both repos and checked by `npm run check:sync`; one issue is now one branch per repo. `/doc-sync`'s must-agree tier becomes a check of the frontend's backend facts, and Planned Later holds the frontend's lines, so it is the only copy. Docs only.
 - **2026-11-03** `chore/drop-legacy-fields` (issue #73; frontend issue #70): post `active` (Feature 8's contract step, `drop_post_active`), the unused `ability_status` value `requested` (`drop_ability_status_requested`) and the request email cap are removed, and `docs/endpoints.md`'s per-route sections stop repeating the contract. Breaking for the app API only; the frontend never sent or read `active`. 568 tests.
-- **2026-11-03** `docs/trim-session-docs` (issue #73): what loads every session is cut by about a quarter, with no rule lost. The progress table becomes this list, Now short bullets and each Feature one line; the older entries, the MVP Build Order and the Features as recorded move word for word to `docs/history.md`, the deploy checklist to `docs/launch-record.md`, and `docs/client-website-test.md` is no longer imported. The Workflow Checklist's repeated checks fold into the self-review, the Code Review Output and Scope live only in `/code-sweep`, decisions are recorded once (in the PR), and the name and date notes on rules are gone. Docs only.
 
 ## Features
 
