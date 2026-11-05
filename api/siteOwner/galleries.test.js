@@ -181,7 +181,7 @@ describe('POST /api/siteOwner/galleries', () => {
       websiteId: website.id,
       websiteName: 'Stevie The Dog',
       galleryName: 'Our Interior!',
-      slug: 'our-interior',
+      slug: data.slug,
       title: 'Inside the shop',
       copy: 'Line one\nLine two',
       status: 'published',
@@ -229,16 +229,22 @@ describe('POST /api/siteOwner/galleries', () => {
     assert.equal(res.body.data.status, 'draft');
   });
 
-  it('adds -2 to the slug when the website already has it, even on a deleted gallery', async () => {
+  it('gives a new gallery a slug of 8 random lowercase letters and digits, not its name', async () => {
     const { owner, website } = await ownerWithGalleries();
-    await createGallery(website, { slug: 'interior', deletedAt: new Date() });
-    const { website: other } = await createWebsite();
-    await createGallery(other, { slug: 'interior-2' });
+    const send = () =>
+      as(owner, 'post', '/api/siteOwner/galleries').send(
+        newGallery(website, { galleryName: 'Art' }),
+      );
 
-    const res = await as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(website));
+    const first = await send();
+    await as(owner, 'delete', `/api/siteOwner/galleries/${first.body.data.id}`);
+    const second = await send();
 
-    assert.equal(res.status, 201);
-    assert.equal(res.body.data.slug, 'interior-2');
+    for (const res of [first, second]) {
+      assert.equal(res.status, 201);
+      assert.match(res.body.data.slug, /^[a-z0-9]{8}$/);
+    }
+    assert.notEqual(first.body.data.slug, second.body.data.slug);
   });
 
   it("returns 409 for a name another of the website's galleries has, in any case", async () => {
@@ -275,18 +281,18 @@ describe('POST /api/siteOwner/galleries', () => {
     assert.equal(await prisma.gallery.count(), 1);
   });
 
-  it('gives two names that make the same slug, sent at once, their own slugs', async () => {
+  it('creates two different galleries sent at once, each with its own slug', async () => {
     const { owner, website } = await ownerWithGalleries();
     const send = (galleryName) =>
       as(owner, 'post', '/api/siteOwner/galleries').send(newGallery(website, { galleryName }));
 
-    const responses = await Promise.all([send('Art!'), send('art')]);
+    const responses = await Promise.all([send('Art'), send('Prints')]);
 
     assert.deepEqual(
       responses.map((res) => res.status),
       [201, 201],
     );
-    assert.deepEqual(responses.map((res) => res.body.data.slug).sort(), ['art', 'art-2']);
+    assert.notEqual(responses[0].body.data.slug, responses[1].body.data.slug);
   });
 
   it('records the new gallery in the audit log and revalidates the website', async () => {

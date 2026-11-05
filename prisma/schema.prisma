@@ -175,8 +175,8 @@ model Image {
 }
 
 // A photo gallery: a section of a client website showing a series of images. The slug is how the
-// client website asks for it; it is made from the gallery's name once and never changes
-// (lib/slug.js), so renaming the gallery never breaks the website.
+// client website asks for it; it is generated once, 8 random lowercase letters and digits, and
+// never changes (lib/slug.js), so renaming the gallery never breaks the website.
 model Gallery {
   id          String        @id @default(uuid(7))
   websiteId   String        @map("website_id")

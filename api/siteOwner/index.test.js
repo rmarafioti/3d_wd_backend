@@ -882,6 +882,80 @@ describe('DELETE /api/siteOwner/posts/:id', () => {
     }
   });
 
+  it("clears a requested posts placement when the website's last post is deleted", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      placement: 'requested',
+      requestNote: 'Under the menu',
+      requestedAt: new Date(),
+    });
+    const post = await createPost(website);
+
+    const res = await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    assert.equal(res.status, 204);
+    const websites = await as(owner, 'get', '/api/siteOwner/websites');
+    const posts = websites.body.data[0].abilities.find((item) => item.kind === 'posts');
+    assert.equal(posts.placement, null);
+    assert.equal(posts.requestNote, null);
+    assert.equal(posts.requestedAt, null);
+    assert.deepEqual((await auditEvents()).at(-1), {
+      action: 'ability.request_cleared',
+      actorId: owner.id,
+      actorEmail: owner.email,
+      targetType: 'ability',
+      targetId: ability.id,
+      metadata: {
+        websiteId: website.id,
+        kind: 'posts',
+        status: 'added',
+        turnedOn: true,
+        placement: null,
+        removed: false,
+      },
+    });
+  });
+
+  it('keeps a live posts placement when the last post is deleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const requestedAt = new Date();
+    const ability = await createAbility(website, 'posts', {
+      status: 'live',
+      placement: 'live',
+      requestNote: 'Under the menu',
+      requestedAt,
+    });
+    const post = await createPost(website);
+
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.equal(stored.placement, 'live');
+    assert.equal(stored.requestNote, 'Under the menu');
+    assert.deepEqual(stored.requestedAt, requestedAt);
+    assert.deepEqual(
+      (await auditEvents()).map((event) => event.action),
+      ['post.deleted'],
+    );
+  });
+
+  it('keeps a requested posts placement while another post, even a draft, is left', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      placement: 'requested',
+      requestNote: 'Under the menu',
+      requestedAt: new Date(),
+    });
+    await createPost(website, { status: 'draft' });
+    const post = await createPost(website);
+
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.equal(stored.placement, 'requested');
+    assert.equal(stored.requestNote, 'Under the menu');
+  });
+
   it("leaves a deleted post out of the website's post summaries", async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const kept = await createPost(website, { postName: 'Kept' });

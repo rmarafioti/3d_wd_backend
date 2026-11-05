@@ -135,25 +135,39 @@ function recordGalleryEvent(tx, req, action, gallery) {
   });
 }
 
+// A create that lost to a concurrent one: a serialization failure (Postgres 40001, which the pg
+// driver adapter raises at commit as TransactionWriteConflict, or Prisma's P2034) or a unique
+// index clash (P2002).
+function isCreateClash(err) {
+  return (
+    err.code === 'P2002' || err.code === 'P2034' || err.cause?.kind === 'TransactionWriteConflict'
+  );
+}
+
 // Gallery, then images, in one transaction: if any insert fails the whole create rolls back.
+// Serializable, so two creates of the same name at once can't both pass the name check: Postgres
+// fails one of them, and the route's retry then answers the 409.
 function createGallery(req, website, input) {
-  return prisma.$transaction(async (tx) => {
-    await assertNameAvailable(tx, website.id, input.galleryName);
-    const created = await tx.gallery.create({
-      data: {
-        websiteId: website.id,
-        galleryName: input.galleryName,
-        slug: await findFreeSlug(tx, website.id, input.galleryName),
-        title: input.title,
-        copy: input.copy,
-        status: input.status,
-      },
-      select: { id: true, websiteId: true },
-    });
-    await writeImages(tx, created.id, input.images);
-    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_CREATED, created);
-    return tx.gallery.findUnique({ where: { id: created.id }, select: GALLERY_SELECT });
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      await assertNameAvailable(tx, website.id, input.galleryName);
+      const created = await tx.gallery.create({
+        data: {
+          websiteId: website.id,
+          galleryName: input.galleryName,
+          slug: await findFreeSlug(tx, website.id),
+          title: input.title,
+          copy: input.copy,
+          status: input.status,
+        },
+        select: { id: true, websiteId: true },
+      });
+      await writeImages(tx, created.id, input.images);
+      await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_CREATED, created);
+      return tx.gallery.findUnique({ where: { id: created.id }, select: GALLERY_SELECT });
+    },
+    { isolationLevel: 'Serializable' },
+  );
 }
 
 // POST /api/siteOwner/galleries — create a gallery with its images.
@@ -173,15 +187,14 @@ router.post('/', async (req, res) => {
 
   assertImagesInFolder(input.images, website.mediaFolder);
 
-  // Two creates at the same moment can pick the same free slug, and the second then fails the
-  // (websiteId, slug) unique index (P2002). It is retried once: with the first now committed, the
-  // retry either answers the 409 (same name) or picks the next free slug (a name that makes the
-  // same slug, "Art!" and "art").
+  // Two creates on one website at the same moment clash (isCreateClash), whatever their names. It
+  // is retried once: with the first now committed, the retry answers the 409 for the same name,
+  // or saves a different name with its own slug.
   let gallery;
   try {
     gallery = await createGallery(req, website, input);
   } catch (err) {
-    if (err.code !== 'P2002') throw err;
+    if (!isCreateClash(err)) throw err;
     gallery = await createGallery(req, website, input);
   }
 
