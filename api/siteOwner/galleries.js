@@ -1,5 +1,5 @@
 // Site owner gallery routes, mounted at /api/siteOwner/galleries: create, read, edit, draft or
-// publish, and delete a photo gallery, and send or edit its request message.
+// publish, set its publish date, and delete a photo gallery, and send or edit its request message.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -10,10 +10,12 @@ const {
   galleryStatusSchema,
   requestGallerySchema,
 } = require('../../validation/gallery');
+const { publishAtSchema, assertPublishAtAllowed } = require('../../validation/fields');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { findFreeSlug } = require('../../lib/slug');
 const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const sendRequestEmail = require('../../services/requestEmail');
 
@@ -41,6 +43,8 @@ const GALLERY_SELECT = {
   placement: true,
   requestNote: true,
   requestedAt: true,
+  publishAt: true,
+  publishedAt: true,
   createdAt: true,
   updatedAt: true,
   website: { select: { websiteName: true } },
@@ -79,6 +83,8 @@ function toGallery(gallery) {
     placement: gallery.placement,
     requestNote: gallery.requestNote,
     requestedAt: gallery.requestedAt,
+    publishAt: gallery.publishAt,
+    publishedAt: gallery.publishedAt,
     createdAt: gallery.createdAt,
     updatedAt: gallery.updatedAt,
     images: gallery.images.map((image) => ({
@@ -159,6 +165,8 @@ function createGallery(req, website, input) {
           title: input.title,
           copy: input.copy,
           status: input.status,
+          publishAt: input.publishAt ?? null,
+          publishedAt: input.status === 'published' ? new Date() : null,
         },
         select: { id: true, websiteId: true },
       });
@@ -211,18 +219,22 @@ router.get('/:id', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/galleries/:id — full edit form: the gallery's fields plus the complete
-// image list. websiteId, status and slug can't be changed here.
+// image list. websiteId, status and slug can't be changed here; publishAt is left as it is when it
+// isn't sent.
 router.patch('/:id', async (req, res) => {
   const input = validate(updateGallerySchema, req.body ?? {});
 
   const gallery = await findOwnedGallery(req.user.id, req.params.id, {
     id: true,
     websiteId: true,
+    status: true,
+    publishAt: true,
     website: { select: { mediaFolder: true } },
     images: { select: { id: true } },
   });
   if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
 
+  assertPublishAtAllowed(input.publishAt, gallery);
   assertOwnImages(input.images, gallery.images);
   assertImagesInFolder(input.images, gallery.website.mediaFolder);
   const keptImageIds = input.images.filter((image) => image.id).map((image) => image.id);
@@ -233,7 +245,12 @@ router.patch('/:id', async (req, res) => {
     await assertNameAvailable(tx, gallery.websiteId, input.galleryName, gallery.id);
     await tx.gallery.update({
       where: { id: gallery.id },
-      data: { galleryName: input.galleryName, title: input.title, copy: input.copy },
+      data: {
+        galleryName: input.galleryName,
+        title: input.title,
+        copy: input.copy,
+        publishAt: input.publishAt,
+      },
     });
     await tx.galleryImage.deleteMany({
       where: { galleryId: gallery.id, id: { notIn: keptImageIds } },
@@ -248,13 +265,15 @@ router.patch('/:id', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/galleries/:id/status — set a gallery to draft or published. A draft is
-// hidden from the client website; the site owner still sees it.
+// hidden from the client website; the site owner still sees it. Publishing by hand clears a go-live
+// time.
 router.patch('/:id/status', async (req, res) => {
   const { status } = validate(galleryStatusSchema, req.body ?? {});
 
   const gallery = await findOwnedGallery(req.user.id, req.params.id, {
     id: true,
     websiteId: true,
+    status: true,
   });
   if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
 
@@ -264,13 +283,40 @@ router.patch('/:id/status', async (req, res) => {
     await recordGalleryEvent(tx, req, action, gallery);
     return tx.gallery.update({
       where: { id: gallery.id },
-      data: { status },
+      data: toStatusData(status, gallery.status),
       select: GALLERY_SELECT,
     });
   });
 
   res.json({ data: toGallery(updated) });
   revalidate(gallery.websiteId, { galleryId: gallery.id });
+});
+
+// PATCH /api/siteOwner/galleries/:id/publishAt — set or clear a draft's go-live date from the
+// gallery's page, without the full edit form. Only a draft has one, so there is no revalidation.
+router.patch('/:id/publishAt', async (req, res) => {
+  const input = validate(publishAtSchema, req.body ?? {});
+
+  const gallery = await findOwnedGallery(req.user.id, req.params.id, {
+    id: true,
+    websiteId: true,
+    status: true,
+    publishAt: true,
+  });
+  if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
+
+  assertPublishAtAllowed(input.publishAt, gallery);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_UPDATED, gallery);
+    return tx.gallery.update({
+      where: { id: gallery.id },
+      data: { publishAt: input.publishAt },
+      select: GALLERY_SELECT,
+    });
+  });
+
+  res.json({ data: toGallery(updated) });
 });
 
 // Saves a gallery's request note and puts its placement to requested (from none or live), so the
@@ -343,7 +389,10 @@ router.delete('/:id', async (req, res) => {
 
   await prisma.$transaction(async (tx) => {
     await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_DELETED, gallery);
-    await tx.gallery.update({ where: { id: gallery.id }, data: { deletedAt: new Date() } });
+    await tx.gallery.update({
+      where: { id: gallery.id },
+      data: { deletedAt: new Date(), publishAt: null },
+    });
   });
 
   res.status(204).end();

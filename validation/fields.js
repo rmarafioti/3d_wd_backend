@@ -1,9 +1,12 @@
-// Zod field builders shared by the post, gallery, upload and list query schemas, so a rule more
-// than one uses can't drift between them.
+// Zod field builders shared by the post, gallery, upload and list query schemas, and the go-live
+// date checks, so a rule more than one uses can't drift between them.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
+const { ServerError } = require('../errors');
 
 const DEFAULT_PAGE_SIZE = 50;
+const PUBLISH_AT_DRAFT_ONLY = 'Only a draft can have a go-live date.';
+const PUBLISH_AT_IN_FUTURE = 'Pick a go-live date after today.';
 
 function requiredText(label, max) {
   return z.preprocess(
@@ -56,6 +59,52 @@ const imageShape = {
   altText: requiredText('Alt text', 200),
 };
 
+// An ISO 8601 instant with an offset ("2026-11-20T14:00:00.000Z"), turned into a Date.
+const isoInstant = z.iso
+  .datetime({ offset: true, error: 'Enter a valid date and time.' })
+  .transform((value) => new Date(value));
+
+// A draft's go-live date. Absent stays undefined (edit leaves it unchanged, for frontends that
+// don't send it), while null or blank is null (cleared).
+const publishAt = z.preprocess(
+  (value) => (value === undefined ? undefined : (blankToUndefined(value) ?? null)),
+  isoInstant.nullable().optional(),
+);
+
+// The body of a post's or gallery's Set publish date route: publishAt is required, as a date or
+// null to clear it.
+const publishAtSchema = z.object({
+  publishAt: z.preprocess(
+    (value) => (value === undefined ? undefined : (blankToUndefined(value) ?? null)),
+    isoInstant.nullable(),
+  ),
+});
+
+// Why a go-live date can't be saved on an item with this status, or null if it can. The date is
+// sent as midnight local time, so today's has already passed. One that has passed is accepted only
+// when it is the one already stored, so a form resent between two runs of the scheduled publish job
+// doesn't fail on a field the site owner didn't touch.
+function publishAtProblem(value, status, storedPublishAt = null) {
+  if (!value) return null;
+  if (status === 'published') return PUBLISH_AT_DRAFT_ONLY;
+  if (value > new Date()) return null;
+  if (storedPublishAt && value.getTime() === storedPublishAt.getTime()) return null;
+  return PUBLISH_AT_IN_FUTURE;
+}
+
+// Create: the status is in the body.
+function refinePublishAt(input, ctx) {
+  const message = publishAtProblem(input.publishAt, input.status);
+  if (message) ctx.addIssue({ code: 'custom', path: ['publishAt'], message });
+}
+
+// Edit: the body has no status, so the stored item's status and go-live date decide.
+function assertPublishAtAllowed(value, stored) {
+  const message = publishAtProblem(value, stored.status, stored.publishAt);
+  if (message)
+    throw new ServerError(400, 'Please fix the highlighted fields.', { publishAt: message });
+}
+
 // A paginated list's query (docs/scaling.md §6). Every query value arrives as a string: `limit` is
 // coerced to a number, and a parameter sent twice (an array) fails its check. Both are optional;
 // `limit` defaults to DEFAULT_PAGE_SIZE.
@@ -81,4 +130,9 @@ module.exports = {
   websiteId,
   imageShape,
   pageShape,
+  isoInstant,
+  publishAt,
+  publishAtSchema,
+  refinePublishAt,
+  assertPublishAtAllowed,
 };

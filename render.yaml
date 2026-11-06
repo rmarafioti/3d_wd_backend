@@ -1,4 +1,4 @@
-# Render Blueprint: the API and its Postgres per environment, plus production's two cron jobs
+# Render Blueprint: the API and its Postgres per environment, plus production's three cron jobs
 # (docs/deploy.md → Render services).
 projects:
   - name: 3dwd
@@ -137,6 +137,31 @@ projects:
               - key: CLOUDINARY_API_KEY
                 sync: false
               - key: CLOUDINARY_API_SECRET
+                sync: false
+              - key: SENTRY_DSN
+                sync: false
+
+          # npm run publish:scheduled: publishes the drafts whose go-live date has passed and
+          # revalidates their websites (docs/setup.md → Scheduled publish), every 15 minutes.
+          - type: cron
+            name: 3dwd-publish-scheduled
+            runtime: node
+            plan: 0.5c-512mb
+            region: virginia
+            branch: production
+            autoDeployTrigger: checksPass
+            schedule: '*/15 * * * *'
+            # The Prisma CLI (a devDependency) generates the client the job reads drafts with.
+            buildCommand: npm ci --include=dev
+            startCommand: npm run publish:scheduled
+            envVars:
+              - key: NODE_ENV
+                value: production
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: 3dwd-db-production
+                  property: connectionString
+              - key: SECRET_ENCRYPTION_KEY
                 sync: false
               - key: SENTRY_DSN
                 sync: false

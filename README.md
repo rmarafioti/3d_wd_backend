@@ -79,6 +79,12 @@ Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post u
 npm run sweep:uploads
 ```
 
+Scheduled publish (publishes the drafts whose go-live date has passed and revalidates their websites; production runs it every 15 minutes):
+
+```
+npm run publish:scheduled
+```
+
 Database backups (`docs/deploy.md` → Render services and Restoring a backup; need `pg_dump` / `pg_restore` of the server's major version, Postgres 17 locally; in production the nightly job runs in Docker, `Dockerfile.backup`):
 
 ```

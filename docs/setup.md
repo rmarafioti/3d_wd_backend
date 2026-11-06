@@ -48,6 +48,8 @@ Table post {
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
   status     post_status [not null, default: 'published']  // draft or published; only published posts are public
+  publish_at datetime [null]       // a draft's go-live date; the scheduled publish job publishes it and clears it
+  published_at datetime [null]     // when it last went from draft to published; null while a draft
   deleted_at datetime [null]       // set by Delete a Post: the post is gone from every route, the row stays; Restore a Post clears it within 30 days
   created_at datetime [not null, default: now()]
   updated_at datetime [not null]
@@ -55,6 +57,7 @@ Table post {
   indexes {
     website_id
     (website_id, deleted_at)       // Recently Deleted Posts
+    (status, publish_at)           // Scheduled publish: drafts whose go-live date has passed
   }
 }
 
@@ -95,12 +98,15 @@ Table gallery {
   request_note string   [null]       // its request message: where on the site it goes
   requested_at datetime [null]       // null until the message is sent; the dashboard asks for it
   placement    placement [null]      // requested → live (set by the admin); null until the message
+  publish_at   datetime [null]       // a draft's go-live date, as on post
+  published_at datetime [null]       // when it last went live, as on post
   deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays
   created_at   datetime [not null, default: now()]
   updated_at   datetime [not null]
 
   indexes {
     (website_id, slug) [unique]  // a slug is unique within its website, deleted galleries included
+    (status, publish_at)         // Scheduled publish
   }
 }
 
@@ -148,7 +154,7 @@ Table website_ability {
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
-  actor_id    string   [null]      // the signed-in account; null for a failed login with no account
+  actor_id    string   [null]      // the signed-in account; null for a failed login with no account, or a scheduled publish
   actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
   target_type string   [null]      // account, website, post, gallery or ability
   target_id   string   [null]
@@ -320,6 +326,10 @@ The database is the record of which images are kept. Post and gallery saves neve
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
 Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `lib/retention.js`, since a site owner can restore a deleted post, and add a removed Photo Galleries ability back with its galleries, for the same 30 days; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+
+### Scheduled publish
+
+`npm run publish:scheduled` (`scripts/publishScheduled.js`, running `services/publishScheduled.js`) publishes every draft post and gallery whose `publish_at` has passed, clears `publish_at`, writes the audit event with no actor and revalidates the website (`docs/endpoints.md` → Scheduled Publish). It needs `DATABASE_URL` and `SECRET_ENCRYPTION_KEY` (to decrypt the webhook secrets). Safe to re-run. Production runs it every 15 minutes as a Render cron job; locally and on staging it is run by hand. Scheduled drafts keep their images, as every draft does (Upload cleanup).
 
 ### Client websites
 

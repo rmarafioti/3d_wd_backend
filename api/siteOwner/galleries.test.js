@@ -188,6 +188,8 @@ describe('POST /api/siteOwner/galleries', () => {
       placement: null,
       requestNote: null,
       requestedAt: null,
+      publishAt: null,
+      publishedAt: data.publishedAt,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       images: [
@@ -953,5 +955,137 @@ describe('gallery request emails', () => {
     assert.match(first.text, /On the home page/);
     assert.match(second.subject, /^Updated request: Photo Galleries "Our Interior" on /);
     assert.match(second.text, /On the Portfolio page/);
+  });
+});
+
+describe('gallery go-live date (publishAt)', () => {
+  const inADay = () => new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const publishAtError = (message) => ({
+    error: { message: 'Please fix the highlighted fields.', fields: { publishAt: message } },
+  });
+
+  it('creates a draft with a go-live date and returns it on the Gallery and its summary', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const publishAt = inADay();
+
+    const res = await as(owner, 'post', '/api/siteOwner/galleries').send(
+      newGallery(website, { status: 'draft', publishAt: publishAt.toISOString() }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.publishAt, publishAt.toISOString());
+    const websites = await as(owner, 'get', '/api/siteOwner/websites');
+    assert.equal(websites.body.data[0].galleries[0].publishAt, publishAt.toISOString());
+  });
+
+  it('returns 400 for a go-live date on a published gallery, the default status', async () => {
+    const { owner, website } = await ownerWithGalleries();
+
+    const res = await as(owner, 'post', '/api/siteOwner/galleries').send(
+      newGallery(website, { publishAt: inADay().toISOString() }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, publishAtError('Only a draft can have a go-live date.'));
+    assert.equal(await prisma.gallery.count(), 0);
+  });
+
+  it('sets and clears the go-live date on edit, and leaves it when not sent', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { status: 'draft' });
+    const publishAt = inADay().toISOString();
+    const path = `/api/siteOwner/galleries/${gallery.id}`;
+
+    const set = await as(owner, 'patch', path).send(editGallery(website, { publishAt }));
+    const kept = await as(owner, 'patch', path).send(editGallery(website));
+    const cleared = await as(owner, 'patch', path).send(editGallery(website, { publishAt: null }));
+
+    assert.equal(set.body.data.publishAt, publishAt);
+    assert.equal(kept.body.data.publishAt, publishAt);
+    assert.equal(cleared.body.data.publishAt, null);
+  });
+
+  it('returns 400 for a go-live date on a published gallery on edit', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website);
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${gallery.id}`).send(
+      editGallery(website, { publishAt: inADay().toISOString() }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, publishAtError('Only a draft can have a go-live date.'));
+  });
+
+  it('clears the go-live date when the gallery is published by hand or deleted', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const published = await createGallery(website, { status: 'draft', publishAt: inADay() });
+    const deleted = await createGallery(website, { status: 'draft', publishAt: inADay() });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/galleries/${published.id}/status`).send({
+      status: 'published',
+    });
+    await as(owner, 'delete', `/api/siteOwner/galleries/${deleted.id}`);
+
+    assert.equal(res.body.data.publishAt, null);
+    const stored = await prisma.gallery.findUniqueOrThrow({ where: { id: deleted.id } });
+    assert.ok(stored.deletedAt);
+    assert.equal(stored.publishAt, null);
+  });
+});
+
+describe('gallery publishedAt (when it went live)', () => {
+  it('stamps it when a draft gallery is published and clears it on draft', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { status: 'draft' });
+    const path = `/api/siteOwner/galleries/${gallery.id}/status`;
+
+    const published = await as(owner, 'patch', path).send({ status: 'published' });
+    const drafted = await as(owner, 'patch', path).send({ status: 'draft' });
+
+    assert.ok(published.body.data.publishedAt);
+    assert.equal(drafted.body.data.publishedAt, null);
+  });
+});
+
+describe('PATCH /api/siteOwner/galleries/:id/publishAt', () => {
+  it("sets and clears a draft gallery's go-live date and records gallery.updated", async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const gallery = await createGallery(website, { status: 'draft' });
+    const path = `/api/siteOwner/galleries/${gallery.id}/publishAt`;
+    const publishAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const set = await as(owner, 'patch', path).send({ publishAt });
+    const cleared = await as(owner, 'patch', path).send({ publishAt: null });
+
+    assert.equal(set.status, 200);
+    assert.equal(set.body.data.publishAt, publishAt);
+    assert.equal(cleared.body.data.publishAt, null);
+    assert.deepEqual(await auditEvents(), [
+      galleryEvent(owner, 'gallery.updated', gallery.id, website.id),
+      galleryEvent(owner, 'gallery.updated', gallery.id, website.id),
+    ]);
+  });
+
+  it('returns 400 for a go-live date on a published gallery, and 404 for one not owned', async () => {
+    const { owner, website } = await ownerWithGalleries();
+    const published = await createGallery(website);
+    const { website: theirs } = await ownerWithGalleries();
+    const notMine = await createGallery(theirs, { status: 'draft' });
+    const body = { publishAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() };
+
+    const bad = await as(owner, 'patch', `/api/siteOwner/galleries/${published.id}/publishAt`).send(
+      body,
+    );
+    const missing = await as(
+      owner,
+      'patch',
+      `/api/siteOwner/galleries/${notMine.id}/publishAt`,
+    ).send(body);
+
+    assert.equal(bad.status, 400);
+    assert.deepEqual(bad.body.error.fields, { publishAt: 'Only a draft can have a go-live date.' });
+    assert.equal(missing.status, 404);
+    assert.deepEqual(missing.body, { error: { message: 'Gallery not found.' } });
   });
 });

@@ -10,6 +10,8 @@ const {
   websiteId,
   imageShape,
   pageShape,
+  publishAt,
+  refinePublishAt,
 } = require('./fields');
 
 // Link URLs follow the same https rule as image URLs.
@@ -111,16 +113,21 @@ const postFields = {
 const status = z.enum(['draft', 'published'], { error: 'Status must be draft or published.' });
 
 // A new post is published unless the request says otherwise.
-const createPostSchema = z.object({
-  websiteId,
-  ...postFields,
-  status: status.default('published'),
-  body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
-});
+// A go-live date is only for a draft (validation/fields.js → refinePublishAt).
+const createPostSchema = z
+  .object({
+    websiteId,
+    ...postFields,
+    status: status.default('published'),
+    publishAt,
+    body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
+  })
+  .superRefine(refinePublishAt, { when: (payload) => payload.issues.length === 0 });
 
 // websiteId and status are not part of the edit form; zod strips them if sent.
 const updatePostSchema = z.object({
   ...postFields,
+  publishAt,
   body: bodyList(z.object({ id: itemId, ...imageShape }, { error: 'Image is required.' })),
 });
 
