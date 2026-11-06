@@ -32,7 +32,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database and empty rate limit counts.
 async function resetState() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
+    'TRUNCATE TABLE thread_message, thread, notification_recipient, notification, website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
   );
   await resetRateLimits();
 }
@@ -162,6 +162,35 @@ async function createOwnerWithWebsite(websiteOverrides = {}) {
   return { owner, website, apiKey, webhookSecret };
 }
 
+// An update sent by `admin` to `recipients` (accounts), all unread.
+function createNotification(admin, recipients, overrides = {}) {
+  return prisma.notification.create({
+    data: {
+      title: 'Update',
+      body: 'News',
+      kind: 'general',
+      createdById: admin.id,
+      recipients: { create: recipients.map((account) => ({ accountId: account.id })) },
+      ...overrides,
+    },
+  });
+}
+
+// A thread started by `owner` with one message, read by the owner and not yet by the admin.
+function createThread(owner, overrides = {}) {
+  const now = new Date();
+  return prisma.thread.create({
+    data: {
+      accountId: owner.id,
+      subject: 'A question',
+      lastMessageAt: now,
+      ownerReadAt: now,
+      messages: { create: { authorId: owner.id, body: 'Hello', createdAt: now } },
+      ...overrides,
+    },
+  });
+}
+
 // The Cookie header for a signed-in account, built with the app's own signSession.
 function sessionCookie(account) {
   return `${SESSION_COOKIE}=${signSession(account)}`;
@@ -257,6 +286,8 @@ module.exports = {
   createGallery,
   createAbility,
   createOwnerWithWebsite,
+  createNotification,
+  createThread,
   sessionCookie,
   assertNoSecrets,
   auditEvents,

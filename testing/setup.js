@@ -27,3 +27,8 @@ delete process.env.COOKIE_DOMAIN;
 delete process.env.SENTRY_DSN;
 // Request emails stay off in tests; the tests that check them set a fixed key and restore it.
 delete process.env.RESEND_API_KEY;
+
+// No request ever leaves the machine. A route's revalidation isn't awaited, so it can call fetch
+// after its test has ended and mockFetch has been restored: restoring brings back this stub, not
+// the real fetch. Tests that check a call still mock fetch themselves (testing/helpers.js).
+globalThis.fetch = async () => new Response(null, { status: 204 });

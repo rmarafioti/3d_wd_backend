@@ -1149,6 +1149,120 @@ describe('PATCH /api/admin/galleries/:id/placement', () => {
   });
 });
 
+describe('automatic updates when the admin sets something live', () => {
+  // A website named Stevie with one active and one inactive linked site owner.
+  async function websiteWithOwners() {
+    const { website } = await createWebsite({ websiteName: 'Stevie' });
+    const owner = await createSiteOwner();
+    const inactive = await createSiteOwner({ active: false });
+    await linkWebsite(owner, website);
+    await linkWebsite(inactive, website);
+    return { website, owner };
+  }
+
+  // Every update stored, with who it went to.
+  function storedUpdates() {
+    return prisma.notification.findMany({
+      orderBy: { id: 'asc' },
+      select: {
+        title: true,
+        body: true,
+        kind: true,
+        createdById: true,
+        recipients: { select: { accountId: true, readAt: true } },
+      },
+    });
+  }
+
+  it("sends Photo Galleries going live to the website's active site owners, audited", async () => {
+    const admin = await createAdmin();
+    const { website, owner } = await websiteWithOwners();
+    const ability = await createAbility(website, 'galleries');
+
+    await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({ status: 'live' });
+
+    assert.deepEqual(await storedUpdates(), [
+      {
+        title: 'Your Photo Galleries are now live!',
+        body: 'Photo Galleries are now part of Stevie. Add a gallery from your dashboard and send its request message to say where it goes.',
+        kind: 'automatic',
+        createdById: admin.id,
+        recipients: [{ accountId: owner.id, readAt: null }],
+      },
+    ]);
+    const events = await auditEvents();
+    assert.deepEqual(
+      events.map((event) => [event.action, event.metadata?.recipientCount]),
+      [
+        ['ability.live', undefined],
+        ['notification.sent', 1],
+      ],
+    );
+    assert.deepEqual(events[1].metadata, { recipientCount: 1, kind: 'automatic' });
+  });
+
+  it('sends posts going live', async () => {
+    const admin = await createAdmin();
+    const { website } = await websiteWithOwners();
+    const ability = await createAbility(website, 'posts', {
+      placement: 'requested',
+      requestedAt: new Date(),
+    });
+
+    await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({ status: 'live' });
+
+    const [update] = await storedUpdates();
+    assert.equal(update.title, 'Your posts are now live!');
+    assert.equal(update.body, 'Your posts now show on Stevie.');
+  });
+
+  it('sends a gallery going live, naming it', async () => {
+    const admin = await createAdmin();
+    const { website, owner } = await websiteWithOwners();
+    await createAbility(website, 'galleries', { status: 'live' });
+    const gallery = await createGallery(website, {
+      galleryName: 'Grooming',
+      requestedAt: new Date(),
+      placement: 'requested',
+    });
+
+    await as(admin, 'patch', `/api/admin/galleries/${gallery.id}/placement`).send({
+      placement: 'live',
+    });
+
+    const [update] = await storedUpdates();
+    assert.equal(update.title, 'Your gallery is on your website');
+    assert.equal(update.body, '"Grooming" is now live on Stevie.');
+    assert.deepEqual(update.recipients, [{ accountId: owner.id, readAt: null }]);
+  });
+
+  it('sends nothing when the change is refused', async () => {
+    const admin = await createAdmin();
+    const { website } = await websiteWithOwners();
+    const ability = await createAbility(website, 'galleries', { status: 'live' });
+
+    const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
+      status: 'live',
+    });
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(await storedUpdates(), []);
+  });
+
+  it('sends nothing to a website with no active site owner', async () => {
+    const admin = await createAdmin();
+    const { website } = await createWebsite();
+    const ability = await createAbility(website, 'galleries');
+
+    const res = await as(admin, 'patch', `/api/admin/abilities/${ability.id}/status`).send({
+      status: 'live',
+    });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(await storedUpdates(), []);
+  });
+});
+
 describe('GET /api/admin/accounts abilities', () => {
   it("returns each website's abilities that aren't removed, with the request note", async () => {
     const admin = await createAdmin();

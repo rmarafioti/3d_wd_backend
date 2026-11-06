@@ -26,11 +26,15 @@ const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
 const abilities = require('./abilities');
+const notifications = require('./notifications');
+const threads = require('./threads');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('site_owner'));
 router.use('/galleries', galleries);
 router.use('/abilities', abilities);
+router.use('/notifications', notifications);
+router.use('/threads', threads);
 
 const POST_NOT_FOUND = 'Post not found.';
 const WEBSITE_NOT_FOUND = 'Website not found.';

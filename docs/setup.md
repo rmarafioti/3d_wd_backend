@@ -151,6 +151,62 @@ Table website_ability {
   }
 }
 
+Table notification {             // an update from the admin, read in site owners' Inbox
+  id         string   [primary key, default: uuid v7]
+  title      string   [not null]
+  body       text     [not null]    // paragraph formatting, as a post paragraph
+  created_by string   [not null]    // the admin who sent it
+  kind       notification_kind [not null]
+  deleted_at datetime [null]        // set when withdrawn: gone from every inbox and route
+  created_at datetime [not null, default: now()]
+  updated_at datetime [not null]
+
+  indexes {
+    created_by
+  }
+}
+
+Table notification_recipient {   // one site owner's copy of an update, fixed when it is sent
+  id              string   [primary key, default: uuid v7]
+  notification_id string   [not null]
+  account_id      string   [not null]
+  read_at         datetime [null]  // null until they open it
+
+  indexes {
+    (account_id, notification_id) [unique]  // also the site owner's list, newest first
+    notification_id
+    (account_id, read_at)                   // the unread count
+  }
+}
+
+Table thread {                   // a message thread between one site owner and the admin
+  id              string   [primary key, default: uuid v7]
+  account_id      string   [not null]  // the site owner, whichever side started it
+  subject         string   [not null]
+  last_message_at datetime [not null]
+  owner_read_at   datetime [null]      // a side has unread messages while its read time is
+  admin_read_at   datetime [null]      // null or before last_message_at
+  created_at      datetime [not null, default: now()]
+
+  indexes {
+    (account_id, last_message_at)  // the site owner's list
+    last_message_at                // the admin's list
+  }
+}
+
+Table thread_message {           // at most 100 per thread
+  id         string   [primary key, default: uuid v7]
+  thread_id  string   [not null]
+  author_id  string   [not null]  // the site owner or an admin
+  body       text     [not null]  // paragraph formatting, as a post paragraph
+  created_at datetime [not null, default: now()]
+
+  indexes {
+    (thread_id, created_at)
+    author_id
+  }
+}
+
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
@@ -200,6 +256,11 @@ Enum placement {     // where an item sits on the client website
   live
 }
 
+Enum notification_kind {  // general: every active site owner; automatic: a website's site owners
+  general                // when the admin sets an ability or a gallery live
+  automatic
+}
+
 Enum element_type {
   paragraph
   image
@@ -216,6 +277,12 @@ Ref: image.post_id > post.id        // a post can have many images
 Ref: gallery.website_id > website.id         // a website can have many galleries
 Ref: gallery_image.gallery_id > gallery.id   // a gallery can have many images
 Ref: website_ability.website_id > website.id // a website has one row per ability
+Ref: notification.created_by > account.id
+Ref: notification_recipient.notification_id > notification.id
+Ref: notification_recipient.account_id > account.id
+Ref: thread.account_id > account.id
+Ref: thread_message.thread_id > thread.id
+Ref: thread_message.author_id > account.id
 // audit_event has no references on purpose: an event never blocks or depends on another row
 ```
 

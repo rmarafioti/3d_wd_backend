@@ -21,9 +21,18 @@ const {
 } = require('../../lib/crypto');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
+const {
+  ABILITY_LIVE_MESSAGES,
+  notifyWebsiteOwners,
+  galleryLiveMessage,
+} = require('../../lib/notifications');
+const notifications = require('./notifications');
+const threads = require('./threads');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
+router.use('/notifications', notifications);
+router.use('/threads', threads);
 
 const ACCOUNT_SELECT = {
   id: true,
@@ -430,7 +439,8 @@ router.post('/accounts/:id/websites', async (req, res) => {
 // PATCH /api/admin/abilities/:id/status — body { status: 'live' }. Sets an ability live once its
 // code is wired into the client website. Photo Galleries goes live on its own, with no request;
 // each gallery is then set live by the route below. Posts are one switch: their request form must
-// be waiting, and setting them live places them too. A removed ability is a 404.
+// be waiting, and setting them live places them too. A removed ability is a 404. The website's
+// site owners get an automatic update in the same transaction.
 router.patch('/abilities/:id/status', async (req, res) => {
   const { status } = validate(abilityStatusSchema, req.body ?? {});
 
@@ -453,6 +463,7 @@ router.patch('/abilities/:id/status', async (req, res) => {
       select: ABILITY_SELECT,
     });
     await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_LIVE, live);
+    await notifyWebsiteOwners(tx, req, live.websiteId, ABILITY_LIVE_MESSAGES[live.kind]);
     return live;
   });
 
@@ -462,7 +473,8 @@ router.patch('/abilities/:id/status', async (req, res) => {
 // PATCH /api/admin/galleries/:id/placement — body { placement: 'live' }. Sets a requested gallery
 // live once it is placed and styled on the client website and the site owner approved the
 // mock-up. Its Photo Galleries ability must be live first: the gallery sits in its component.
-// A deleted gallery is a 404. Nothing public changes, so there's no revalidation.
+// A deleted gallery is a 404. The website's site owners get an automatic update in the same
+// transaction. Nothing public changes, so there's no revalidation.
 router.patch('/galleries/:id/placement', async (req, res) => {
   const { placement } = validate(galleryPlacementSchema, req.body ?? {});
 
@@ -471,6 +483,7 @@ router.patch('/galleries/:id/placement', async (req, res) => {
     select: {
       id: true,
       websiteId: true,
+      galleryName: true,
       placement: true,
       website: {
         select: { abilities: { where: { kind: 'galleries' }, select: { status: true } } },
@@ -497,6 +510,7 @@ router.patch('/galleries/:id/placement', async (req, res) => {
       targetId: gallery.id,
       metadata: { websiteId: gallery.websiteId },
     });
+    await notifyWebsiteOwners(tx, req, gallery.websiteId, galleryLiveMessage(gallery.galleryName));
     return tx.gallery.update({
       where: { id: gallery.id },
       data: { placement },
