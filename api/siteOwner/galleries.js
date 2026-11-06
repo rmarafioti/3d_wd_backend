@@ -27,6 +27,9 @@ const GALLERY_NAME_TAKEN = 'A gallery with this name already exists.';
 const ADD_GALLERIES_FIRST = 'Add Photo Galleries to this website first.';
 const ALREADY_REQUESTED = 'This gallery has already been requested.';
 const NOT_REQUESTED = "This gallery hasn't been requested yet.";
+// Two creates at once can both fail their first try and clash again on the retry, so a create is
+// tried up to this many times before its clash is a 500.
+const MAX_CREATE_ATTEMPTS = 3;
 
 // The gallery fields the request routes check.
 const REQUEST_CHECK_SELECT = { id: true, websiteId: true, requestedAt: true };
@@ -152,7 +155,7 @@ function isCreateClash(err) {
 
 // Gallery, then images, in one transaction: if any insert fails the whole create rolls back.
 // Serializable, so two creates of the same name at once can't both pass the name check: Postgres
-// fails one of them, and the route's retry then answers the 409.
+// fails one of them, and the retry (createGalleryRetrying) then answers the 409.
 function createGallery(req, website, input) {
   return prisma.$transaction(
     async (tx) => {
@@ -178,6 +181,19 @@ function createGallery(req, website, input) {
   );
 }
 
+// createGallery, tried again while it clashes with a concurrent create (isCreateClash). Once the
+// other has committed, a retry answers the 409 for the same name, or saves a different name with
+// its own slug.
+async function createGalleryRetrying(req, website, input) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await createGallery(req, website, input);
+    } catch (err) {
+      if (!isCreateClash(err) || attempt === MAX_CREATE_ATTEMPTS) throw err;
+    }
+  }
+}
+
 // POST /api/siteOwner/galleries — create a gallery with its images.
 router.post('/', async (req, res) => {
   const input = validate(createGallerySchema, req.body ?? {});
@@ -195,16 +211,8 @@ router.post('/', async (req, res) => {
 
   assertImagesInFolder(input.images, website.mediaFolder);
 
-  // Two creates on one website at the same moment clash (isCreateClash), whatever their names. It
-  // is retried once: with the first now committed, the retry answers the 409 for the same name,
-  // or saves a different name with its own slug.
-  let gallery;
-  try {
-    gallery = await createGallery(req, website, input);
-  } catch (err) {
-    if (!isCreateClash(err)) throw err;
-    gallery = await createGallery(req, website, input);
-  }
+  // Two creates on one website at the same moment clash, whatever their names.
+  const gallery = await createGalleryRetrying(req, website, input);
 
   res.status(201).json({ data: toGallery(gallery) });
   // After commit and after responding; never awaited, never throws (services/revalidate.js).
