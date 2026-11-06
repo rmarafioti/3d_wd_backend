@@ -1,12 +1,17 @@
 // Site owner routes, mounted at /api/siteOwner: websites, post create / read / edit / status /
-// delete and upload signing, with the gallery and ability routers mounted behind the same guards.
+// delete / restore and upload signing, with the gallery and ability routers behind the same guards.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const requireAuth = require('../../middleware/requireAuth');
 const requireRole = require('../../middleware/requireRole');
 const { validate } = require('../../validation/validate');
-const { createPostSchema, updatePostSchema, postStatusSchema } = require('../../validation/post');
+const {
+  createPostSchema,
+  updatePostSchema,
+  postStatusSchema,
+  listDeletedPostsSchema,
+} = require('../../validation/post');
 const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
@@ -15,6 +20,7 @@ const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('..
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
+const { DELETED_GRACE_MS } = require('../../lib/retention');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
 const abilities = require('./abilities');
@@ -56,6 +62,20 @@ function findOwnedPost(accountId, postId, select) {
   });
 }
 
+// A deleted post stays restorable while the upload cleanup still keeps its images: deleted less
+// than DELETED_GRACE_MS ago, the same cutoff services/sweepUploads.js uses. The cutoff only moves
+// forward, so a post this accepts has never had its images swept.
+function restorableWhere(accountId) {
+  return {
+    deletedAt: { gt: new Date(Date.now() - DELETED_GRACE_MS) },
+    website: ownedWebsiteWhere(accountId),
+  };
+}
+
+function findRestorablePost(accountId, postId, select) {
+  return prisma.post.findFirst({ where: { id: postId, ...restorableWhere(accountId) }, select });
+}
+
 // Prisma row (selected with POST_SELECT) → the contract's Post shape.
 function toPost(post) {
   return {
@@ -70,6 +90,17 @@ function toPost(post) {
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
     body: toBody(post.elements),
+  };
+}
+
+// Prisma row → the contract's DeletedPostSummary, with the last moment it can be restored.
+function toDeletedPostSummary({ website, postDate, deletedAt, ...post }) {
+  return {
+    ...post,
+    websiteName: website.websiteName,
+    postDate: toDateOnly(postDate),
+    deletedAt,
+    restorableUntil: new Date(deletedAt.getTime() + DELETED_GRACE_MS),
   };
 }
 
@@ -220,6 +251,35 @@ router.post('/posts', async (req, res) => {
   revalidate(website.id, { postId: post.id });
 });
 
+// GET /api/siteOwner/posts/deleted — the account's posts deleted in the last 30 days, newest
+// deletion first, a page at a time (limit, cursor). Registered before /posts/:id so "deleted" is
+// never read as an id.
+router.get('/posts/deleted', async (req, res) => {
+  const input = validate(listDeletedPostsSchema, req.query);
+
+  // Sorted by deletion time, not id, so Prisma's own cursor pages from the cursor post's place in
+  // that order. One row more than the page is read to tell whether another page follows.
+  const posts = await prisma.post.findMany({
+    where: restorableWhere(req.user.id),
+    orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+    ...(input.cursor && { cursor: { id: input.cursor }, skip: 1 }),
+    take: input.limit + 1,
+    select: {
+      id: true,
+      websiteId: true,
+      postName: true,
+      postDate: true,
+      status: true,
+      deletedAt: true,
+      website: { select: { websiteName: true } },
+    },
+  });
+
+  const hasNextPage = posts.length > input.limit;
+  const data = (hasNextPage ? posts.slice(0, input.limit) : posts).map(toDeletedPostSummary);
+  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+});
+
 // GET /api/siteOwner/posts/:id — one post with its body.
 router.get('/posts/:id', async (req, res) => {
   const post = await findOwnedPost(req.user.id, req.params.id, POST_SELECT);
@@ -293,8 +353,8 @@ router.patch('/posts/:id/status', async (req, res) => {
 });
 
 // DELETE /api/siteOwner/posts/:id — soft delete: stamps deletedAt, so the post is gone from the
-// site owner's view and the client website but stays in the database. The upload cleanup wipes
-// its images 30 days later (services/sweepUploads.js).
+// site owner's view and the client website but stays in the database. It can be restored for 30
+// days; then the upload cleanup deletes its images (services/sweepUploads.js).
 router.delete('/posts/:id', async (req, res) => {
   const post = await findOwnedPost(req.user.id, req.params.id, { id: true, websiteId: true });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
@@ -306,6 +366,25 @@ router.delete('/posts/:id', async (req, res) => {
   });
 
   res.status(204).end();
+  revalidate(post.websiteId, { postId: post.id });
+});
+
+// POST /api/siteOwner/posts/:id/restore — bring back a post deleted in the last 30 days, with its
+// body, images and status. Posts placement is left as it is.
+router.post('/posts/:id/restore', async (req, res) => {
+  const post = await findRestorablePost(req.user.id, req.params.id, { id: true, websiteId: true });
+  if (!post) throw new ServerError(404, POST_NOT_FOUND);
+
+  const restored = await prisma.$transaction(async (tx) => {
+    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_RESTORED, post);
+    return tx.post.update({
+      where: { id: post.id },
+      data: { deletedAt: null },
+      select: POST_SELECT,
+    });
+  });
+
+  res.json({ data: toPost(restored) });
   revalidate(post.websiteId, { postId: post.id });
 });
 

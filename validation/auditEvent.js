@@ -1,6 +1,7 @@
 // Zod schema for the admin's audit event list query (GET /api/admin/auditEvents).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
+const { pageShape } = require('./fields');
 
 const MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
 
@@ -34,8 +35,8 @@ function refineRange({ from, to }, ctx) {
   }
 }
 
-// Every query value arrives as a string: `limit` is coerced to a number, and a parameter sent
-// twice (an array) fails its string check. All are optional; the route fills the defaults.
+// Every query value arrives as a string, and a parameter sent twice (an array) fails its string
+// check. All are optional: month defaults in the route, limit in pageShape (with cursor).
 const listAuditEventsSchema = z
   .object({
     // A UTC calendar month, YYYY-MM.
@@ -46,17 +47,7 @@ const listAuditEventsSchema = z
         .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Enter a month as YYYY-MM.')
         .optional(),
     ),
-    limit: z.preprocess(
-      blankToUndefined,
-      z.coerce
-        .number({ error: 'Limit must be a whole number from 1 to 100.' })
-        .int('Limit must be a whole number from 1 to 100.')
-        .min(1, 'Limit must be a whole number from 1 to 100.')
-        .max(100, 'Limit must be a whole number from 1 to 100.')
-        .optional(),
-    ),
-    // The nextCursor of the previous page: the id of its last (oldest) event.
-    cursor: z.preprocess(blankToUndefined, z.uuid({ error: 'Invalid cursor.' }).optional()),
+    ...pageShape,
     // A time range [from, to), sent together; month is ignored when it is given.
     from: instant,
     to: instant,

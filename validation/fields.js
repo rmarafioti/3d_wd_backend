@@ -1,7 +1,9 @@
-// Zod field builders shared by the post, gallery and upload schemas, so a rule more than one uses
-// can't drift between them.
+// Zod field builders shared by the post, gallery, upload and list query schemas, so a rule more
+// than one uses can't drift between them.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
+
+const DEFAULT_PAGE_SIZE = 50;
 
 function requiredText(label, max) {
   return z.preprocess(
@@ -54,4 +56,29 @@ const imageShape = {
   altText: requiredText('Alt text', 200),
 };
 
-module.exports = { requiredText, optionalText, httpsUrl, itemId, websiteId, imageShape };
+// A paginated list's query (docs/scaling.md §6). Every query value arrives as a string: `limit` is
+// coerced to a number, and a parameter sent twice (an array) fails its check. Both are optional;
+// `limit` defaults to DEFAULT_PAGE_SIZE.
+const pageShape = {
+  limit: z.preprocess(
+    blankToUndefined,
+    z.coerce
+      .number({ error: 'Limit must be a whole number from 1 to 100.' })
+      .int('Limit must be a whole number from 1 to 100.')
+      .min(1, 'Limit must be a whole number from 1 to 100.')
+      .max(100, 'Limit must be a whole number from 1 to 100.')
+      .default(DEFAULT_PAGE_SIZE),
+  ),
+  // The nextCursor of the previous page: the id of its last item.
+  cursor: z.preprocess(blankToUndefined, z.uuid({ error: 'Invalid cursor.' }).optional()),
+};
+
+module.exports = {
+  requiredText,
+  optionalText,
+  httpsUrl,
+  itemId,
+  websiteId,
+  imageShape,
+  pageShape,
+};

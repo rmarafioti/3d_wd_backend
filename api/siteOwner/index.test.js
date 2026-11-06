@@ -30,6 +30,7 @@ const {
 const POST_NOT_FOUND = { error: { message: 'Post not found.' } };
 const WEBSITE_NOT_FOUND = { error: { message: 'Website not found.' } };
 const UNKNOWN_ID = '019a0000-0000-7000-8000-000000000000';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 // An image in the website's upload folder; override any field.
 function image(website, overrides = {}) {
@@ -100,6 +101,8 @@ describe('site owner route guards', () => {
     ['patch', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id/status'],
     ['delete', '/api/siteOwner/posts/some-id'],
+    ['get', '/api/siteOwner/posts/deleted'],
+    ['post', '/api/siteOwner/posts/some-id/restore'],
     ['post', '/api/siteOwner/uploads/sign'],
   ];
 
@@ -995,6 +998,287 @@ describe('DELETE /api/siteOwner/posts/:id', () => {
     assert.deepEqual(res.body, { error: { message: 'Request blocked.' } });
     const stored = await prisma.post.findUnique({ where: { id: post.id } });
     assert.equal(stored.deletedAt, null);
+  });
+});
+
+// A post deleted the given number of days ago.
+function createDeletedPost(website, daysAgo, overrides = {}) {
+  return createPost(website, { deletedAt: new Date(Date.now() - daysAgo * DAY_MS), ...overrides });
+}
+
+describe('GET /api/siteOwner/posts/deleted', () => {
+  it("lists the account's posts deleted in the last 30 days, newest deletion first", async () => {
+    const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Alpha' });
+    const older = await createDeletedPost(website, 10, {
+      postName: 'Older',
+      postDate: new Date('2026-10-01'),
+      status: 'draft',
+    });
+    const newer = await createDeletedPost(website, 1, { postName: 'Newer' });
+
+    const res = await as(owner, 'get', '/api/siteOwner/posts/deleted');
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, {
+      data: [
+        {
+          id: newer.id,
+          websiteId: website.id,
+          websiteName: 'Alpha',
+          postName: 'Newer',
+          postDate: null,
+          status: 'published',
+          deletedAt: newer.deletedAt.toISOString(),
+          restorableUntil: new Date(newer.deletedAt.getTime() + 30 * DAY_MS).toISOString(),
+        },
+        {
+          id: older.id,
+          websiteId: website.id,
+          websiteName: 'Alpha',
+          postName: 'Older',
+          postDate: '2026-10-01',
+          status: 'draft',
+          deletedAt: older.deletedAt.toISOString(),
+          restorableUntil: new Date(older.deletedAt.getTime() + 30 * DAY_MS).toISOString(),
+        },
+      ],
+      nextCursor: null,
+    });
+    await assertNoSecrets(res.body);
+  });
+
+  it('covers every active website linked to the account', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const { website: second } = await createWebsite();
+    await prisma.accountWebsite.create({ data: { accountId: owner.id, websiteId: second.id } });
+    const first = await createDeletedPost(website, 2);
+    const other = await createDeletedPost(second, 1);
+
+    const res = await as(owner, 'get', '/api/siteOwner/posts/deleted');
+
+    assert.deepEqual(
+      res.body.data.map((post) => post.id),
+      [other.id, first.id],
+    );
+  });
+
+  it('leaves out kept posts, posts deleted over 30 days ago, other owners and inactive websites', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const { website: inactive } = await createWebsite({ active: false });
+    await prisma.accountWebsite.create({ data: { accountId: owner.id, websiteId: inactive.id } });
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+    const listed = await createDeletedPost(website, 29);
+    await createPost(website);
+    await createDeletedPost(website, 31);
+    await createDeletedPost(inactive, 1);
+    await createDeletedPost(otherWebsite, 1);
+
+    const res = await as(owner, 'get', '/api/siteOwner/posts/deleted');
+
+    assert.deepEqual(
+      res.body.data.map((post) => post.id),
+      [listed.id],
+    );
+  });
+
+  it('pages with limit and cursor, and nextCursor is null on the last page', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const third = await createDeletedPost(website, 3);
+    const second = await createDeletedPost(website, 2);
+    const first = await createDeletedPost(website, 1);
+
+    const page1 = await as(owner, 'get', '/api/siteOwner/posts/deleted?limit=2');
+    const page2 = await as(
+      owner,
+      'get',
+      `/api/siteOwner/posts/deleted?limit=2&cursor=${page1.body.nextCursor}`,
+    );
+
+    assert.deepEqual(
+      page1.body.data.map((post) => post.id),
+      [first.id, second.id],
+    );
+    assert.equal(page1.body.nextCursor, second.id);
+    assert.deepEqual(
+      page2.body.data.map((post) => post.id),
+      [third.id],
+    );
+    assert.equal(page2.body.nextCursor, null);
+  });
+
+  it('ends the list early when the post the cursor names was restored', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    await createDeletedPost(website, 2);
+    const first = await createDeletedPost(website, 1);
+    await as(owner, 'post', `/api/siteOwner/posts/${first.id}/restore`);
+
+    const res = await as(owner, 'get', `/api/siteOwner/posts/deleted?cursor=${first.id}`);
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { data: [], nextCursor: null });
+  });
+
+  it('returns an empty list when nothing was deleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    await createPost(website);
+
+    const res = await as(owner, 'get', '/api/siteOwner/posts/deleted');
+
+    assert.deepEqual(res.body, { data: [], nextCursor: null });
+  });
+
+  it('returns 400 with fields for a bad limit or cursor', async () => {
+    const { owner } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'get', '/api/siteOwner/posts/deleted?limit=0&cursor=nope');
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: {
+          limit: 'Limit must be a whole number from 1 to 100.',
+          cursor: 'Invalid cursor.',
+        },
+      },
+    });
+  });
+});
+
+describe('POST /api/siteOwner/posts/:id/restore', () => {
+  it('clears deletedAt and returns the post with its body, images and status', async () => {
+    const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Alpha' });
+    const photo = image(website);
+    const post = await createDeletedPost(website, 5, {
+      status: 'draft',
+      body: [paragraph('Hello'), imageElement(photo)],
+    });
+
+    const res = await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.id, post.id);
+    assert.equal(res.body.data.status, 'draft');
+    assert.equal(res.body.data.websiteName, 'Alpha');
+    assert.deepEqual(res.body.data.body, [
+      { type: 'paragraph', text: 'Hello' },
+      { type: 'image', image: { id: post.images[0].id, ...photo } },
+    ]);
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.deletedAt, null);
+    await assertNoSecrets(res.body);
+  });
+
+  it('records post.restored', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createDeletedPost(website, 1);
+
+    await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    assert.deepEqual(await auditEvents(), [postEvent(owner, 'post.restored', post.id, website.id)]);
+  });
+
+  it('calls the revalidation webhook for the post after a restore', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createDeletedPost(website, 1);
+
+    await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    const { url, options } = await revalidationCall();
+    assert.equal(url, `${website.url}/api/revalidate`);
+    assert.deepEqual(JSON.parse(options.body), { websiteId: website.id, postId: post.id });
+  });
+
+  it('brings a deleted post back to every post route and out of the deleted list', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website);
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    const websites = await as(owner, 'get', '/api/siteOwner/websites');
+    const single = await as(owner, 'get', `/api/siteOwner/posts/${post.id}`);
+    const deleted = await as(owner, 'get', '/api/siteOwner/posts/deleted');
+    assert.deepEqual(
+      websites.body.data[0].posts.map((item) => item.id),
+      [post.id],
+    );
+    assert.equal(single.status, 200);
+    assert.deepEqual(deleted.body.data, []);
+  });
+
+  it('leaves a posts placement cleared by the last delete as null', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'posts', {
+      placement: 'requested',
+      requestNote: 'Under the menu',
+      requestedAt: new Date(),
+    });
+    const post = await createPost(website);
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+
+    await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+    assert.equal(stored.placement, null);
+    assert.equal(stored.requestedAt, null);
+  });
+
+  it('returns 404 for a post that is not deleted, deleted over 30 days ago, or unknown', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const kept = await createPost(website);
+    const expired = await createDeletedPost(website, 31);
+
+    const responses = [
+      await as(owner, 'post', `/api/siteOwner/posts/${kept.id}/restore`),
+      await as(owner, 'post', `/api/siteOwner/posts/${expired.id}/restore`),
+      await as(owner, 'post', `/api/siteOwner/posts/${UNKNOWN_ID}/restore`),
+    ];
+
+    for (const res of responses) {
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, POST_NOT_FOUND);
+    }
+    const stored = await prisma.post.findUnique({ where: { id: expired.id } });
+    assert.ok(stored.deletedAt instanceof Date);
+    assert.deepEqual(await auditEvents(), []);
+  });
+
+  it("returns 404 for another site owner's post and leaves it deleted", async () => {
+    const { owner } = await createOwnerWithWebsite();
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+    const post = await createDeletedPost(otherWebsite, 1);
+
+    const res = await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, POST_NOT_FOUND);
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.ok(stored.deletedAt instanceof Date);
+  });
+
+  it('returns 404 for a post on an inactive website', async () => {
+    const { owner, website } = await createOwnerWithWebsite({ active: false });
+    const post = await createDeletedPost(website, 1);
+
+    const res = await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, POST_NOT_FOUND);
+  });
+
+  it('returns 403 without the CSRF header and leaves the post deleted', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createDeletedPost(website, 1);
+
+    const res = await request(app)
+      .post(`/api/siteOwner/posts/${post.id}/restore`)
+      .set('Cookie', sessionCookie(owner));
+
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.body, { error: { message: 'Request blocked.' } });
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.ok(stored.deletedAt instanceof Date);
   });
 });
 

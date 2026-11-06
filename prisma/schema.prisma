@@ -138,6 +138,7 @@ model Post {
   images   Image[]
 
   @@index([websiteId])
+  @@index([websiteId, deletedAt]) // Recently deleted posts: filtered and sorted by deletedAt
   @@map("post")
 }
 

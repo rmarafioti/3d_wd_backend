@@ -56,7 +56,7 @@ Use subagents for research/exploration/investigation for a plan and for completi
 
 ## Role Ownership Check Rule
 
-Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), and an ability through its website and must not be removed (`removedAt` null). The shared checks are in `lib/ownership.js`. A failed check returns `404`, identical to "not found".
+Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). The shared checks are in `lib/ownership.js`. A failed check returns `404`, identical to "not found".
 
 ## Anti-Patterns to Avoid
 
@@ -102,7 +102,7 @@ Account + website + its posts ability + account_website, website + its posts abi
 Every sign-in, sign-out and change writes its `audit_event` through `recordAuditEvent` (`lib/audit.js`), with the transaction client `tx`, inside the same `prisma.$transaction` as the change it records (`docs/endpoints.md` → Audit Log). A new route that changes data adds its action to `AUDIT_ACTIONS` and the table in `docs/endpoints.md`.
 
 **Never a hard delete:**
-Soft delete via an `active` boolean is the standard for accounts and websites. A website's abilities don't use it either: a removed one has `removedAt` set and is added back on the same row. Posts and galleries don't use it: they are set to draft or published through the API (`status`). A post or gallery the site owner deletes is stamped with `deletedAt`, never removed: every route then treats it as not found, and the upload cleanup deletes its images from Cloudinary 30 days later. Accounts and websites have no API for this in the MVP — they are flipped by hand (Prisma Studio locally, SQL from the Render Shell when deployed) — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
+Soft delete via an `active` boolean is the standard for accounts and websites. A website's abilities don't use it either: a removed one has `removedAt` set and is added back on the same row. Posts and galleries don't use it: they are set to draft or published through the API (`status`). A post or gallery the site owner deletes is stamped with `deletedAt`, never removed: every route then treats it as not found (except a post's restore, within those 30 days), and the upload cleanup deletes its images from Cloudinary 30 days later. Accounts and websites have no API for this in the MVP — they are flipped by hand (Prisma Studio locally, SQL from the Render Shell when deployed) — but the backend always honours the flag (inactive account cannot log in or use a session; inactive website is hidden from its site owners, its API key is refused, and it receives no revalidation calls).
 
 **One error envelope:**
 Routes throw; the single error handler in `errors/` turns every error into `{ error: { message, fields? } }` with the status codes in `docs/endpoints.md`. Express 5 forwards rejected async handlers to it automatically.
@@ -263,7 +263,7 @@ root
 │   ├── admin/
 │   │   └── index.js          *accounts, websites, create account, link a website, set an ability or a gallery live, audit events
 │   ├── siteOwner/
-│   │   ├── index.js          *websites, post CRUD, post status, post delete, upload signing; mounts galleries.js and abilities.js
+│   │   ├── index.js          *websites, post CRUD, post status, post delete and restore, upload signing; mounts galleries.js and abilities.js
 │   │   ├── galleries.js      *gallery CRUD, gallery status
 │   │   └── abilities.js      *add, request, turn on / off and remove a website's abilities
 │   ├── public/
@@ -371,11 +371,12 @@ root
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 13 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-03-3`.
   - **How work runs:** from a GitHub issue Rich writes, one branch per repo (`docs/process.md`); breaking changes through expand → migrate → contract (`docs/scaling.md` §0, §3); production released with `npm run release` from this repo after staging, backend first, each release tagged (`docs/process.md` → Releases).
-  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 7).
+  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 8).
   - **Issue #73 done:** the session docs trimmed, the legacy fields dropped (released), and the process shared with the frontend in `docs/process.md`; `npm run check:sync` reports all four pairs identical.
   - **Issue #90 done:** every file header is one or two lines on what the file is for, with no history, and `npm run check:rules` enforces it. The frontend's half of the V1 trim (frontend issue #77) is merged.
   - **Issue #69 done:** `build-spec` is its own GitHub template repo, `rmarafioti/build-spec` (local `../build-spec`), outside the 3DWD `gh` token: Rich pushes there himself.
   - **Issue #93 done** (frontend issue #81): deleting a website's last post clears a `requested` posts placement, new galleries get a random 8-character slug (the Gallery Code, also on `AdminGallerySummary`), and the admin's Audit Events take a `from` / `to` range for one local day. Additive; no migration.
+  - **Issue #85 done** (frontend issue #83): the site owner's Recently deleted posts, listed for 30 days and restorable with their images and status; Audit Events show "Page N of M". Additive; one index migration.
   - **The master doc** is now the Proposal, Build vs Buy and a Glossary; its Client Portal tabs, Deployment and Client to Website included, are deleted.
 - **Next:**
   1. The frontend drops its master doc mentions (frontend issue #65), and Stevie's `CLAUDE.md` and `.prettierignore` stop calling its guide a copy of the master doc (a handoff to its session).
@@ -383,7 +384,9 @@ root
   3. Stevie The Dog: its `/api/revalidate` route ignores the body, so `{ websiteId, ability }` needs no change; its guide's revalidation section gains the new body (the same Stevie handoff). Rich copies the guide into the client repos by hand.
   4. The first real reminders: the code sweep (`/code-sweep 7a42142`) and Documentation Sync on 2026-11-09, the dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
   5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the four waiting client websites one at a time, by `docs/deploy.md` → Onboarding a client website.
-  6. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
+  6. Issue #96, scheduled publish: a draft post or gallery goes live on a chosen date (replaces #80); its open questions are settled when it is planned.
+  7. After the next release, Rich checks on production that a restored published post shows again on Stevie's site (not testable locally, since the local Stevie site uses the production API key).
+  8. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
@@ -410,11 +413,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-05** `feat/recently-deleted-posts` (issue #85; frontend issue #83): the site owner lists the posts deleted in the last 30 days (`GET /api/siteOwner/posts/deleted`, paged) and restores one with `POST /api/siteOwner/posts/:id/restore` (`post.restored`), backed by a (`website_id`, `deleted_at`) index; the admin's Audit Events gain `pages` for a "Page N of M" counter, and `pageShape` holds the shared 50-per-page default. Additive. 617 tests.
 - **2026-11-05** `feat/ui-adjustments` (issue #93; frontend issue #81, the lead): deleting a website's last post clears a `requested` posts placement (`ability.request_cleared`), and new galleries get 8 random lowercase letters and digits as their slug, created at Serializable isolation so a same-name race still answers 409. `AdminGallerySummary` gains `slug`, and `GET /api/admin/auditEvents` takes an optional `from` / `to` range. Additive. 596 tests.
 - **2026-11-04** `chore/trim-file-headers` (issue #90): every file header is cut to one or two lines on what the file is for, with no history; a reason the code needs moves above that code, and the rest restated `docs/`. `npm run check:rules` fails a longer header (the guard hook pair skipped), and Code Style and `/code-sweep` say so. No behaviour change. 591 tests.
 - **2026-11-04** `docs/v1-trim` (issue #77; frontend issue #77): only `docs/process.md` is imported now, with a Read before table in its place, and `CLAUDE.md` is ordered by weight with each rule written once and no history inside the rules. Planned Later moves to issues labelled `later` (#78–#88), the new `npm run check:rules` enforces five Code Style rules in CI, and `/code-sweep` asks "can this go?" first. What loads every session drops from about 272 KB to about 62 KB. 584 tests.
 - **2026-11-04** `docs/shared-process` (issue #73): Issue Workflow, Cross-Repo Handoff, Version Control, Releases and the shared Reminders rule move into `docs/process.md`, identical in both repos and checked by `npm run check:sync`; one issue is now one branch per repo. `/doc-sync`'s must-agree tier becomes a check of the frontend's backend facts, and Planned Later holds the frontend's lines, so it is the only copy. Docs only.
-- **2026-11-03** `chore/drop-legacy-fields` (issue #73; frontend issue #70): post `active` (Feature 8's contract step, `drop_post_active`), the unused `ability_status` value `requested` (`drop_ability_status_requested`) and the request email cap are removed, and `docs/endpoints.md`'s per-route sections stop repeating the contract. Breaking for the app API only; the frontend never sent or read `active`. 568 tests.
 
 ## Features
 
@@ -433,6 +436,7 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 11. **Faster photo submit** (`feat/faster-photo-submit`, frontend issue #55; backend issue #60): photos shrunk in the browser before upload (`docs/endpoints.md` → API Contract, Notes).
 12. **Abilities** (`feat/abilities`, issue #64): posts and Photo Galleries as a website's abilities, with request messages, On / Off and remove; status split from placement by issue #71.
 13. **Request emails** (`feat/ability-emails`, issue #65): the admin is emailed each request message, and a sent message can be edited.
+14. **Recently deleted posts** (`feat/recently-deleted-posts`, issue #85): the site owner lists the posts deleted in the last 30 days and restores one, with its images and status.
 
 ## Planned Later
 
