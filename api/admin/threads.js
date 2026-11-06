@@ -10,7 +10,6 @@ const {
   listThreadsSchema,
 } = require('../../validation/thread');
 const {
-  THREAD_NOT_FOUND,
   THREAD_SELECT,
   toThread,
   unreadWhere,
@@ -21,6 +20,8 @@ const {
 } = require('../../lib/threads');
 
 const router = express.Router();
+
+const THREAD_NOT_FOUND = 'Thread not found.';
 
 // Any site owner's thread, or a 404.
 async function findThread(id) {

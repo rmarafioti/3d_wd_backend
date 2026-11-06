@@ -7,13 +7,14 @@ const { validate } = require('../../validation/validate');
 const { notificationSchema, listNotificationsSchema } = require('../../validation/notification');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const {
-  NOTIFICATION_NOT_FOUND,
   ADMIN_NOTIFICATION_SELECT,
   toAdminNotification,
   sendNotification,
 } = require('../../lib/notifications');
 
 const router = express.Router();
+
+const NOTIFICATION_NOT_FOUND = 'Update not found.';
 
 // An update that hasn't been withdrawn, or a 404.
 async function findSentNotification(id) {

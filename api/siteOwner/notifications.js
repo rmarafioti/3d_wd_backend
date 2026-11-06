@@ -5,14 +5,12 @@ const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
 const { listNotificationsSchema } = require('../../validation/notification');
-const {
-  NOTIFICATION_NOT_FOUND,
-  NOTIFICATION_SELECT,
-  toNotification,
-} = require('../../lib/notifications');
+const { NOTIFICATION_SELECT, toNotification } = require('../../lib/notifications');
 const { unreadWhere } = require('../../lib/threads');
 
 const router = express.Router();
+
+const NOTIFICATION_NOT_FOUND = 'Update not found.';
 
 const RECIPIENT_SELECT = { readAt: true, notification: { select: NOTIFICATION_SELECT } };
 

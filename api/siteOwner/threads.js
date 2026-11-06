@@ -11,7 +11,6 @@ const {
 } = require('../../validation/thread');
 const { threadMessageRateLimit } = require('../../lib/rateLimit');
 const {
-  THREAD_NOT_FOUND,
   THREAD_SELECT,
   toThread,
   listThreads,
@@ -21,6 +20,8 @@ const {
 } = require('../../lib/threads');
 
 const router = express.Router();
+
+const THREAD_NOT_FOUND = 'Thread not found.';
 
 // The account's own thread, or a 404 (another site owner's thread reads as not found).
 async function findOwnedThread(accountId, id, select = { id: true }) {
