@@ -203,6 +203,8 @@ describe('GET /api/siteOwner/websites', () => {
               postName: 'Newer',
               postDate: '2026-10-01',
               status: 'published',
+              publishAt: null,
+              publishedAt: null,
               createdAt: newer.createdAt.toISOString(),
             },
             {
@@ -210,6 +212,8 @@ describe('GET /api/siteOwner/websites', () => {
               postName: 'Older',
               postDate: null,
               status: 'draft',
+              publishAt: null,
+              publishedAt: null,
               createdAt: older.createdAt.toISOString(),
             },
           ],
@@ -221,6 +225,8 @@ describe('GET /api/siteOwner/websites', () => {
               status: 'published',
               placement: 'requested',
               requestedAt: '2026-11-02T00:00:00.000Z',
+              publishAt: null,
+              publishedAt: null,
               createdAt: newerGallery.createdAt.toISOString(),
             },
             {
@@ -230,6 +236,8 @@ describe('GET /api/siteOwner/websites', () => {
               status: 'draft',
               placement: null,
               requestedAt: null,
+              publishAt: null,
+              publishedAt: null,
               createdAt: olderGallery.createdAt.toISOString(),
             },
           ],
@@ -290,6 +298,8 @@ describe('POST /api/siteOwner/posts', () => {
       'id',
       'postDate',
       'postName',
+      'publishAt',
+      'publishedAt',
       'status',
       'subHeader',
       'updatedAt',
@@ -488,6 +498,8 @@ describe('GET /api/siteOwner/posts/:id', () => {
         subHeader: null,
         postDate: null,
         status: 'published',
+        publishAt: null,
+        publishedAt: null,
         createdAt: post.createdAt.toISOString(),
         updatedAt: post.updatedAt.toISOString(),
         body: [
@@ -885,78 +897,25 @@ describe('DELETE /api/siteOwner/posts/:id', () => {
     }
   });
 
-  it("clears a requested posts placement when the website's last post is deleted", async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const ability = await createAbility(website, 'posts', {
-      placement: 'requested',
-      requestNote: 'Under the menu',
-      requestedAt: new Date(),
-    });
-    const post = await createPost(website);
+  it("keeps a requested or live posts placement when the website's last post is deleted", async () => {
+    for (const placement of ['requested', 'live']) {
+      const { owner, website } = await createOwnerWithWebsite();
+      const requestedAt = new Date();
+      const ability = await createAbility(website, 'posts', {
+        placement,
+        requestNote: 'Under the menu',
+        requestedAt,
+      });
+      const post = await createPost(website);
 
-    const res = await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+      await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
 
-    assert.equal(res.status, 204);
-    const websites = await as(owner, 'get', '/api/siteOwner/websites');
-    const posts = websites.body.data[0].abilities.find((item) => item.kind === 'posts');
-    assert.equal(posts.placement, null);
-    assert.equal(posts.requestNote, null);
-    assert.equal(posts.requestedAt, null);
-    assert.deepEqual((await auditEvents()).at(-1), {
-      action: 'ability.request_cleared',
-      actorId: owner.id,
-      actorEmail: owner.email,
-      targetType: 'ability',
-      targetId: ability.id,
-      metadata: {
-        websiteId: website.id,
-        kind: 'posts',
-        status: 'added',
-        turnedOn: true,
-        placement: null,
-        removed: false,
-      },
-    });
-  });
-
-  it('keeps a live posts placement when the last post is deleted', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const requestedAt = new Date();
-    const ability = await createAbility(website, 'posts', {
-      status: 'live',
-      placement: 'live',
-      requestNote: 'Under the menu',
-      requestedAt,
-    });
-    const post = await createPost(website);
-
-    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
-
-    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-    assert.equal(stored.placement, 'live');
-    assert.equal(stored.requestNote, 'Under the menu');
-    assert.deepEqual(stored.requestedAt, requestedAt);
-    assert.deepEqual(
-      (await auditEvents()).map((event) => event.action),
-      ['post.deleted'],
-    );
-  });
-
-  it('keeps a requested posts placement while another post, even a draft, is left', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const ability = await createAbility(website, 'posts', {
-      placement: 'requested',
-      requestNote: 'Under the menu',
-      requestedAt: new Date(),
-    });
-    await createPost(website, { status: 'draft' });
-    const post = await createPost(website);
-
-    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
-
-    const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-    assert.equal(stored.placement, 'requested');
-    assert.equal(stored.requestNote, 'Under the menu');
+      const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+      assert.equal(stored.placement, placement);
+      assert.equal(stored.requestNote, 'Under the menu');
+      assert.deepEqual(stored.requestedAt, requestedAt);
+      assert.equal((await auditEvents()).at(-1).action, 'post.deleted');
+    }
   });
 
   it("leaves a deleted post out of the website's post summaries", async () => {
@@ -1207,7 +1166,7 @@ describe('POST /api/siteOwner/posts/:id/restore', () => {
     assert.deepEqual(deleted.body.data, []);
   });
 
-  it('leaves a posts placement cleared by the last delete as null', async () => {
+  it('keeps the posts placement through a delete and restore of the last post', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const ability = await createAbility(website, 'posts', {
       placement: 'requested',
@@ -1220,8 +1179,8 @@ describe('POST /api/siteOwner/posts/:id/restore', () => {
     await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
 
     const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
-    assert.equal(stored.placement, null);
-    assert.equal(stored.requestedAt, null);
+    assert.equal(stored.placement, 'requested');
+    assert.equal(stored.requestNote, 'Under the menu');
   });
 
   it('returns 404 for a post that is not deleted, deleted over 30 days ago, or unknown', async () => {
@@ -1382,5 +1341,246 @@ describe('POST /api/siteOwner/uploads/sign', () => {
 
     assert.equal(res.status, 404);
     assert.deepEqual(res.body, WEBSITE_NOT_FOUND);
+  });
+});
+
+describe('post go-live date (publishAt)', () => {
+  const inADay = () => new Date(Date.now() + DAY_MS);
+  const publishAtError = (message) => ({
+    error: { message: 'Please fix the highlighted fields.', fields: { publishAt: message } },
+  });
+
+  it('creates a draft with a go-live date and returns it on the Post and its summary', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const publishAt = inADay();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { status: 'draft', publishAt: publishAt.toISOString() }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.publishAt, publishAt.toISOString());
+    const websites = await as(owner, 'get', '/api/siteOwner/websites');
+    assert.equal(websites.body.data[0].posts[0].publishAt, publishAt.toISOString());
+  });
+
+  it('returns 400 for a go-live date on a published post, the default status', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { publishAt: inADay().toISOString() }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, publishAtError('Only a draft can have a go-live date.'));
+    assert.equal(await prisma.post.count(), 0);
+  });
+
+  it('returns 400 for a go-live date that has passed or is not a date and time', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const cases = [
+      [new Date(Date.now() - 60_000).toISOString(), 'Pick a go-live date after today.'],
+      ['2026-11-20', 'Enter a valid date and time.'],
+    ];
+
+    for (const [publishAt, message] of cases) {
+      const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+        newPost(website, { status: 'draft', publishAt }),
+      );
+
+      assert.equal(res.status, 400);
+      assert.deepEqual(res.body, publishAtError(message));
+    }
+  });
+
+  it('leaves the go-live date unchanged on an edit that does not send it', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const publishAt = inADay();
+    const post = await createPost(website, { status: 'draft', publishAt });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(editPost());
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.publishAt, publishAt.toISOString());
+  });
+
+  it('sets, changes and clears the go-live date on edit', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { status: 'draft' });
+    const later = new Date(Date.now() + 2 * DAY_MS).toISOString();
+
+    for (const publishAt of [inADay().toISOString(), later, null]) {
+      const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
+        editPost({ publishAt }),
+      );
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.publishAt, publishAt);
+    }
+  });
+
+  it('accepts an unchanged go-live date on edit even once it has passed', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const publishAt = new Date(Date.now() - 60_000);
+    const post = await createPost(website, { status: 'draft', publishAt });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
+      editPost({ publishAt: publishAt.toISOString() }),
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.publishAt, publishAt.toISOString());
+  });
+
+  it('returns 400 for a new go-live date that has passed, or one on a published post', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const draft = await createPost(website, { status: 'draft' });
+    const published = await createPost(website);
+    const cases = [
+      [draft, new Date(Date.now() - 60_000), 'Pick a go-live date after today.'],
+      [published, inADay(), 'Only a draft can have a go-live date.'],
+    ];
+
+    for (const [post, publishAt, message] of cases) {
+      const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
+        editPost({ publishAt: publishAt.toISOString() }),
+      );
+
+      assert.equal(res.status, 400);
+      assert.deepEqual(res.body, publishAtError(message));
+      const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id } });
+      assert.equal(stored.postName, 'Post');
+      assert.equal(stored.publishAt, null);
+    }
+  });
+
+  it('clears the go-live date when the post is published by hand', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { status: 'draft', publishAt: inADay() });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
+      status: 'published',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.status, 'published');
+    assert.equal(res.body.data.publishAt, null);
+  });
+
+  it('keeps the go-live date when a scheduled draft is set to draft again', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const publishAt = inADay();
+    const post = await createPost(website, { status: 'draft', publishAt });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
+      status: 'draft',
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.publishAt, publishAt.toISOString());
+  });
+
+  it('clears the go-live date on delete, so a restored post comes back unscheduled', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { status: 'draft', publishAt: inADay() });
+
+    await as(owner, 'delete', `/api/siteOwner/posts/${post.id}`);
+    const res = await as(owner, 'post', `/api/siteOwner/posts/${post.id}/restore`);
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.status, 'draft');
+    assert.equal(res.body.data.publishAt, null);
+  });
+});
+
+describe('post publishedAt (when it went live)', () => {
+  it('stamps a post created as published, and leaves a draft null', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const before = Date.now();
+
+    const published = await as(owner, 'post', '/api/siteOwner/posts').send(newPost(website));
+    const draft = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { status: 'draft' }),
+    );
+
+    assert.ok(new Date(published.body.data.publishedAt).getTime() >= before);
+    assert.equal(draft.body.data.publishedAt, null);
+  });
+
+  it('stamps it when a draft is published, keeps it on a repeat, and clears it on draft', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { status: 'draft' });
+    const path = `/api/siteOwner/posts/${post.id}/status`;
+
+    const published = await as(owner, 'patch', path).send({ status: 'published' });
+    const repeated = await as(owner, 'patch', path).send({ status: 'published' });
+    const drafted = await as(owner, 'patch', path).send({ status: 'draft' });
+
+    assert.ok(published.body.data.publishedAt);
+    assert.equal(repeated.body.data.publishedAt, published.body.data.publishedAt);
+    assert.equal(drafted.body.data.publishedAt, null);
+  });
+});
+
+describe('PATCH /api/siteOwner/posts/:id/publishAt', () => {
+  const inADay = () => new Date(Date.now() + DAY_MS);
+  const publishAtError = (message) => ({
+    error: { message: 'Please fix the highlighted fields.', fields: { publishAt: message } },
+  });
+
+  it("sets and clears a draft's go-live date, returns the Post and records post.updated", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { status: 'draft' });
+    const path = `/api/siteOwner/posts/${post.id}/publishAt`;
+    const publishAt = inADay().toISOString();
+
+    const set = await as(owner, 'patch', path).send({ publishAt });
+    const cleared = await as(owner, 'patch', path).send({ publishAt: null });
+
+    assert.equal(set.status, 200);
+    assert.equal(set.body.data.id, post.id);
+    assert.equal(set.body.data.publishAt, publishAt);
+    assert.equal(cleared.body.data.publishAt, null);
+    assert.deepEqual(await auditEvents(), [
+      postEvent(owner, 'post.updated', post.id, website.id),
+      postEvent(owner, 'post.updated', post.id, website.id),
+    ]);
+    assert.equal(fetchMock.mock.callCount(), 0);
+  });
+
+  it('returns 400 for a missing, past or published-post go-live date', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const draft = await createPost(website, { status: 'draft' });
+    const published = await createPost(website);
+    const cases = [
+      [draft, {}, 'Enter a valid date and time.'],
+      [
+        draft,
+        { publishAt: new Date(Date.now() - 60_000).toISOString() },
+        'Pick a go-live date after today.',
+      ],
+      [published, { publishAt: inADay().toISOString() }, 'Only a draft can have a go-live date.'],
+    ];
+
+    for (const [post, body, message] of cases) {
+      const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/publishAt`).send(body);
+
+      assert.equal(res.status, 400);
+      assert.deepEqual(res.body, publishAtError(message));
+    }
+    assert.deepEqual(await auditEvents(), []);
+  });
+
+  it("returns 404 for another site owner's post", async () => {
+    const { owner } = await createOwnerWithWebsite();
+    const { website: theirs } = await createOwnerWithWebsite();
+    const post = await createPost(theirs, { status: 'draft' });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/publishAt`).send({
+      publishAt: inADay().toISOString(),
+    });
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(res.body, POST_NOT_FOUND);
   });
 });

@@ -1,5 +1,5 @@
 // Site owner routes, mounted at /api/siteOwner: websites, post create / read / edit / status /
-// delete / restore and upload signing, with the gallery and ability routers behind the same guards.
+// publish date / delete / restore and upload signing, with the gallery and ability routers.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -12,15 +12,17 @@ const {
   postStatusSchema,
   listDeletedPostsSchema,
 } = require('../../validation/post');
+const { publishAtSchema, assertPublishAtAllowed } = require('../../validation/fields');
 const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
 const { signUpload } = require('../../lib/cloudinary');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
-const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
+const { ABILITY_SELECT, toAbility } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
 const { DELETED_GRACE_MS } = require('../../lib/retention');
+const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
 const abilities = require('./abilities');
@@ -42,6 +44,8 @@ const POST_SELECT = {
   subHeader: true,
   postDate: true,
   status: true,
+  publishAt: true,
+  publishedAt: true,
   createdAt: true,
   updatedAt: true,
   website: { select: { websiteName: true } },
@@ -87,6 +91,8 @@ function toPost(post) {
     subHeader: post.subHeader,
     postDate: toDateOnly(post.postDate),
     status: post.status,
+    publishAt: post.publishAt,
+    publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
     body: toBody(post.elements),
@@ -140,28 +146,6 @@ function recordPostEvent(tx, req, action, post) {
   });
 }
 
-// Once a website has no posts left (not deleted), a posts request still waiting to be placed has
-// nothing to place, so its placement, note and requestedAt are cleared; the next first post asks
-// again. A live placement is kept. Two deletes of the last two posts at the same instant each still
-// see the other post, so neither clears; the new first post rule still lets the form be sent again.
-async function clearPostsRequestIfNoPosts(tx, req, websiteId) {
-  const remaining = await tx.post.count({ where: { websiteId, deletedAt: null } });
-  if (remaining > 0) return;
-
-  const ability = await tx.websiteAbility.findFirst({
-    where: { websiteId, kind: 'posts', removedAt: null, placement: 'requested' },
-    select: { id: true },
-  });
-  if (!ability) return;
-
-  const cleared = await tx.websiteAbility.update({
-    where: { id: ability.id },
-    data: { placement: null, requestNote: null, requestedAt: null },
-    select: ABILITY_SELECT,
-  });
-  await recordAbilityEvent(tx, req, AUDIT_ACTIONS.ABILITY_REQUEST_CLEARED, cleared);
-}
-
 // GET /api/siteOwner/websites — the site owner's active websites, each with its abilities (not
 // removed, in the order they were added) and post and gallery summaries.
 router.get('/websites', async (req, res) => {
@@ -186,6 +170,8 @@ router.get('/websites', async (req, res) => {
           postName: true,
           postDate: true,
           status: true,
+          publishAt: true,
+          publishedAt: true,
           createdAt: true,
         },
       },
@@ -199,6 +185,8 @@ router.get('/websites', async (req, res) => {
           status: true,
           placement: true,
           requestedAt: true,
+          publishAt: true,
+          publishedAt: true,
           createdAt: true,
         },
       },
@@ -235,6 +223,8 @@ router.post('/posts', async (req, res) => {
         subHeader: input.subHeader,
         postDate: fromDateOnly(input.postDate),
         status: input.status,
+        publishAt: input.publishAt ?? null,
+        publishedAt: input.status === 'published' ? new Date() : null,
       },
       select: { id: true },
     });
@@ -288,17 +278,21 @@ router.get('/posts/:id', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/posts/:id — full edit form: the post's fields plus the complete body.
-// websiteId and status can't be changed here.
+// websiteId and status can't be changed here; publishAt is left as it is when it isn't sent.
 router.patch('/posts/:id', async (req, res) => {
   const input = validate(updatePostSchema, req.body ?? {});
 
   const post = await findOwnedPost(req.user.id, req.params.id, {
     id: true,
     websiteId: true,
+    status: true,
+    publishAt: true,
     website: { select: { mediaFolder: true } },
     images: { select: { id: true } },
   });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
+
+  assertPublishAtAllowed(input.publishAt, post);
 
   const images = bodyImages(input.body);
   const keptImageIds = images.filter((image) => image.id).map((image) => image.id);
@@ -317,6 +311,7 @@ router.patch('/posts/:id', async (req, res) => {
         header: input.header,
         subHeader: input.subHeader,
         postDate: fromDateOnly(input.postDate),
+        publishAt: input.publishAt,
       },
     });
     await tx.element.deleteMany({ where: { postId: post.id } });
@@ -331,11 +326,15 @@ router.patch('/posts/:id', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/posts/:id/status — set a post to draft or published. A draft is hidden from
-// the client website; the site owner still sees it.
+// the client website; the site owner still sees it. Publishing by hand clears a go-live date.
 router.patch('/posts/:id/status', async (req, res) => {
   const { status } = validate(postStatusSchema, req.body ?? {});
 
-  const post = await findOwnedPost(req.user.id, req.params.id, { id: true, websiteId: true });
+  const post = await findOwnedPost(req.user.id, req.params.id, {
+    id: true,
+    websiteId: true,
+    status: true,
+  });
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
   const action = status === 'published' ? AUDIT_ACTIONS.POST_PUBLISHED : AUDIT_ACTIONS.POST_DRAFTED;
@@ -343,13 +342,41 @@ router.patch('/posts/:id/status', async (req, res) => {
     await recordPostEvent(tx, req, action, post);
     return tx.post.update({
       where: { id: post.id },
-      data: { status },
+      data: toStatusData(status, post.status),
       select: POST_SELECT,
     });
   });
 
   res.json({ data: toPost(updated) });
   revalidate(post.websiteId, { postId: post.id });
+});
+
+// PATCH /api/siteOwner/posts/:id/publishAt — set or clear a draft's go-live date from the post's
+// page, without the full edit form. Only a draft has one, so the client website shows nothing new
+// and there is no revalidation.
+router.patch('/posts/:id/publishAt', async (req, res) => {
+  const input = validate(publishAtSchema, req.body ?? {});
+
+  const post = await findOwnedPost(req.user.id, req.params.id, {
+    id: true,
+    websiteId: true,
+    status: true,
+    publishAt: true,
+  });
+  if (!post) throw new ServerError(404, POST_NOT_FOUND);
+
+  assertPublishAtAllowed(input.publishAt, post);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, post);
+    return tx.post.update({
+      where: { id: post.id },
+      data: { publishAt: input.publishAt },
+      select: POST_SELECT,
+    });
+  });
+
+  res.json({ data: toPost(updated) });
 });
 
 // DELETE /api/siteOwner/posts/:id — soft delete: stamps deletedAt, so the post is gone from the
@@ -361,8 +388,11 @@ router.delete('/posts/:id', async (req, res) => {
 
   await prisma.$transaction(async (tx) => {
     await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_DELETED, post);
-    await tx.post.update({ where: { id: post.id }, data: { deletedAt: new Date() } });
-    await clearPostsRequestIfNoPosts(tx, req, post.websiteId);
+    // A deleted post never publishes on schedule, and a restored one comes back unscheduled.
+    await tx.post.update({
+      where: { id: post.id },
+      data: { deletedAt: new Date(), publishAt: null },
+    });
   });
 
   res.status(204).end();

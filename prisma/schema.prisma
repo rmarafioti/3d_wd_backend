@@ -122,16 +122,18 @@ model AccountWebsite {
 }
 
 model Post {
-  id        String     @id @default(uuid(7))
-  websiteId String     @map("website_id")
-  postName  String     @map("post_name") // internal label, shown on the dashboard only, never public
-  postDate  DateTime?  @map("post_date") @db.Date // optional date shown on the website
-  header    String? // optional public headline
-  subHeader String?    @map("sub_header")
-  status    PostStatus @default(published)
-  deletedAt DateTime?  @map("deleted_at") // set by Delete a Post; the post is gone from every route
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  id          String     @id @default(uuid(7))
+  websiteId   String     @map("website_id")
+  postName    String     @map("post_name") // internal label, shown on the dashboard only, never public
+  postDate    DateTime?  @map("post_date") @db.Date // optional date shown on the website
+  header      String? // optional public headline
+  subHeader   String?    @map("sub_header")
+  status      PostStatus @default(published)
+  publishAt   DateTime?  @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
+  publishedAt DateTime?  @map("published_at") // when it last went from draft to published; null while a draft
+  deletedAt   DateTime?  @map("deleted_at") // set by Delete a Post; the post is gone from every route
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
   website  Website   @relation(fields: [websiteId], references: [id])
   elements Element[]
@@ -139,6 +141,7 @@ model Post {
 
   @@index([websiteId])
   @@index([websiteId, deletedAt]) // Recently deleted posts: filtered and sorted by deletedAt
+  @@index([status, publishAt]) // the scheduled publish job: drafts whose publishAt has passed
   @@map("post")
 }
 
@@ -189,6 +192,8 @@ model Gallery {
   requestNote String?       @map("request_note") @db.Text // its request message: where it goes
   requestedAt DateTime?     @map("requested_at") // null until the request message is sent
   placement   Placement? // null until the request message is sent
+  publishAt   DateTime?     @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
+  publishedAt DateTime?     @map("published_at") // when it last went from draft to published; null while a draft
   deletedAt   DateTime?     @map("deleted_at") // set by Delete a Gallery; gone from every route
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
@@ -197,6 +202,7 @@ model Gallery {
   images  GalleryImage[]
 
   @@unique([websiteId, slug]) // also the index on website_id
+  @@index([status, publishAt]) // the scheduled publish job: drafts whose publishAt has passed
   @@map("gallery")
 }
 

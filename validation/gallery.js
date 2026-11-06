@@ -1,7 +1,15 @@
 // Zod schemas for photo galleries: create, edit, status, the request message and the crop rules
 // (docs/endpoints.md → Validation rules).
 const { z } = require('zod');
-const { requiredText, optionalText, itemId, websiteId, imageShape } = require('./fields');
+const {
+  requiredText,
+  optionalText,
+  itemId,
+  websiteId,
+  imageShape,
+  publishAt,
+  refinePublishAt,
+} = require('./fields');
 
 const MAX_IMAGES = 30;
 const THUMBNAIL_CROP_MESSAGE = 'Thumbnail crop must be a square inside the image.';
@@ -87,16 +95,21 @@ const galleryFields = {
 const status = z.enum(['draft', 'published'], { error: 'Status must be draft or published.' });
 
 // A new gallery is published unless the request says otherwise.
-const createGallerySchema = z.object({
-  websiteId,
-  ...galleryFields,
-  status: status.default('published'),
-  images: imageList(galleryImageShape),
-});
+// A go-live date is only for a draft (validation/fields.js → refinePublishAt).
+const createGallerySchema = z
+  .object({
+    websiteId,
+    ...galleryFields,
+    status: status.default('published'),
+    publishAt,
+    images: imageList(galleryImageShape),
+  })
+  .superRefine(refinePublishAt, { when: (payload) => payload.issues.length === 0 });
 
 // websiteId, status and slug are not part of the edit form; zod strips them if sent.
 const updateGallerySchema = z.object({
   ...galleryFields,
+  publishAt,
   images: imageList({ id: itemId, ...galleryImageShape }),
 });
 

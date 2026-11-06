@@ -289,47 +289,14 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
     assert.ok(!JSON.stringify(events).includes('News page'));
   });
 
-  it('returns 409 for posts already requested or live while a post from before remains', async () => {
-    const lastRequest = new Date(Date.now() - DAY_MS);
-    const requestedSite = await createOwnerWithWebsite();
-    const requested = await createAbility(requestedSite.website, 'posts', {
-      placement: 'requested',
-      requestedAt: lastRequest,
-    });
-    const liveSite = await createOwnerWithWebsite();
-    const live = await createAbility(liveSite.website, 'posts', {
-      status: 'live',
-      placement: 'live',
-      requestedAt: lastRequest,
-    });
-    // The older post stays, so the newer one isn't a new first post.
-    await createPost(liveSite.website, { createdAt: new Date(Date.now() - 2 * DAY_MS) });
-    await createPost(liveSite.website);
-
-    for (const [owner, ability] of [
-      [requestedSite.owner, requested],
-      [liveSite.owner, live],
-    ]) {
-      const res = await as(owner, 'post', `/api/siteOwner/abilities/${ability.id}/request`).send({
-        requestNote: 'Here',
-      });
-
-      assert.equal(res.status, 409);
-      assert.deepEqual(res.body, {
-        error: { message: 'This ability has already been requested.' },
-      });
-    }
-  });
-
-  it('requests posts again after every post was deleted and a new first post saved', async () => {
-    const lastRequest = new Date(Date.now() - DAY_MS);
-    for (const placement of ['live', 'requested']) {
+  it('returns 409 for posts already requested or live, even after every post was deleted and a new one saved', async () => {
+    for (const placement of ['requested', 'live']) {
       const { owner, website } = await createOwnerWithWebsite();
       const ability = await createAbility(website, 'posts', {
         status: 'live',
         placement,
         requestNote: 'Old place',
-        requestedAt: lastRequest,
+        requestedAt: new Date(Date.now() - DAY_MS),
       });
       await createPost(website, {
         createdAt: new Date(Date.now() - 2 * DAY_MS),
@@ -341,11 +308,12 @@ describe('POST /api/siteOwner/abilities/:id/request', () => {
         requestNote: 'New place',
       });
 
-      assert.equal(res.status, 200);
-      assert.equal(res.body.data.status, 'live');
-      assert.equal(res.body.data.placement, 'requested');
-      assert.equal(res.body.data.requestNote, 'New place');
-      assert.ok(new Date(res.body.data.requestedAt) > lastRequest);
+      assert.equal(res.status, 409);
+      assert.deepEqual(res.body, {
+        error: { message: 'This ability has already been requested.' },
+      });
+      const stored = await prisma.websiteAbility.findUnique({ where: { id: ability.id } });
+      assert.equal(stored.requestNote, 'Old place');
     }
   });
 
@@ -659,6 +627,21 @@ describe('DELETE /api/siteOwner/abilities/:id', () => {
       abilityEvent(owner, 'ability.removed', ability, { status: 'live', removed: true }),
     ]);
     assert.deepEqual(await revalidationBody(), { websiteId: website.id, ability: 'galleries' });
+  });
+
+  it("clears the go-live dates of the website's galleries", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const ability = await createAbility(website, 'galleries', { status: 'live' });
+    const gallery = await createGallery(website, {
+      status: 'draft',
+      publishAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await as(owner, 'delete', `/api/siteOwner/abilities/${ability.id}`);
+
+    const stored = await prisma.gallery.findUniqueOrThrow({ where: { id: gallery.id } });
+    assert.ok(stored.deletedAt);
+    assert.equal(stored.publishAt, null);
   });
 
   it('returns 409 for posts, which every website keeps', async () => {

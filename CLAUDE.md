@@ -8,7 +8,7 @@ The backend codebase of our Headless CMS project. The frontend is in a separate 
 
 - The Administrator sees a summary of all site owner accounts and their websites (with each website's galleries as counts and crop flags), creates new site owner accounts, and links websites to existing accounts.
 - The Site Owner views, creates, edits, deletes and sets to draft or published the posts and photo galleries for their own websites, adds Photo Galleries to a website, says where on their site each gallery and their posts should go (and changes it), and turns an ability on or off. The Administrator is emailed each request, sets an ability live once its code is wired, and sets each gallery (and posts) live once placed.
-- The backend also serves published posts and galleries to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post or gallery changes.
+- The backend also serves published posts and galleries to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post or gallery changes. A draft given a go-live date is published by a cron job when that time passes.
 
 Production: this API runs on Render at `https://api.3dwebdev.com`, defined in `render.yaml`. The frontend runs on Vercel at `https://3dwebdev.com`. Both share the parent domain `3dwebdev.com`, which is why the session cookie is `SameSite=Lax` with `Domain=.3dwebdev.com`.
 
@@ -263,8 +263,8 @@ root
 │   ├── admin/
 │   │   └── index.js          *accounts, websites, create account, link a website, set an ability or a gallery live, audit events
 │   ├── siteOwner/
-│   │   ├── index.js          *websites, post CRUD, post status, post delete and restore, upload signing; mounts galleries.js and abilities.js
-│   │   ├── galleries.js      *gallery CRUD, gallery status
+│   │   ├── index.js          *websites, post CRUD, post status and publish date, post delete and restore, upload signing; mounts galleries.js and abilities.js
+│   │   ├── galleries.js      *gallery CRUD, gallery status and publish date
 │   │   └── abilities.js      *add, request, turn on / off and remove a website's abilities
 │   ├── public/
 │   │   └── index.js          *GET /public/posts, GET /public/galleries/:slug (API key auth)
@@ -273,9 +273,11 @@ root
 │   ├── revalidate.js         *fire-and-forget webhook call to a client website
 │   ├── requestEmail.js       *fire-and-forget email to the admin on a request message (Resend)
 │   ├── sweepUploads.js       *upload cleanup: unused uploads over 24h old, deleted posts' and galleries' images after 30 days
+│   ├── publishScheduled.js   *scheduled publish: drafts whose go-live date has passed become published, then revalidated
 │   └── backupDatabase.js     *pg_dump, encrypted with the backup public key, uploaded to R2
 ├── scripts/
 │   ├── sweepUploads.js       *entry point for npm run sweep:uploads (Render cron job once deployed)
+│   ├── publishScheduled.js   *entry point for npm run publish:scheduled (Render cron job every 15 minutes)
 │   ├── backupDatabase.js     *entry point for npm run backup:database (nightly Render cron job)
 │   ├── generateBackupKeys.js *npm run backup:keygen: the backup key pair, written outside the repo
 │   ├── restoreBackup.js      *npm run backup:restore: decrypt a backup into an empty database
@@ -289,7 +291,7 @@ root
 │   ├── website.js
 │   ├── post.js
 │   ├── gallery.js            *gallery create / edit / status / request, the admin's placement, the crop rules
-│   ├── fields.js             *field builders shared by post and gallery (text, https URL, image)
+│   ├── fields.js             *field builders shared by post and gallery (text, https URL, image, go-live date)
 │   ├── upload.js             *Sign an Upload body ({ websiteId })
 │   ├── ability.js            *add an ability, its request form, on / off, the admin's live
 │   ├── auditEvent.js         *audit event list query (month, limit, cursor)
@@ -316,7 +318,8 @@ root
 │   ├── rateLimit.js          *rate limiters: login, the public API, upload signing
 │   ├── retention.js          *how long deleted content stays recoverable (30 days)
 │   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush
-│   └── slug.js               *gallery slug: 8 random lowercase letters and digits, unique within the website
+│   ├── slug.js               *gallery slug: 8 random lowercase letters and digits, unique within the website
+│   └── status.js             *a post's or gallery's draft / published change: publishedAt and the go-live date
 ├── errors/                   *custom error classes + the single error handler (error envelope)
 │   ├── serverError.js
 │   └── index.js
@@ -366,7 +369,7 @@ root
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-05)
+## Current progress (as of 2026-11-06)
 
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 13 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-03-3`.
@@ -375,49 +378,53 @@ root
   - **Issue #73 done:** the session docs trimmed, the legacy fields dropped (released), and the process shared with the frontend in `docs/process.md`; `npm run check:sync` reports all four pairs identical.
   - **Issue #90 done:** every file header is one or two lines on what the file is for, with no history, and `npm run check:rules` enforces it. The frontend's half of the V1 trim (frontend issue #77) is merged.
   - **Issue #69 done:** `build-spec` is its own GitHub template repo, `rmarafioti/build-spec` (local `../build-spec`), outside the 3DWD `gh` token: Rich pushes there himself.
-  - **Issue #93 done** (frontend issue #81): deleting a website's last post clears a `requested` posts placement, new galleries get a random 8-character slug (the Gallery Code, also on `AdminGallerySummary`), and the admin's Audit Events take a `from` / `to` range for one local day. Additive; no migration.
+  - **Issue #93 done** (frontend issue #81): new galleries get a random 8-character slug (the Gallery Code, also on `AdminGallerySummary`), and the admin's Audit Events take a `from` / `to` range for one local day. Additive; no migration.
   - **Issue #85 done** (frontend issue #83): the site owner's Recently deleted posts, listed for 30 days and restorable with their images and status; Audit Events show "Page N of M". Additive; one index migration.
+  - **Issue #96 done** (frontend issue #85): scheduled publish. A draft post or gallery gets a go-live date (date only, midnight local), set on create, edit or its page, and the `3dwd-publish-scheduled` cron job publishes it every 15 minutes; `publishedAt` records when an item went live, and deleting posts no longer clears or re-asks the posts placement. Additive; two migrations (`add_publish_at`, `add_published_at` with its backfill).
+  - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot.
   - **The master doc** is now the Proposal, Build vs Buy and a Glossary; its Client Portal tabs, Deployment and Client to Website included, are deleted.
 - **Next:**
   1. The frontend drops its master doc mentions (frontend issue #65), and Stevie's `CLAUDE.md` and `.prettierignore` stop calling its guide a copy of the master doc (a handoff to its session).
   2. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
   3. Stevie The Dog: its `/api/revalidate` route ignores the body, so `{ websiteId, ability }` needs no change; its guide's revalidation section gains the new body (the same Stevie handoff). Rich copies the guide into the client repos by hand.
   4. The first real reminders: the code sweep (`/code-sweep 7a42142`) and Documentation Sync on 2026-11-09, the dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
-  5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the four waiting client websites one at a time, by `docs/deploy.md` → Onboarding a client website.
-  6. Issue #96, scheduled publish: a draft post or gallery goes live on a chosen date (replaces #80); its open questions are settled when it is planned.
-  7. After the next release, Rich checks on production that a restored published post shows again on Stevie's site (not testable locally, since the local Stevie site uses the production API key).
-  8. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
+  5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website.
+  6. After #96 is merged and released (Rich): Manual Sync in Render for `3dwd-publish-scheduled`, enter its `SECRET_ENCRYPTION_KEY` and `SENTRY_DSN`, check its first runs in Render, and close #80 (replaced by #96).
+  7. Issue #98, the notification inbox: the admin's updates to site owners (general or targeted, plus automatic ones when an ability or gallery goes live), and message threads site owners start; it pulls #78 (Admin action hub) forward.
+  8. After the next release, Rich checks on production that a restored published post shows again on Stevie's site (not testable locally, since the local Stevie site uses the production API key).
+  9. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "Test Post 1", written and edited at launch (`docs/launch-record.md` step 28), live on Stevie's site (`status` `published`)
   - the `audit_event` rows since launch, kept (audit rows are never deleted)
-  - Estudio Castelo, an active onboarded client: nothing from its account (its account, website, `account_website` link, abilities, posts, galleries or images) is ever deleted unless Rich says so.
+  - Estudio Castelo and Good Boys Dog Grooming, active onboarded clients: nothing from either account (its account, website, `account_website` link, abilities, posts, galleries or images) is ever deleted unless Rich says so.
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-05):
+- **Local database baseline** (test rows cleared on 2026-11-06):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
-  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability and no galleries (#93's test gallery, its image and the galleries ability deleted on 2026-11-05)
+  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability and no galleries (#96's two test posts and a galleries ability deleted on 2026-11-06)
   - the `audit_event` rows from local sign-ins and changes, kept: audit rows are not cleared after a test, locally or in production
 
-  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 and #93 test galleries' images. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Four client websites are waiting to onboard.
+  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 and #93 test galleries' images. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Two client websites are waiting to onboard.
 
 - **Pending notes:**
   - **Backup `pg_dump` version:** solved by `Dockerfile.backup` (Node 24 on Debian trixie, `postgresql-client-17`). Locally, the Homebrew `postgresql@17` client is used for backups (README); the Homebrew Postgres 15 server on the Mac is separate and is left as it is.
   - **R2 test backup:** `backups/test-2026-10-26T14-43-37-513Z.dump.enc` (the local dev database, encrypted with a throwaway key that has been deleted) stays in `3dwd-backups` until the bucket lock and lifecycle rule remove it around 2026-11-25. It is unreadable and harmless.
   - **`gh` token expires 2027-01-27:** renew `claude-code-3dwd` before then (`docs/security.md` → Access).
   - **Render Blueprint is on Manual Sync:** after a merge that changes `render.yaml`, click Manual Sync in Render. Code deploys and migrations don't need it: staging's run on every merge to `main`, production's on every push to `production`.
+  - **Staging runs no cron jobs:** a scheduled draft on staging is published by running `npm run publish:scheduled` from the staging API's Render Shell.
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-06** `feat/scheduled-publish` (issue #96; frontend issue #85): a draft post or gallery takes a go-live date (`publishAt`, on create, edit and the new `PATCH .../:id/publishAt` routes), and `npm run publish:scheduled`, a production cron job every 15 minutes, publishes it with a no-actor audit event and revalidates; `publishedAt` records when an item went live (`lib/status.js`), backfilled from `createdAt`. Deleting posts no longer clears the posts placement, and the request form is sent only once. Additive. 643 tests.
 - **2026-11-05** `feat/recently-deleted-posts` (issue #85; frontend issue #83): the site owner lists the posts deleted in the last 30 days (`GET /api/siteOwner/posts/deleted`, paged) and restores one with `POST /api/siteOwner/posts/:id/restore` (`post.restored`), backed by a (`website_id`, `deleted_at`) index; the admin's Audit Events gain `pages` for a "Page N of M" counter, and `pageShape` holds the shared 50-per-page default. Additive. 617 tests.
 - **2026-11-05** `feat/ui-adjustments` (issue #93; frontend issue #81, the lead): deleting a website's last post clears a `requested` posts placement (`ability.request_cleared`), and new galleries get 8 random lowercase letters and digits as their slug, created at Serializable isolation so a same-name race still answers 409. `AdminGallerySummary` gains `slug`, and `GET /api/admin/auditEvents` takes an optional `from` / `to` range. Additive. 596 tests.
 - **2026-11-04** `chore/trim-file-headers` (issue #90): every file header is cut to one or two lines on what the file is for, with no history; a reason the code needs moves above that code, and the rest restated `docs/`. `npm run check:rules` fails a longer header (the guard hook pair skipped), and Code Style and `/code-sweep` say so. No behaviour change. 591 tests.
 - **2026-11-04** `docs/v1-trim` (issue #77; frontend issue #77): only `docs/process.md` is imported now, with a Read before table in its place, and `CLAUDE.md` is ordered by weight with each rule written once and no history inside the rules. Planned Later moves to issues labelled `later` (#78–#88), the new `npm run check:rules` enforces five Code Style rules in CI, and `/code-sweep` asks "can this go?" first. What loads every session drops from about 272 KB to about 62 KB. 584 tests.
-- **2026-11-04** `docs/shared-process` (issue #73): Issue Workflow, Cross-Repo Handoff, Version Control, Releases and the shared Reminders rule move into `docs/process.md`, identical in both repos and checked by `npm run check:sync`; one issue is now one branch per repo. `/doc-sync`'s must-agree tier becomes a check of the frontend's backend facts, and Planned Later holds the frontend's lines, so it is the only copy. Docs only.
 
 ## Features
 
@@ -437,6 +444,7 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 12. **Abilities** (`feat/abilities`, issue #64): posts and Photo Galleries as a website's abilities, with request messages, On / Off and remove; status split from placement by issue #71.
 13. **Request emails** (`feat/ability-emails`, issue #65): the admin is emailed each request message, and a sent message can be edited.
 14. **Recently deleted posts** (`feat/recently-deleted-posts`, issue #85): the site owner lists the posts deleted in the last 30 days and restores one, with its images and status.
+15. **Scheduled publish** (`feat/scheduled-publish`, issue #96): a draft post or gallery gets a go-live date, and a cron job every 15 minutes publishes it when it passes; `publishedAt` records when an item went live.
 
 ## Planned Later
 

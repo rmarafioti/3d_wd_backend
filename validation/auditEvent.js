@@ -1,18 +1,11 @@
 // Zod schema for the admin's audit event list query (GET /api/admin/auditEvents).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
-const { pageShape } = require('./fields');
+const { pageShape, isoInstant } = require('./fields');
 
 const MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
 
-// An ISO 8601 instant ("2026-11-05T05:00:00.000Z"), turned into a Date.
-const instant = z.preprocess(
-  blankToUndefined,
-  z.iso
-    .datetime({ offset: true, error: 'Enter a valid date and time.' })
-    .transform((value) => new Date(value))
-    .optional(),
-);
+const instant = z.preprocess(blankToUndefined, isoInstant.optional());
 
 // from and to come as a pair, to after from, at most 31 days apart, so a range never reads more
 // than a month does.

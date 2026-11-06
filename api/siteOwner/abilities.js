@@ -48,7 +48,7 @@ async function recordGalleryEvents(tx, req, action, galleries) {
 
 // A first add, or an add more than 30 days after a removal, once the galleries it deleted are
 // gone for good. The ability keeps its status and switch: removing it never unwired its code, and
-// each new gallery is requested on its own (Rich, 2026-11-03).
+// each new gallery is requested on its own.
 async function addAbility(tx, req, websiteId, kind, removed) {
   const ability = removed
     ? await tx.websiteAbility.update({
@@ -121,17 +121,6 @@ router.post('/', async (req, res) => {
   if (canRestore) revalidate(website.id, { ability: ability.kind });
 });
 
-// Posts may be requested again once every post was deleted and a new first post saved: the
-// website's oldest post that isn't deleted was created after the last request.
-async function hasNewFirstPost(ability) {
-  const oldest = await prisma.post.findFirst({
-    where: { websiteId: ability.websiteId, deletedAt: null },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: { createdAt: true },
-  });
-  return oldest !== null && ability.requestedAt !== null && oldest.createdAt > ability.requestedAt;
-}
-
 // Saves the posts request note and puts their placement to requested, for the admin to place (or
 // move) posts on the client website. The ability's status is left as it is.
 function saveRequest(req, ability, requestNote, action) {
@@ -147,17 +136,16 @@ function saveRequest(req, ability, requestNote, action) {
 }
 
 // POST /api/siteOwner/abilities/:id/request — the posts request form: where on the client website
-// posts should appear. Sent after the first post, and again after a new first post once every post
-// was deleted (Rich, 2026-11-02). Moves posts' placement to requested for the admin to place them.
-// Photo Galleries are requested per gallery instead (./galleries.js).
+// posts should appear. Sent once, after the first post; deleting every post never asks for it
+// again, and the site owner changes it with the PATCH below. Moves posts' placement to requested
+// for the admin to place them. Photo Galleries are requested per gallery instead (./galleries.js).
 router.post('/:id/request', async (req, res) => {
   const input = validate(requestAbilitySchema, req.body ?? {});
 
   const ability = await findOwnedAbility(req.user.id, req.params.id);
   if (!ability) throw new ServerError(404, ABILITY_NOT_FOUND);
   if (ability.kind === 'galleries') throw new ServerError(409, GALLERIES_PER_GALLERY);
-  const canRequest = ability.placement === null || (await hasNewFirstPost(ability));
-  if (!canRequest) throw new ServerError(409, ALREADY_REQUESTED);
+  if (ability.placement !== null) throw new ServerError(409, ALREADY_REQUESTED);
 
   const updated = await saveRequest(
     req,
@@ -171,7 +159,7 @@ router.post('/:id/request', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/abilities/:id/request — the site owner changed their mind about where posts
-// should go, live or not (Rich, 2026-11-02). Replaces the note and puts posts' placement back to
+// should go, live or not. Replaces the note and puts posts' placement back to
 // requested, so the admin's pill marks it until the component is moved and posts are set live.
 router.patch('/:id/request', async (req, res) => {
   const input = validate(requestAbilitySchema, req.body ?? {});
@@ -225,6 +213,8 @@ router.patch('/:id/turnedOn', async (req, res) => {
 // DELETE /api/siteOwner/abilities/:id — remove Photo Galleries from the website. Its galleries are
 // deleted with the same time stamped on the ability, so adding it back within 30 days can restore
 // exactly those; after that the upload cleanup deletes their images (services/sweepUploads.js).
+// Their go-live dates are cleared, so a gallery that comes back with the ability never publishes
+// by surprise.
 router.delete('/:id', async (req, res) => {
   const ability = await findOwnedAbility(req.user.id, req.params.id);
   if (!ability) throw new ServerError(404, ABILITY_NOT_FOUND);
@@ -238,7 +228,7 @@ router.delete('/:id', async (req, res) => {
     });
     await tx.gallery.updateMany({
       where: { id: { in: galleries.map((gallery) => gallery.id) } },
-      data: { deletedAt: removedAt },
+      data: { deletedAt: removedAt, publishAt: null },
     });
     await recordGalleryEvents(tx, req, AUDIT_ACTIONS.GALLERY_DELETED, galleries);
     const removed = await tx.websiteAbility.update({
