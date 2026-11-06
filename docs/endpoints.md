@@ -21,19 +21,19 @@ The single agreement between the frontend and backend repos. The backend copy (`
 
 ### Status codes
 
-| Code | Meaning                                                                                                                                                                                 |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 200  | OK                                                                                                                                                                                      |
-| 201  | Created                                                                                                                                                                                 |
-| 204  | OK, no body (logout, delete a post or gallery, remove an ability)                                                                                                                       |
-| 400  | Invalid input (validation failed, an image id that doesn't belong to the post or gallery, or an image not uploaded for its website)                                                     |
-| 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key                                                                                                     |
-| 403  | Signed in but wrong role, missing CSRF header, or a gallery created on a website without the Photo Galleries ability                                                                    |
-| 404  | Not found **or not yours** — the same answer either way, so ids can't be probed                                                                                                         |
-| 409  | Conflict — duplicate email, duplicate website URL, account already linked to that website, a gallery name the website already has, or an ability change its current state doesn't allow |
-| 413  | Request body over the 256 KB limit                                                                                                                                                      |
-| 429  | Too many requests: over a rate limit (login, the public API, upload signing)                                                                                                            |
-| 500  | Server error — message is always the generic "Something went wrong, please try again."                                                                                                  |
+| Code | Meaning                                                                                                                                                                                                              |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200  | OK                                                                                                                                                                                                                   |
+| 201  | Created                                                                                                                                                                                                              |
+| 204  | OK, no body (logout, delete a post or gallery, remove an ability, withdraw an update)                                                                                                                                |
+| 400  | Invalid input (validation failed, an image id that doesn't belong to the post or gallery, or an image not uploaded for its website)                                                                                  |
+| 401  | Not signed in / session expired or invalid / not authorized to log in / bad API key                                                                                                                                  |
+| 403  | Signed in but wrong role, missing CSRF header, or a gallery created on a website without the Photo Galleries ability                                                                                                 |
+| 404  | Not found **or not yours** — the same answer either way, so ids can't be probed                                                                                                                                      |
+| 409  | Conflict — duplicate email, duplicate website URL, account already linked to that website, a gallery name the website already has, or an ability change its current state doesn't allow, or a reply to a full thread |
+| 413  | Request body over the 256 KB limit                                                                                                                                                                                   |
+| 429  | Too many requests: over a rate limit (login, the public API, upload signing, thread messages)                                                                                                                        |
+| 500  | Server error — message is always the generic "Something went wrong, please try again."                                                                                                                               |
 
 ### Shapes
 
@@ -64,6 +64,14 @@ PublicGallery  { id, slug, title, copy, createdAt, updatedAt,
 Ability        { id, kind: 'posts' | 'galleries', status: 'added' | 'live', turnedOn,
                  placement, requestNote, requestedAt, createdAt, updatedAt }
 // placement: 'requested' | 'live' | null, on Ability (posts only) and on every gallery shape
+Notification   { id, title, body, kind: 'general' | 'automatic', createdAt, updatedAt, readAt }
+AdminNotification { id, title, body, kind, createdAt, updatedAt,
+                    recipientCount, readCount }
+ThreadSummary  { id, subject, lastMessageAt, createdAt, unread }
+AdminThreadSummary ThreadSummary + { account: { id, name } }
+ThreadMessage  { id, from: 'admin' | 'site_owner', authorName, body, createdAt }
+Thread         ThreadSummary + { messages: ThreadMessage[] }      // oldest message first
+AdminThread    AdminThreadSummary + { messages: ThreadMessage[] }
 ```
 
 Optional post fields (`header`, `subHeader`, `postDate`) are `null` when empty. Optional gallery fields (`title`, `copy`, an image's `caption`) are `null` when empty too. An ability's `requestNote`, `requestedAt` and `placement` are `null` until its request form is sent, and a gallery's until its request message is sent. A galleries ability's are always `null`: each gallery has its own.
@@ -85,6 +93,16 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `POST /api/admin/accounts/:id/websites`                      | admin                                             | `{ websiteId }` **or** `{ websiteName, websiteUrl }`                                                                                                                             | `201 { website, credentials? }`                                                                                                              |
 | `PATCH /api/admin/abilities/:id/status`                      | admin                                             | `{ status: 'live' }`                                                                                                                                                             | `200 Ability`                                                                                                                                |
 | `PATCH /api/admin/galleries/:id/placement`                   | admin                                             | `{ placement: 'live' }`                                                                                                                                                          | `200 AdminGallerySummary`                                                                                                                    |
+| `POST /api/admin/notifications`                              | admin                                             | `{ title, body }`                                                                                                                                                                | `201 AdminNotification`                                                                                                                      |
+| `GET /api/admin/notifications?limit=&cursor=`                | admin                                             | —                                                                                                                                                                                | `200 { data: AdminNotification[], nextCursor }`                                                                                              |
+| `PATCH /api/admin/notifications/:id`                         | admin                                             | `{ title, body }`                                                                                                                                                                | `200 AdminNotification`                                                                                                                      |
+| `DELETE /api/admin/notifications/:id`                        | admin                                             | —                                                                                                                                                                                | `204`                                                                                                                                        |
+| `POST /api/admin/threads`                                    | admin                                             | `{ accountId, subject, message }`                                                                                                                                                | `201 AdminThread`                                                                                                                            |
+| `GET /api/admin/threads?limit=&cursor=`                      | admin                                             | —                                                                                                                                                                                | `200 { data: AdminThreadSummary[], nextCursor }`                                                                                             |
+| `GET /api/admin/threads/unreadCount`                         | admin                                             | —                                                                                                                                                                                | `200 { threads }`                                                                                                                            |
+| `GET /api/admin/threads/:id`                                 | admin                                             | —                                                                                                                                                                                | `200 AdminThread`                                                                                                                            |
+| `POST /api/admin/threads/:id/messages`                       | admin                                             | `{ message }`                                                                                                                                                                    | `201 AdminThread`                                                                                                                            |
+| `POST /api/admin/threads/:id/read`                           | admin                                             | —                                                                                                                                                                                | `200 AdminThreadSummary`                                                                                                                     |
 | `GET /api/siteOwner/websites`                                | site owner                                        | —                                                                                                                                                                                | `200 [ WebsiteSummary + { abilities: Ability[], posts: PostSummary[], galleries: GallerySummary[] } ]`                                       |
 | `POST /api/siteOwner/posts`                                  | site owner                                        | `{ websiteId, postName, header?, subHeader?, postDate?, status?, publishAt?, body: [{ type: 'paragraph', text } \| { type: 'image', image: { src, width, height, altText } }] }` | `201 Post`                                                                                                                                   |
 | `GET /api/siteOwner/posts/:id`                               | site owner                                        | —                                                                                                                                                                                | `200 Post`                                                                                                                                   |
@@ -108,6 +126,14 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `PATCH /api/siteOwner/abilities/:id/turnedOn`                | site owner                                        | `{ turnedOn }`                                                                                                                                                                   | `200 Ability`                                                                                                                                |
 | `DELETE /api/siteOwner/abilities/:id`                        | site owner                                        | —                                                                                                                                                                                | `204`                                                                                                                                        |
 | `POST /api/siteOwner/uploads/sign`                           | site owner                                        | `{ websiteId }`                                                                                                                                                                  | `200 UploadSignature`                                                                                                                        |
+| `GET /api/siteOwner/notifications?limit=&cursor=`            | site owner                                        | —                                                                                                                                                                                | `200 { data: Notification[], nextCursor }`                                                                                                   |
+| `GET /api/siteOwner/notifications/unreadCount`               | site owner                                        | —                                                                                                                                                                                | `200 { updates, threads }`                                                                                                                   |
+| `POST /api/siteOwner/notifications/:id/read`                 | site owner                                        | —                                                                                                                                                                                | `200 Notification`                                                                                                                           |
+| `POST /api/siteOwner/threads`                                | site owner                                        | `{ subject, message }`                                                                                                                                                           | `201 Thread`                                                                                                                                 |
+| `GET /api/siteOwner/threads?limit=&cursor=`                  | site owner                                        | —                                                                                                                                                                                | `200 { data: ThreadSummary[], nextCursor }`                                                                                                  |
+| `GET /api/siteOwner/threads/:id`                             | site owner                                        | —                                                                                                                                                                                | `200 Thread`                                                                                                                                 |
+| `POST /api/siteOwner/threads/:id/messages`                   | site owner                                        | `{ message }`                                                                                                                                                                    | `201 Thread`                                                                                                                                 |
+| `POST /api/siteOwner/threads/:id/read`                       | site owner                                        | —                                                                                                                                                                                | `200 ThreadSummary`                                                                                                                          |
 | `GET /api/public/posts`                                      | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                                | `200 PublicPost[]`                                                                                                                           |
 | `GET /api/public/galleries/:slug`                            | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                                | `200 PublicGallery`                                                                                                                          |
 | `GET /api/health`                                            | anyone                                            | —                                                                                                                                                                                | `200 { ok: true }`                                                                                                                           |
@@ -148,6 +174,12 @@ Notes:
 - `turnedOn` is the site owner's switch, changeable only once `live`: while it is `false`, `GET /api/public/posts` returns `[]` for posts, and `GET /api/public/galleries/:slug` returns `404` for galleries. The site owner can still create and edit while it is off. An ability's pill reads "off" while it is `live` and `turnedOn` is `false`, else its status; posts and each gallery also show their `placement` ("requested" or "live") once their message is sent.
 - `DELETE /api/siteOwner/abilities/:id` removes Photo Galleries from the website: its galleries are deleted with it, and the upload cleanup deletes their images 30 days later. Adding it again (`POST /api/siteOwner/abilities`) keeps the ability's status and switch, since removing it doesn't unwire its code; within those 30 days it also brings those galleries back, each with its own placement, and after 30 days they stay deleted. A removed ability isn't listed and is `404` "Ability not found." on every ability route.
 - Crops: each gallery image may have a `thumbnailCrop` (a square) and a `mobileCrop` (at least as tall as it is wide), the part of the image the site owner chose for a thumbnail and for phones. A crop is in the stored image's pixels, the `width` and `height` Cloudinary returned, so a crop picked on a larger file in the browser is scaled to the stored size before it is sent. Send `null` (or leave it out on create) for no crop. A gallery's crops are consistent: every image has a thumbnail crop or none does, every image has a mobile crop or none does, and every mobile crop has the same shape (Validation rules). `PublicGallery` returns each crop as a ready `CroppedImage`, a Cloudinary URL that cuts that rectangle from the stored image, with the crop's own `width` and `height` for `<Image>`; it is `null` when there is no crop, and the client website then shows the full image.
+- **Updates and threads** (the Inbox). The admin reaches site owners two ways, and they differ in whether a reply is possible:
+  - An **update** (`Notification`) is one way: nobody replies to it. `kind` `general` is the admin's site-wide update (`POST /api/admin/notifications`), sent to every account that is an active site owner at that moment; an account created later never receives it. `kind` `automatic` is written by the backend when the administrator sets an ability live (`PATCH /api/admin/abilities/:id/status`) or a gallery live (`PATCH /api/admin/galleries/:id/placement`), to the active site owners linked to that website, in the same transaction as the change (none is written when the website has no active site owner). The wording: Photo Galleries "Your Photo Galleries are now live!" / "Photo Galleries are now part of [Website Name]. Add a gallery from your dashboard and send its request message to say where it goes."; posts "Your posts are now live!" / "Your posts now show on [Website Name]."; a gallery "Your gallery is on your website" / ""[Gallery Name]" is now live on [Website Name]." An update's `body` uses paragraph formatting (Paragraph formatting below).
+  - A **thread** is a conversation between one site owner and the admin, which either side starts and both reply to: a site owner's suggestion or question (`POST /api/siteOwner/threads`), or the admin's message to one site owner (`POST /api/admin/threads`). Messages use paragraph formatting. A thread holds at most 100 messages; past that, a new thread is started.
+- A site owner's updates are listed newest first, a page at a time, each with its own `readAt` (`null` until `POST /api/siteOwner/notifications/:id/read`, which keeps the first `readAt` when sent again). `GET /api/siteOwner/notifications/unreadCount` gives `updates` (unread updates) and `threads` (threads with a message they haven't read), so the navbar badge shows their sum. The admin's badge is `GET /api/admin/threads/unreadCount` (`threads` only: the admin receives no updates).
+- The administrator can edit an update's `title` and `body` (`PATCH`), which keeps its recipients and their `readAt`, or withdraw it (`DELETE`), which removes it from every inbox: every route then answers `404` "Update not found." for it. `AdminNotification` gives counts only, `recipientCount` (how many it was sent to) and `readCount` (how many opened it), never who: the admin doesn't see which site owner read an update.
+- A thread's `unread` is from the viewer's side: true while the other side has written a message since that side last marked it read (`POST .../threads/:id/read`). Writing a message, or starting the thread, never makes it unread for its author. Threads are listed newest activity (`lastMessageAt`) first, a page at a time; a thread that gets a message while paging moves to the top, so the list is fetched again from the start after a reply. A site owner sees only their own threads (another's is `404` "Thread not found."); the admin sees every site owner's, with `account` naming the site owner. A message's `from` says which side wrote it and `authorName` who.
 
 ### Error messages the frontend displays
 
@@ -176,13 +208,16 @@ Notes:
 | Admin: set a gallery live before Photo Galleries is live                                                              | 409  | Set Photo Galleries live first.                                                                                   |
 | Admin: set a gallery live before its request message is sent                                                          | 409  | This gallery hasn't been requested yet.                                                                           |
 | Admin: set a gallery live that is already live                                                                        | 409  | This gallery is already live.                                                                                     |
+| Reply to a thread that already has 100 messages                                                                       | 409  | This thread is full. Start a new thread.                                                                          |
+| Update withdrawn, not found or not sent to this site owner                                                            | 404  | Update not found.                                                                                                 |
+| Thread not found, or another site owner's                                                                             | 404  | Thread not found.                                                                                                 |
 | Link: account already linked to that website                                                                          | 409  | This account is already linked to [Website Name].                                                                 |
 | Website / account / post / gallery / ability not found or not yours                                                   | 404  | [Website / Account / Post / Gallery / Ability] not found.                                                         |
 | Public: no published gallery with that slug on this website                                                           | 404  | Gallery not found.                                                                                                |
 | Create / edit: an image id that isn't on this post or gallery, or an image `src` outside this website's upload folder | 400  | Invalid image.                                                                                                    |
 | Public: missing / unknown key, or inactive website                                                                    | 401  | Invalid API key.                                                                                                  |
 | Request body over the 256 KB limit                                                                                    | 413  | Request body is too large.                                                                                        |
-| Over a rate limit: login, the public API or upload signing                                                            | 429  | Too many requests. Please try again later.                                                                        |
+| Over a rate limit: login, the public API, upload signing or thread messages                                           | 429  | Too many requests. Please try again later.                                                                        |
 
 ### Validation rules (identical on frontend and backend)
 
@@ -204,7 +239,9 @@ Notes:
 - Crops across a gallery, checked once every image passes its own rules, with the message on `images`: if any image has a `thumbnailCrop`, every image must ("Add a thumbnail crop to every image, or remove them all."); if any image has a `mobileCrop`, every image must ("Add a mobile crop to every image, or remove them all."); and every `mobileCrop`'s width ÷ height must be within 1% of the first one's in list order, which allows for whole-pixel rounding such as 750 × 938 for 4:5 ("Every mobile crop must be the same shape."). When more than one fails, the message is the first of these three.
 - Gallery `status` (create / status): `draft` or `published` ("Status must be draft or published."). Optional on create; the status route needs it.
 - Abilities: `kind` is `posts` or `galleries` ("Choose posts or galleries."). `requestNote` (an ability's or a gallery's): required, max 1000 (line breaks kept). `turnedOn`: a boolean ("Turned on must be true or false."). The admin's `status`: `live` ("Status must be live."). The admin's gallery `placement`: `live` ("Placement must be live.").
-- Deleted posts query: `limit` and `cursor` as in the audit events query below.
+- Updates: `title` required, max 120; `body` required, max 10000 (line breaks kept), with the paragraph link rules on `body`.
+- Threads: `subject` required, max 120; `message` required, max 5000 (line breaks kept), with the paragraph link rules on `message`. The admin's new thread also needs `accountId` ("Choose an account."), an active site owner (`404` "Account not found." otherwise).
+- Deleted posts, updates and threads queries: `limit` and `cursor` as in the audit events query below.
 - Audit events query: `month` matches `YYYY-MM` with a month from 01 to 12 ("Enter a month as YYYY-MM."); `limit` is a whole number from 1 to 100 ("Limit must be a whole number from 1 to 100."); `cursor` is a UUID ("Invalid cursor."); `from` and `to` are ISO 8601 instants ("Enter a valid date and time."), sent together (on the missing one: "Send from and to together."), `to` after `from` (on `to`: "To must be after from.") and at most 31 days apart (on `to`: "The range can be at most 31 days."). A parameter sent twice fails its rule.
 
 ### Paragraph formatting
@@ -289,12 +326,13 @@ Per-router guards:
 
 Rate limits (`lib/rateLimit.js`, express-rate-limit, in-memory per instance). Over a limit → `429` "Too many requests. Please try again later.", with the standard `RateLimit` and `RateLimit-Policy` headers. The numbers are a few times real use of each route, to be tuned from the audit log after launch:
 
-| Route                              | Limit         | Keyed by   |
-| ---------------------------------- | ------------- | ---------- |
-| `POST /api/auth/login`             | 5 per 15 min  | IP         |
-| `GET /api/public/*`, valid key     | 30 per minute | website    |
-| `GET /api/public/*`, refused key   | 10 per minute | IP         |
-| `POST /api/siteOwner/uploads/sign` | 10 per 15 min | site owner |
+| Route                                                                                          | Limit         | Keyed by   |
+| ---------------------------------------------------------------------------------------------- | ------------- | ---------- |
+| `POST /api/auth/login`                                                                         | 5 per 15 min  | IP         |
+| `GET /api/public/*`, valid key                                                                 | 30 per minute | website    |
+| `GET /api/public/*`, refused key                                                               | 10 per minute | IP         |
+| `POST /api/siteOwner/uploads/sign`                                                             | 10 per 15 min | site owner |
+| `POST /api/siteOwner/threads` and `POST /api/siteOwner/threads/:id/messages`, counted together | 20 per 15 min | site owner |
 
 The public valid-key limit counts every public route together (posts and galleries) and is keyed by website, not IP, because client websites on Vercel share outgoing IP addresses. The refused-key limit counts only `requireApiKey`'s 401s, so a website's valid calls never use it up.
 
@@ -377,7 +415,7 @@ Body `{ status: 'live' }`, the only value for now. Status apart from placement: 
 2. The ability must exist and not be removed → `404` "Ability not found."
 3. **Photo Galleries:** its `status` must be `added` → otherwise `409` "This ability is already live."
 4. **Posts:** one switch for both. Its `placement` must be `requested` → `409` "This ability hasn't been requested yet." (`null`) or "This ability is already live." (`live`).
-5. One transaction: set `status` to `live` (and, for posts, `placement` to `live`) and write `ability.live`.
+5. One transaction: set `status` to `live` (and, for posts, `placement` to `live`), write `ability.live`, and send the website's active site owners the automatic update (API Contract → Notes) with its `notification.sent`.
 6. Return `200 { data: Ability }`. No revalidation: the public API already returns content whatever the status.
 
 ### Set a Gallery Live — `PATCH /api/admin/galleries/:id/placement`
@@ -388,8 +426,38 @@ Body `{ placement: 'live' }`, the only value (API Contract → Notes).
 2. The gallery must exist and not be deleted → `404` "Gallery not found."
 3. Its website's Photo Galleries ability must be `live` → `409` "Set Photo Galleries live first."
 4. Its `placement` must be `requested` → `409` "This gallery hasn't been requested yet." (`null`) or "This gallery is already live." (`live`).
-5. One transaction: write `gallery.live` and set `placement` to `live`.
+5. One transaction: write `gallery.live`, set `placement` to `live`, and send the website's active site owners the automatic update with its `notification.sent`.
 6. Return `200 { data: AdminGallerySummary }`. No revalidation: nothing public changes.
+
+### Send an Update — `POST /api/admin/notifications`
+
+Body `{ title, body }`.
+
+1. Validate → `400` on `fields.title` / `fields.body`.
+2. Read every active `site_owner` account.
+3. One transaction: insert the `notification` (`kind` `general`, `created_by` the admin), one `notification_recipient` per account, and `notification.sent` with `{ recipientCount, kind }`.
+4. Return `201 { data: AdminNotification }`.
+
+### Get Updates — `GET /api/admin/notifications`
+
+The updates not withdrawn, newest first (`id` descending), `limit` + 1 rows as Get Audit Events reads them: `200 { data: AdminNotification[], nextCursor }`. Automatic updates are listed too.
+
+### Edit an Update — `PATCH /api/admin/notifications/:id`
+
+Body `{ title, body }`; anything else is ignored. Validate → `400`; withdrawn or not found → `404` "Update not found."; one transaction: `notification.updated` and the new title and body. Recipients and their `readAt` stay. Returns `200 { data: AdminNotification }`.
+
+### Withdraw an Update — `DELETE /api/admin/notifications/:id`
+
+Withdrawn or not found → `404` "Update not found."; one transaction: `notification.withdrawn` and `deleted_at` set (never a hard delete). Returns `204`.
+
+### Admin Threads — `/api/admin/threads`
+
+- `POST /` body `{ accountId, subject, message }`: validate → `400`; `accountId` must be an active `site_owner` → `404` "Account not found."; one transaction: the thread (`account_id` the site owner, `admin_read_at` and `last_message_at` now), its first message and `thread.started`. Returns `201 { data: AdminThread }`.
+- `GET /` lists every thread, `last_message_at` then `id` descending, with Prisma's cursor: `200 { data: AdminThreadSummary[], nextCursor }`.
+- `GET /unreadCount` → `200 { data: { threads } }`, the threads unread for the admin.
+- `GET /:id` → `200 { data: AdminThread }`, or `404` "Thread not found."
+- `POST /:id/messages` body `{ message }`: validate → `400`; not found → `404`; one transaction: `last_message_at` and `admin_read_at` set to now (the update locks the thread's row), at 100 messages already → `409` "This thread is full. Start a new thread.", the message, and `thread.replied`. Returns `201 { data: AdminThread }`.
+- `POST /:id/read` sets `admin_read_at` to now → `200 { data: AdminThreadSummary }`. Not audited.
 
 ### Create an Account — `POST /api/admin/accounts`
 
@@ -621,6 +689,26 @@ Body `{ websiteId }`. Returns what the frontend needs to upload images for one w
 
 ---
 
+### Inbox Updates — `/api/siteOwner/notifications`
+
+A site owner reaches an update only through their own `notification_recipient` row, and never a withdrawn one; anything else is `404` "Update not found."
+
+- `GET /` lists them newest first (`notification_id` descending, the cursor a notification id): `200 { data: Notification[], nextCursor }`.
+- `GET /unreadCount` → `200 { data: { updates, threads } }`.
+- `POST /:id/read` sets `read_at` if it is still `null` → `200 { data: Notification }`. Not audited.
+
+### Threads — `/api/siteOwner/threads`
+
+Only threads whose `account_id` is the site owner's; anything else is `404` "Thread not found." `POST /` and `POST /:id/messages` share one rate limit (Middleware Stack).
+
+- `POST /` body `{ subject, message }`: validate → `400`; one transaction: the thread (`owner_read_at` and `last_message_at` now), its first message and `thread.started`. Returns `201 { data: Thread }`.
+- `GET /` → `200 { data: ThreadSummary[], nextCursor }`, ordered as the admin's.
+- `GET /:id` → `200 { data: Thread }`.
+- `POST /:id/messages` body `{ message }`: as the admin's reply, with `owner_read_at`. Returns `201 { data: Thread }`.
+- `POST /:id/read` sets `owner_read_at` to now → `200 { data: ThreadSummary }`. Not audited.
+
+---
+
 ## Public
 
 ### Website Fetches Posts — `GET /api/public/posts`
@@ -647,34 +735,38 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 
 - An event for a database change is written with the transaction client, **inside the same `$transaction`** as the change, so a saved change always has its event and a rolled-back one leaves none. Routes that would otherwise do a single write (Link a Website's existing-website path, Draft / Publish, Delete a Post, Restore a Post, their gallery twins, and the ability routes) use a transaction for this.
 - The only routes that read audit rows are the admin's Get Audit Events and Get Audit Event Months. Nothing edits or deletes them through the API.
-- `metadata` never holds a key, secret, token, Google credential, header or post content.
+- `metadata` never holds a key, secret, token, Google credential, header or post content, nor an update's or a thread's title, subject, body or message. Reading an update or a thread isn't audited.
 
-| `action`                                   | Written by                                                                         | `actorId`                     | `actorEmail`                                           | Target    | `metadata`                                           |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------ | --------- | ---------------------------------------------------- |
-| `auth.login_succeeded`                     | Login                                                                              | the account                   | the account's email                                    | —         | —                                                    |
-| `auth.login_failed`                        | Login                                                                              | the account if found, or null | the Google-verified email, or null for `invalid_token` | —         | `{ reason }`                                         |
-| `auth.logout`                              | Logout (cookie verified)                                                           | the account                   | the account's email                                    | —         | —                                                    |
-| `account.created`                          | Create an Account                                                                  | the admin                     | the admin's email                                      | `account` | `{ websiteId }`                                      |
-| `website.created`                          | Create an Account, Link a Website (new website path)                               | the admin                     | the admin's email                                      | `website` | —                                                    |
-| `website.linked`                           | Create an Account, Link a Website (both paths)                                     | the admin                     | the admin's email                                      | `account` | `{ websiteId }`                                      |
-| `post.created` / `post.updated`            | Create a Post, Edit a Post, Set a Post's Publish Date                              | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }`                                      |
-| `post.drafted` / `post.published`          | Draft / Publish; Scheduled Publish (`post.published`)                              | the site owner, or null       | the site owner's email, or null                        | `post`    | `{ websiteId }`, plus `scheduled: true` from the job |
-| `post.deleted`                             | Delete a Post                                                                      | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }`                                      |
-| `post.restored`                            | Restore a Post                                                                     | the site owner                | the site owner's email                                 | `post`    | `{ websiteId }`                                      |
-| `gallery.created` / `gallery.updated`      | Create a Gallery, Edit a Gallery, Set a Gallery's Publish Date                     | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`                                      |
-| `gallery.drafted` / `gallery.published`    | Draft / Publish a Gallery; Scheduled Publish (`gallery.published`)                 | the site owner, or null       | the site owner's email, or null                        | `gallery` | `{ websiteId }`, plus `scheduled: true` from the job |
-| `gallery.deleted`                          | Delete a Gallery, Remove (Abilities)                                               | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`                                      |
-| `gallery.restored`                         | Add (Abilities), within 30 days of a removal                                       | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`                                      |
-| `gallery.requested`                        | Request a Gallery                                                                  | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`                                      |
-| `gallery.request_updated`                  | Edit a Gallery's Request                                                           | the site owner                | the site owner's email                                 | `gallery` | `{ websiteId }`                                      |
-| `gallery.live`                             | Set a Gallery Live                                                                 | the admin                     | the admin's email                                      | `gallery` | `{ websiteId }`                                      |
-| `ability.added`                            | Add (Abilities); a new website's posts ability (Create an Account, Link a Website) | the site owner, or the admin  | their email                                            | `ability` | the state, below                                     |
-| `ability.requested`                        | Request form (posts)                                                               | the site owner                | the site owner's email                                 | `ability` | the state                                            |
-| `ability.request_updated`                  | Edit the request form                                                              | the site owner                | the site owner's email                                 | `ability` | the state                                            |
-| `ability.request_cleared`                  | No longer written (older rows: Delete a Post cleared a `requested` placement)      | the site owner                | the site owner's email                                 | `ability` | the state                                            |
-| `ability.live`                             | Set an Ability Live                                                                | the admin                     | the admin's email                                      | `ability` | the state                                            |
-| `ability.turned_on` / `ability.turned_off` | On / Off                                                                           | the site owner                | the site owner's email                                 | `ability` | the state                                            |
-| `ability.removed` / `ability.restored`     | Remove, Add (Abilities)                                                            | the site owner                | the site owner's email                                 | `ability` | the state                                            |
+| `action`                                          | Written by                                                                         | `actorId`                     | `actorEmail`                                           | Target         | `metadata`                                           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------ | -------------- | ---------------------------------------------------- |
+| `auth.login_succeeded`                            | Login                                                                              | the account                   | the account's email                                    | —              | —                                                    |
+| `auth.login_failed`                               | Login                                                                              | the account if found, or null | the Google-verified email, or null for `invalid_token` | —              | `{ reason }`                                         |
+| `auth.logout`                                     | Logout (cookie verified)                                                           | the account                   | the account's email                                    | —              | —                                                    |
+| `account.created`                                 | Create an Account                                                                  | the admin                     | the admin's email                                      | `account`      | `{ websiteId }`                                      |
+| `website.created`                                 | Create an Account, Link a Website (new website path)                               | the admin                     | the admin's email                                      | `website`      | —                                                    |
+| `website.linked`                                  | Create an Account, Link a Website (both paths)                                     | the admin                     | the admin's email                                      | `account`      | `{ websiteId }`                                      |
+| `post.created` / `post.updated`                   | Create a Post, Edit a Post, Set a Post's Publish Date                              | the site owner                | the site owner's email                                 | `post`         | `{ websiteId }`                                      |
+| `post.drafted` / `post.published`                 | Draft / Publish; Scheduled Publish (`post.published`)                              | the site owner, or null       | the site owner's email, or null                        | `post`         | `{ websiteId }`, plus `scheduled: true` from the job |
+| `post.deleted`                                    | Delete a Post                                                                      | the site owner                | the site owner's email                                 | `post`         | `{ websiteId }`                                      |
+| `post.restored`                                   | Restore a Post                                                                     | the site owner                | the site owner's email                                 | `post`         | `{ websiteId }`                                      |
+| `gallery.created` / `gallery.updated`             | Create a Gallery, Edit a Gallery, Set a Gallery's Publish Date                     | the site owner                | the site owner's email                                 | `gallery`      | `{ websiteId }`                                      |
+| `gallery.drafted` / `gallery.published`           | Draft / Publish a Gallery; Scheduled Publish (`gallery.published`)                 | the site owner, or null       | the site owner's email, or null                        | `gallery`      | `{ websiteId }`, plus `scheduled: true` from the job |
+| `gallery.deleted`                                 | Delete a Gallery, Remove (Abilities)                                               | the site owner                | the site owner's email                                 | `gallery`      | `{ websiteId }`                                      |
+| `gallery.restored`                                | Add (Abilities), within 30 days of a removal                                       | the site owner                | the site owner's email                                 | `gallery`      | `{ websiteId }`                                      |
+| `gallery.requested`                               | Request a Gallery                                                                  | the site owner                | the site owner's email                                 | `gallery`      | `{ websiteId }`                                      |
+| `gallery.request_updated`                         | Edit a Gallery's Request                                                           | the site owner                | the site owner's email                                 | `gallery`      | `{ websiteId }`                                      |
+| `gallery.live`                                    | Set a Gallery Live                                                                 | the admin                     | the admin's email                                      | `gallery`      | `{ websiteId }`                                      |
+| `ability.added`                                   | Add (Abilities); a new website's posts ability (Create an Account, Link a Website) | the site owner, or the admin  | their email                                            | `ability`      | the state, below                                     |
+| `ability.requested`                               | Request form (posts)                                                               | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
+| `ability.request_updated`                         | Edit the request form                                                              | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
+| `ability.request_cleared`                         | No longer written (older rows: Delete a Post cleared a `requested` placement)      | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
+| `ability.live`                                    | Set an Ability Live                                                                | the admin                     | the admin's email                                      | `ability`      | the state                                            |
+| `ability.turned_on` / `ability.turned_off`        | On / Off                                                                           | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
+| `notification.sent`                               | Send an Update; Set an Ability Live and Set a Gallery Live (automatic)             | the admin                     | the admin's email                                      | `notification` | `{ recipientCount, kind }`                           |
+| `notification.updated` / `notification.withdrawn` | Edit an Update, Withdraw an Update                                                 | the admin                     | the admin's email                                      | `notification` | —                                                    |
+| `thread.started`                                  | Start a thread (either side)                                                       | the site owner or the admin   | their email                                            | `thread`       | —                                                    |
+| `thread.replied`                                  | Reply in a thread (either side)                                                    | the site owner or the admin   | their email                                            | `thread`       | —                                                    |
+| `ability.removed` / `ability.restored`            | Remove, Add (Abilities)                                                            | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
 
 An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, placement, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (issue #83, planned for later). The request note is the site owner's own text and is never in it.
 

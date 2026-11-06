@@ -71,6 +71,16 @@ enum Placement {
   @@map("placement")
 }
 
+// Who an update was sent to: every active site owner (general), or the site owners of a website
+// when the admin sets an ability or a gallery live (automatic). A message to one site owner is a
+// thread, since it can be replied to.
+enum NotificationKind {
+  general
+  automatic
+
+  @@map("notification_kind")
+}
+
 model Account {
   id             String   @id @default(uuid(7))
   name           String
@@ -82,7 +92,11 @@ model Account {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  accountWebsites AccountWebsite[]
+  accountWebsites        AccountWebsite[]
+  notificationsSent      Notification[]
+  notificationRecipients NotificationRecipient[]
+  threads                Thread[]
+  threadMessages         ThreadMessage[]
 
   @@map("account")
 }
@@ -257,6 +271,77 @@ model WebsiteAbility {
   @@map("website_ability")
 }
 
+// An update from the admin to site owners, read in their Inbox. Its recipients are fixed when it
+// is sent. Withdrawing it sets deletedAt: it is then gone from every inbox and every route.
+model Notification {
+  id          String           @id @default(uuid(7))
+  title       String
+  body        String           @db.Text // paragraph formatting, as a post paragraph
+  createdById String           @map("created_by") // the admin who sent it
+  kind        NotificationKind
+  deletedAt   DateTime?        @map("deleted_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  createdBy  Account                 @relation(fields: [createdById], references: [id])
+  recipients NotificationRecipient[]
+
+  @@index([createdById])
+  @@map("notification")
+}
+
+// One site owner's copy of an update: readAt is null until they open it.
+model NotificationRecipient {
+  id             String    @id @default(uuid(7))
+  notificationId String    @map("notification_id")
+  accountId      String    @map("account_id")
+  readAt         DateTime? @map("read_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id])
+  account      Account      @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, notificationId]) // also the site owner's list, newest notification first
+  @@index([notificationId])
+  @@index([accountId, readAt]) // the unread count
+  @@map("notification_recipient")
+}
+
+// A message thread a site owner starts with the admin; both sides reply. A side has unread
+// messages while its read time is null or before lastMessageAt. Writing a message sets the
+// author's own side to lastMessageAt, so only the other side's messages make it unread.
+model Thread {
+  id            String    @id @default(uuid(7))
+  accountId     String    @map("account_id") // the site owner who started it
+  subject       String
+  lastMessageAt DateTime  @map("last_message_at")
+  ownerReadAt   DateTime? @map("owner_read_at")
+  adminReadAt   DateTime? @map("admin_read_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  account  Account         @relation(fields: [accountId], references: [id])
+  messages ThreadMessage[]
+
+  @@index([accountId, lastMessageAt]) // the site owner's list, newest activity first
+  @@index([lastMessageAt]) // the admin's list
+  @@map("thread")
+}
+
+// One message in a thread, written by its site owner or an admin.
+model ThreadMessage {
+  id        String   @id @default(uuid(7))
+  threadId  String   @map("thread_id")
+  authorId  String   @map("author_id")
+  body      String   @db.Text // paragraph formatting, as a post paragraph
+  createdAt DateTime @default(now()) @map("created_at")
+
+  thread Thread  @relation(fields: [threadId], references: [id])
+  author Account @relation(fields: [authorId], references: [id])
+
+  @@index([threadId, createdAt])
+  @@index([authorId])
+  @@map("thread_message")
+}
+
 // Append-only record of who did what (docs/security.md → Audit log). Written by lib/audit.js,
 // inside the same transaction as the change it records. No foreign keys, so an event never blocks
 // or depends on another row. metadata never holds a key, secret, token, header or post content.
@@ -265,7 +350,7 @@ model AuditEvent {
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
   actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account
   actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token
-  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery' or 'ability'
+  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification' or 'thread'
   targetId   String?  @map("target_id")
   metadata   Json?
   ip         String?

@@ -5,7 +5,7 @@ const { blankToUndefined } = require('./validate');
 const {
   requiredText,
   optionalText,
-  httpsUrl,
+  formattedText,
   itemId,
   websiteId,
   imageShape,
@@ -14,66 +14,7 @@ const {
   refinePublishAt,
 } = require('./fields');
 
-// Link URLs follow the same https rule as image URLs.
-const LINK_URL = httpsUrl('Link URL');
-
-// The index of the first character from `start` that passes `isStop`, or text.length.
-function scanTo(text, start, isStop) {
-  let index = start;
-  while (index < text.length && !isStop(text[index])) index += 1;
-  return index;
-}
-
-// Every [link text](url) in a paragraph, left to right. Link text has no ] or line break; the URL
-// has no whitespace and ends at the first ). Anything else is plain text.
-// Each character is read about once, so a long paragraph of unmatched [ or ]( stays fast:
-// - a [ whose link text never reaches ]( fails the same way for every [ before that point,
-//   so the search skips past it;
-// - a URL that ran out before a ) is remembered, and a later URL starting before that point
-//   fails without being read again.
-function findLinks(text) {
-  const links = [];
-  let urlStopAt = -1;
-  let open = text.indexOf('[');
-  while (open !== -1) {
-    const close = scanTo(text, open + 1, (char) => char === ']' || char === '\n');
-    let next = close + 1;
-    if (text[close] === ']' && text[close + 1] === '(') {
-      const urlStart = close + 2;
-      const urlEnd =
-        urlStart <= urlStopAt
-          ? urlStopAt
-          : scanTo(text, urlStart, (char) => char === ')' || /\s/.test(char));
-      if (text[urlEnd] === ')') {
-        links.push({ linkText: text.slice(open + 1, close), url: text.slice(urlStart, urlEnd) });
-        next = urlEnd + 1;
-      } else {
-        urlStopAt = urlEnd;
-      }
-    }
-    open = text.indexOf('[', next);
-  }
-  return links;
-}
-
-// The message for the first failing link in a paragraph, or null when every link passes.
-// A link's text is checked before its URL.
-function findLinkError(text) {
-  for (const { linkText, url } of findLinks(text)) {
-    const name = linkText.trim();
-    if (!name) return 'Each link needs link text.';
-    if (name.length > 100) return 'Link text must be 100 characters or fewer.';
-    if (!LINK_URL.safeParse(url).success) {
-      return 'Each link must be a valid URL starting with https://';
-    }
-  }
-  return null;
-}
-
-const paragraphText = requiredText('Paragraph', 10000).superRefine((text, ctx) => {
-  const message = findLinkError(text);
-  if (message) ctx.addIssue({ code: 'custom', message });
-});
+const paragraphText = formattedText('Paragraph', 10000);
 
 // The body: paragraph and image elements in reading order. The limits count each type across the
 // whole list, so their messages sit under the list name ("body").

@@ -83,6 +83,8 @@ One Render project, `3dwd`, in the 3D Web Dev workspace, with a `staging` and a 
 
 Cron schedules are in UTC.
 
+A new cron job can fail its first run: Render creates it from `render.yaml` and may run it on the build `production` already had, before the release that adds its script is live (its auto-deploy waits for CI). If the first run fails that way, check the job's Events for the new commit's deploy, then Trigger Run; the next scheduled run passes on its own.
+
 ### Alerts
 
 A production failure reaches Rich by email (`docs/security.md` → Controls in place):
