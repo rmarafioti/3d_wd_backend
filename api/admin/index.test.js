@@ -686,13 +686,19 @@ describe('GET /api/admin/auditEvents', () => {
     const last = await createAuditEvent({ createdAt: new Date('2026-10-31T23:59:59.999Z') });
     await createAuditEvent({ createdAt: new Date('2026-11-01T00:00:00.000Z') });
 
-    const res = await as(admin, 'get', '/api/admin/auditEvents?month=2026-10');
+    const res = await as(admin, 'get', '/api/admin/auditEvents?month=2026-10&limit=1');
+    const page2 = await as(
+      admin,
+      'get',
+      `/api/admin/auditEvents?month=2026-10&limit=1&cursor=${res.body.nextCursor}`,
+    );
 
     assert.equal(res.status, 200);
     assert.deepEqual(
-      res.body.data.map((event) => event.id),
+      [...res.body.data, ...page2.body.data].map((event) => event.id),
       [last.id, first.id],
     );
+    assert.equal(res.body.pages, 2);
   });
 
   it('returns an empty list for a month with no events', async () => {
@@ -702,7 +708,7 @@ describe('GET /api/admin/auditEvents', () => {
     const res = await as(admin, 'get', '/api/admin/auditEvents?month=2020-01');
 
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body, { data: [], nextCursor: null });
+    assert.deepEqual(res.body, { data: [], nextCursor: null, pages: 0 });
   });
 
   it('pages through a month with limit and the returned cursor', async () => {
@@ -730,7 +736,24 @@ describe('GET /api/admin/auditEvents', () => {
     assert.equal(page2.body.nextCursor, null);
   });
 
-  it('returns 50 events per page by default', async () => {
+  it('returns the same page count on every page, counted from limit', async () => {
+    const admin = await createAdmin();
+    await createAuditEvent();
+    await createAuditEvent();
+    await createAuditEvent();
+
+    const page1 = await as(admin, 'get', '/api/admin/auditEvents?limit=2');
+    const page2 = await as(
+      admin,
+      'get',
+      `/api/admin/auditEvents?limit=2&cursor=${page1.body.nextCursor}`,
+    );
+
+    assert.equal(page1.body.pages, 2);
+    assert.equal(page2.body.pages, 2);
+  });
+
+  it('returns 50 events per page by default, and counts pages of 50', async () => {
     const admin = await createAdmin();
     for (let i = 0; i < 51; i += 1) await createAuditEvent();
 
@@ -738,6 +761,7 @@ describe('GET /api/admin/auditEvents', () => {
 
     assert.equal(res.body.data.length, 50);
     assert.equal(res.body.nextCursor, res.body.data[49].id);
+    assert.equal(res.body.pages, 2);
   });
 
   it('returns only the events from from up to, not including, to, ignoring month', async () => {
@@ -785,6 +809,8 @@ describe('GET /api/admin/auditEvents', () => {
       [first.id],
     );
     assert.equal(page2.body.nextCursor, null);
+    assert.equal(page1.body.pages, 2);
+    assert.equal(page2.body.pages, 2);
   });
 
   const invalidQueries = [

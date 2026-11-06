@@ -58,7 +58,6 @@ const AUDIT_EVENT_SELECT = {
   ip: true,
   createdAt: true,
 };
-const DEFAULT_PAGE_SIZE = 50;
 
 const EMAIL_TAKEN = 'An account with this email already exists.';
 const URL_TAKEN = 'A website with this URL already exists. Select it from the dropdown.';
@@ -264,29 +263,35 @@ router.get('/websites', async (req, res) => {
 // GET /api/admin/auditEvents — one UTC month of audit events, or a from/to range, newest first, a
 // page at a time. Query: month (YYYY-MM, default the current month), from and to (instants, sent
 // together, replacing month), limit (default 50, max 100) and cursor (the previous page's
-// nextCursor). Read-only: nothing edits or deletes audit rows.
+// nextCursor). pages is how many pages the whole month or range fills. Read-only: nothing edits or
+// deletes audit rows.
 router.get('/auditEvents', async (req, res) => {
   const input = validate(listAuditEventsSchema, req.query);
   const { start, end } = input.from
     ? { start: input.from, end: input.to }
     : toMonthRange(input.month);
-  const limit = input.limit ?? DEFAULT_PAGE_SIZE;
+  const inRange = { createdAt: { gte: start, lt: end } };
 
   // UUIDv7 ids are time-ordered, so id order is creation order and the cursor is the last id seen.
-  // One row more than the page is read to tell whether another page follows.
-  const events = await prisma.auditEvent.findMany({
-    where: {
-      createdAt: { gte: start, lt: end },
-      ...(input.cursor && { id: { lt: input.cursor } }),
-    },
-    orderBy: { id: 'desc' },
-    take: limit + 1,
-    select: AUDIT_EVENT_SELECT,
-  });
+  // One row more than the page is read to tell whether another page follows. The count ignores
+  // the cursor, so pages is the same on every page of one month or range.
+  const [events, count] = await Promise.all([
+    prisma.auditEvent.findMany({
+      where: { ...inRange, ...(input.cursor && { id: { lt: input.cursor } }) },
+      orderBy: { id: 'desc' },
+      take: input.limit + 1,
+      select: AUDIT_EVENT_SELECT,
+    }),
+    prisma.auditEvent.count({ where: inRange }),
+  ]);
 
-  const hasNextPage = events.length > limit;
-  const data = hasNextPage ? events.slice(0, limit) : events;
-  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+  const hasNextPage = events.length > input.limit;
+  const data = hasNextPage ? events.slice(0, input.limit) : events;
+  res.json({
+    data,
+    nextCursor: hasNextPage ? data.at(-1).id : null,
+    pages: Math.ceil(count / input.limit),
+  });
 });
 
 // GET /api/admin/auditEvents/months — every UTC month with at least one audit event, as YYYY-MM,

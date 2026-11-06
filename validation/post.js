@@ -1,8 +1,16 @@
-// Zod schemas for posts: create, edit and status, with a body of paragraph and image elements
-// (docs/endpoints.md → Validation rules).
+// Zod schemas for posts: create, edit, status and the deleted posts list query, with a body of
+// paragraph and image elements (docs/endpoints.md → Validation rules).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
-const { requiredText, optionalText, httpsUrl, itemId, websiteId, imageShape } = require('./fields');
+const {
+  requiredText,
+  optionalText,
+  httpsUrl,
+  itemId,
+  websiteId,
+  imageShape,
+  pageShape,
+} = require('./fields');
 
 // Link URLs follow the same https rule as image URLs.
 const LINK_URL = httpsUrl('Link URL');
@@ -118,4 +126,6 @@ const updatePostSchema = z.object({
 
 const postStatusSchema = z.object({ status });
 
-module.exports = { createPostSchema, updatePostSchema, postStatusSchema };
+const listDeletedPostsSchema = z.object(pageShape);
+
+module.exports = { createPostSchema, updatePostSchema, postStatusSchema, listDeletedPostsSchema };
