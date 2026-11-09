@@ -174,3 +174,29 @@ describe('POST /api/siteOwner/notifications/:id/read', () => {
     assert.equal(stored.readAt, null);
   });
 });
+
+// Sets fields on the account's copy of an update, such as its readAt or deletedAt.
+function setRecipient(owner, notification, data) {
+  return prisma.notificationRecipient.updateMany({
+    where: { accountId: owner.id, notificationId: notification.id },
+    data,
+  });
+}
+
+describe('updates the site owner deleted', () => {
+  it('leave the list and unread count, and are not found on read', async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const notification = await createNotification(admin, [owner]);
+    await setRecipient(owner, notification, { deletedAt: new Date() });
+
+    const list = await as(owner, 'get', '/api/siteOwner/notifications');
+    const count = await as(owner, 'get', '/api/siteOwner/notifications/unreadCount');
+    const read = await as(owner, 'post', `/api/siteOwner/notifications/${notification.id}/read`);
+
+    assert.deepEqual(list.body.data, []);
+    assert.deepEqual(count.body, { data: { updates: 0, threads: 0 } });
+    assert.equal(read.status, 404);
+    assert.deepEqual(read.body, UPDATE_NOT_FOUND);
+  });
+});

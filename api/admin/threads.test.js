@@ -230,3 +230,46 @@ describe('POST /api/admin/threads/:id/read', () => {
     assert.equal(stored.ownerReadAt, null);
   });
 });
+
+describe('threads the admin deleted', () => {
+  it('leave the list and unread count, and are not found on every admin route', async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const thread = await createThread(owner, { adminDeletedAt: new Date() });
+    const path = `/api/admin/threads/${thread.id}`;
+
+    const list = await as(admin, 'get', '/api/admin/threads');
+    const count = await as(admin, 'get', '/api/admin/threads/unreadCount');
+    const responses = [
+      await as(admin, 'get', path),
+      await as(admin, 'post', `${path}/messages`).send({ message: 'Hi' }),
+      await as(admin, 'post', `${path}/read`),
+    ];
+
+    assert.deepEqual(list.body.data, []);
+    assert.deepEqual(count.body, { data: { threads: 0 } });
+    for (const res of responses) {
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, THREAD_NOT_FOUND);
+    }
+    const ownerList = await as(owner, 'get', '/api/siteOwner/threads');
+    assert.equal(ownerList.body.data.length, 1);
+  });
+
+  it("come back to the admin's mailbox, unread, when the site owner replies", async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const thread = await createThread(owner, {
+      adminReadAt: new Date(),
+      adminDeletedAt: new Date(),
+    });
+
+    await as(owner, 'post', `/api/siteOwner/threads/${thread.id}/messages`).send({ message: 'Hi' });
+
+    const list = await as(admin, 'get', '/api/admin/threads');
+    assert.equal(list.body.data.length, 1);
+    assert.equal(list.body.data[0].unread, true);
+    const deleted = await as(admin, 'get', '/api/admin/deleted');
+    assert.deepEqual(deleted.body.data, []);
+  });
+});

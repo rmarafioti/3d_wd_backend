@@ -32,7 +32,7 @@ The client website fetches from the local backend. Nothing leaves the machine.
    - formatting renders as in the Paragraph formatting examples (`docs/endpoints.md`), and no raw HTML is rendered
    - empty optional fields don't render
    - the draft post does not appear
-5. Change `HEADLESS_CMS_API_KEY` to a wrong value and restart. The backend returns `401` "Invalid API key." and the website must handle it without crashing. Restore the key.
+5. Change `HEADLESS_CMS_API_KEY` to a wrong value and restart. The backend returns `401` "Invalid API key." and the website's request throws: an error page in `next dev`, and in production a failed build or regeneration, which keeps the last good page. Nothing renders the key. Restore the key.
 6. Run `next build && next start -p 3001` and confirm every page that renders posts builds as static and still shows the posts.
 
 ## Test B — the webhook arrives (deployed site, no tunnel)

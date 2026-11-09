@@ -1,5 +1,5 @@
 // Site owner routes, mounted at /api/siteOwner: websites, post create / read / edit / status /
-// publish date / delete / restore and upload signing, with the gallery and ability routers.
+// publish date / delete / restore and upload signing; mounts the other site owner routers.
 const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
@@ -17,17 +17,24 @@ const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
 const { signUpload } = require('../../lib/cloudinary');
-const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
+const {
+  ownedWebsiteWhere,
+  restorablePostWhere,
+  assertOwnImages,
+  assertImagesInFolder,
+} = require('../../lib/ownership');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
 const { ABILITY_SELECT, toAbility } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
-const { DELETED_GRACE_MS } = require('../../lib/retention');
+const { restorableUntil } = require('../../lib/retention');
+const { restorePost } = require('../../lib/restore');
 const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
 const abilities = require('./abilities');
 const notifications = require('./notifications');
 const threads = require('./threads');
+const deleted = require('./deleted');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('site_owner'));
@@ -35,6 +42,7 @@ router.use('/galleries', galleries);
 router.use('/abilities', abilities);
 router.use('/notifications', notifications);
 router.use('/threads', threads);
+router.use('/deleted', deleted);
 
 const POST_NOT_FOUND = 'Post not found.';
 const WEBSITE_NOT_FOUND = 'Website not found.';
@@ -70,20 +78,6 @@ function findOwnedPost(accountId, postId, select) {
   });
 }
 
-// A deleted post stays restorable while the upload cleanup still keeps its images: deleted less
-// than DELETED_GRACE_MS ago, the same cutoff services/sweepUploads.js uses. The cutoff only moves
-// forward, so a post this accepts has never had its images swept.
-function restorableWhere(accountId) {
-  return {
-    deletedAt: { gt: new Date(Date.now() - DELETED_GRACE_MS) },
-    website: ownedWebsiteWhere(accountId),
-  };
-}
-
-function findRestorablePost(accountId, postId, select) {
-  return prisma.post.findFirst({ where: { id: postId, ...restorableWhere(accountId) }, select });
-}
-
 // Prisma row (selected with POST_SELECT) → the contract's Post shape.
 function toPost(post) {
   return {
@@ -110,7 +104,7 @@ function toDeletedPostSummary({ website, postDate, deletedAt, ...post }) {
     websiteName: website.websiteName,
     postDate: toDateOnly(postDate),
     deletedAt,
-    restorableUntil: new Date(deletedAt.getTime() + DELETED_GRACE_MS),
+    restorableUntil: restorableUntil(deletedAt),
   };
 }
 
@@ -254,7 +248,7 @@ router.get('/posts/deleted', async (req, res) => {
   // Sorted by deletion time, not id, so Prisma's own cursor pages from the cursor post's place in
   // that order. One row more than the page is read to tell whether another page follows.
   const posts = await prisma.post.findMany({
-    where: restorableWhere(req.user.id),
+    where: restorablePostWhere(req.user.id),
     orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
     ...(input.cursor && { cursor: { id: input.cursor }, skip: 1 }),
     take: input.limit + 1,
@@ -406,18 +400,9 @@ router.delete('/posts/:id', async (req, res) => {
 // POST /api/siteOwner/posts/:id/restore — bring back a post deleted in the last 30 days, with its
 // body, images and status. Posts placement is left as it is.
 router.post('/posts/:id/restore', async (req, res) => {
-  const post = await findRestorablePost(req.user.id, req.params.id, { id: true, websiteId: true });
-  if (!post) throw new ServerError(404, POST_NOT_FOUND);
+  const post = await restorePost(req, req.params.id);
 
-  const restored = await prisma.$transaction(async (tx) => {
-    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_RESTORED, post);
-    return tx.post.update({
-      where: { id: post.id },
-      data: { deletedAt: null },
-      select: POST_SELECT,
-    });
-  });
-
+  const restored = await prisma.post.findUnique({ where: { id: post.id }, select: POST_SELECT });
   res.json({ data: toPost(restored) });
   revalidate(post.websiteId, { postId: post.id });
 });

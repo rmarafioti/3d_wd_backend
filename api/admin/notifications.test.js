@@ -278,3 +278,26 @@ describe('DELETE /api/admin/notifications/:id', () => {
     );
   });
 });
+
+describe('updates the admin deleted from their mailbox', () => {
+  it('leave the list and are not found on edit and withdraw; site owners keep them', async () => {
+    const admin = await createAdmin();
+    const owner = await createSiteOwner();
+    const notification = await createNotification(admin, [owner], { adminDeletedAt: new Date() });
+    const path = `/api/admin/notifications/${notification.id}`;
+
+    const list = await as(admin, 'get', '/api/admin/notifications');
+    const responses = [
+      await as(admin, 'patch', path).send({ title: 'T', body: 'B' }),
+      await as(admin, 'delete', path),
+    ];
+
+    assert.deepEqual(list.body.data, []);
+    for (const res of responses) {
+      assert.equal(res.status, 404);
+      assert.deepEqual(res.body, UPDATE_NOT_FOUND);
+    }
+    const ownerList = await as(owner, 'get', '/api/siteOwner/notifications');
+    assert.equal(ownerList.body.data.length, 1);
+  });
+});

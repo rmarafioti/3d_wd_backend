@@ -100,13 +100,14 @@ Table gallery {
   placement    placement [null]      // requested → live (set by the admin); null until the message
   publish_at   datetime [null]       // a draft's go-live date, as on post
   published_at datetime [null]       // when it last went live, as on post
-  deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays
+  deleted_at   datetime [null]       // set by Delete a Gallery: gone from every route, the row stays; restoring it from Recently Deleted clears it within 30 days
   created_at   datetime [not null, default: now()]
   updated_at   datetime [not null]
 
   indexes {
     (website_id, slug) [unique]  // a slug is unique within its website, deleted galleries included
     (status, publish_at)         // Scheduled publish
+    (website_id, deleted_at)     // Recently Deleted
   }
 }
 
@@ -158,11 +159,13 @@ Table notification {             // an update from the admin, read in site owner
   created_by string   [not null]    // the admin who sent it
   kind       notification_kind [not null]
   deleted_at datetime [null]        // set when withdrawn: gone from every inbox and route
+  admin_deleted_at datetime [null]  // the admin deleted it from their own mailbox; site owners keep it
   created_at datetime [not null, default: now()]
   updated_at datetime [not null]
 
   indexes {
     created_by
+    admin_deleted_at               // the admin's Recently Deleted
   }
 }
 
@@ -171,11 +174,13 @@ Table notification_recipient {   // one site owner's copy of an update, fixed wh
   notification_id string   [not null]
   account_id      string   [not null]
   read_at         datetime [null]  // null until they open it
+  deleted_at      datetime [null]  // the site owner deleted their copy; restorable for 30 days
 
   indexes {
     (account_id, notification_id) [unique]  // also the site owner's list, newest first
     notification_id
     (account_id, read_at)                   // the unread count
+    (account_id, deleted_at)                // the site owner's Recently Deleted
   }
 }
 
@@ -186,11 +191,15 @@ Table thread {                   // a message thread between one site owner and 
   last_message_at datetime [not null]
   owner_read_at   datetime [null]      // a side has unread messages while its read time is
   admin_read_at   datetime [null]      // null or before last_message_at
+  owner_deleted_at datetime [null]     // each side deletes it from its own mailbox only; the other
+  admin_deleted_at datetime [null]     //   side's reply clears it, so a reply is never hidden
   created_at      datetime [not null, default: now()]
 
   indexes {
     (account_id, last_message_at)  // the site owner's list
     last_message_at                // the admin's list
+    (account_id, owner_deleted_at) // the site owner's Recently Deleted
+    admin_deleted_at               // the admin's Recently Deleted
   }
 }
 
@@ -212,7 +221,7 @@ Table audit_event {
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
   actor_id    string   [null]      // the signed-in account; null for a failed login with no account, or a scheduled publish
   actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
-  target_type string   [null]      // account, website, post, gallery or ability
+  target_type string   [null]      // account, website, post, gallery, ability, notification or thread
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
   ip          string   [null]
@@ -392,7 +401,7 @@ The database is the record of which images are kept. Post and gallery saves neve
 - deletes each one that no kept `image.src` or `gallery_image.src` refers to. An image row is kept while its post or gallery is published or a draft (drafts keep their images), or was deleted less than 30 days ago (removing Photo Galleries deletes the website's galleries, so the same 30 days apply). After 30 days a deleted post's or gallery's images are deleted, unless a post or gallery that is still kept uses the same `src`. Image rows themselves are never deleted by the cleanup;
 - never touches anything outside `CLOUDINARY_FOLDER`, so a local run can't delete production images, nor the reverse.
 
-Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `lib/retention.js`, since a site owner can restore a deleted post, and add a removed Photo Galleries ability back with its galleries, for the same 30 days; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
+Uploads happen at Publish and the save follows straight away, so 24 hours leaves a wide margin: an image is never swept before its post is saved. The 30 days for a deleted post or gallery match how long database backups are kept, so a restored backup still has its images, and a mistaken delete can be undone with them (`DELETED_GRACE_MS` in `lib/retention.js`, since a site owner can restore a deleted post or gallery, and add a removed Photo Galleries ability back with its galleries, for the same 30 days, through the same cutoff, `restoreCutoff`, so anything a restore accepts still has its images; it may come down to 15 days if storage gets tight). The script is safe to re-run. Locally it is run by hand; once deployed, a daily Render cron job runs it.
 
 ### Scheduled publish
 

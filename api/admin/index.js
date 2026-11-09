@@ -28,11 +28,13 @@ const {
 } = require('../../lib/notifications');
 const notifications = require('./notifications');
 const threads = require('./threads');
+const deleted = require('./deleted');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
 router.use('/notifications', notifications);
 router.use('/threads', threads);
+router.use('/deleted', deleted);
 
 const ACCOUNT_SELECT = {
   id: true,
