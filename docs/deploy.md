@@ -63,8 +63,10 @@ Production's four services each read only their own variables (`render.yaml`): t
 | `R2_ACCESS_KEY_ID`      | not set                                 | the R2 token's access key id                                  |
 | `R2_SECRET_ACCESS_KEY`  | not set                                 | the R2 token's secret                                         |
 | `R2_BUCKET`             | not set                                 | `3dwd-backups`                                                |
-| `SENTRY_DSN`            | not set (Sentry off)                    | the Sentry project's DSN, on all three services               |
+| `SENTRY_DSN`            | not set (Sentry off)                    | the Sentry project's DSN, on all four services                |
 | `RESEND_API_KEY`        | not set (request emails off)            | Resend's sending-only key, on the API only (Email)            |
+
+Render also sets two variables itself, never entered by hand: `RENDER_GIT_COMMIT`, the deployed commit, which `lib/sentry.js` sends as the Sentry release, and `RENDER_SERVICE_NAME`, which `npm run sentry:check` (`scripts/sentryCheck.js`) names in its test error.
 
 `NODE_ENV=production` on staging makes `lib/config.js` check it like production: https `CORS_ORIGIN` and a cookie domain. Each environment's `JWT_SECRET` and `SECRET_ENCRYPTION_KEY` is its own; none is reused from local or the other environment.
 

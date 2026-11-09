@@ -12,6 +12,7 @@ const {
 const { threadMessageRateLimit } = require('../../lib/rateLimit');
 const {
   THREAD_SELECT,
+  inMailboxWhere,
   toThread,
   listThreads,
   startThread,
@@ -23,9 +24,13 @@ const router = express.Router();
 
 const THREAD_NOT_FOUND = 'Thread not found.';
 
-// The account's own thread, or a 404 (another site owner's thread reads as not found).
+// The account's own thread in its mailbox, or a 404: another site owner's thread, and one this
+// site owner deleted, read as not found.
 async function findOwnedThread(accountId, id, select = { id: true }) {
-  const thread = await prisma.thread.findFirst({ where: { id, accountId }, select });
+  const thread = await prisma.thread.findFirst({
+    where: { id, accountId, ...inMailboxWhere('owner') },
+    select,
+  });
   if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
   return thread;
 }
@@ -46,7 +51,9 @@ router.post('/', threadMessageRateLimit, async (req, res) => {
 // (limit, cursor), each saying whether it has a reply they haven't read.
 router.get('/', async (req, res) => {
   const input = validate(listThreadsSchema, req.query);
-  res.json(await listThreads({ accountId: req.user.id }, input, 'owner'));
+  res.json(
+    await listThreads({ accountId: req.user.id, ...inMailboxWhere('owner') }, input, 'owner'),
+  );
 });
 
 // GET /api/siteOwner/threads/:id — one of the account's threads with its messages, oldest first.

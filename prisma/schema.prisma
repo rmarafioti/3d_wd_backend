@@ -217,6 +217,7 @@ model Gallery {
 
   @@unique([websiteId, slug]) // also the index on website_id
   @@index([status, publishAt]) // the scheduled publish job: drafts whose publishAt has passed
+  @@index([websiteId, deletedAt]) // Recently Deleted: filtered and sorted by deletedAt
   @@map("gallery")
 }
 
@@ -273,29 +274,34 @@ model WebsiteAbility {
 
 // An update from the admin to site owners, read in their Inbox. Its recipients are fixed when it
 // is sent. Withdrawing it sets deletedAt: it is then gone from every inbox and every route.
+// adminDeletedAt is the admin deleting it from their own mailbox only; site owners keep it.
 model Notification {
-  id          String           @id @default(uuid(7))
-  title       String
-  body        String           @db.Text // paragraph formatting, as a post paragraph
-  createdById String           @map("created_by") // the admin who sent it
-  kind        NotificationKind
-  deletedAt   DateTime?        @map("deleted_at")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id             String           @id @default(uuid(7))
+  title          String
+  body           String           @db.Text // paragraph formatting, as a post paragraph
+  createdById    String           @map("created_by") // the admin who sent it
+  kind           NotificationKind
+  deletedAt      DateTime?        @map("deleted_at")
+  adminDeletedAt DateTime?        @map("admin_deleted_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
 
   createdBy  Account                 @relation(fields: [createdById], references: [id])
   recipients NotificationRecipient[]
 
   @@index([createdById])
+  @@index([adminDeletedAt]) // the admin's Recently Deleted
   @@map("notification")
 }
 
-// One site owner's copy of an update: readAt is null until they open it.
+// One site owner's copy of an update: readAt is null until they open it, deletedAt set while it is
+// in their Recently Deleted.
 model NotificationRecipient {
   id             String    @id @default(uuid(7))
   notificationId String    @map("notification_id")
   accountId      String    @map("account_id")
   readAt         DateTime? @map("read_at")
+  deletedAt      DateTime? @map("deleted_at")
 
   notification Notification @relation(fields: [notificationId], references: [id])
   account      Account      @relation(fields: [accountId], references: [id])
@@ -303,26 +309,33 @@ model NotificationRecipient {
   @@unique([accountId, notificationId]) // also the site owner's list, newest notification first
   @@index([notificationId])
   @@index([accountId, readAt]) // the unread count
+  @@index([accountId, deletedAt]) // the site owner's Recently Deleted
   @@map("notification_recipient")
 }
 
 // A message thread a site owner starts with the admin; both sides reply. A side has unread
 // messages while its read time is null or before lastMessageAt. Writing a message sets the
-// author's own side to lastMessageAt, so only the other side's messages make it unread.
+// author's own side to lastMessageAt, so only the other side's messages make it unread. Each side
+// deletes it from its own mailbox only (ownerDeletedAt, adminDeletedAt); the other side's message
+// clears it, so a deleted thread never hides a reply.
 model Thread {
-  id            String    @id @default(uuid(7))
-  accountId     String    @map("account_id") // the site owner who started it
-  subject       String
-  lastMessageAt DateTime  @map("last_message_at")
-  ownerReadAt   DateTime? @map("owner_read_at")
-  adminReadAt   DateTime? @map("admin_read_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  id             String    @id @default(uuid(7))
+  accountId      String    @map("account_id") // the site owner, whichever side started it
+  subject        String
+  lastMessageAt  DateTime  @map("last_message_at")
+  ownerReadAt    DateTime? @map("owner_read_at")
+  adminReadAt    DateTime? @map("admin_read_at")
+  ownerDeletedAt DateTime? @map("owner_deleted_at")
+  adminDeletedAt DateTime? @map("admin_deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   account  Account         @relation(fields: [accountId], references: [id])
   messages ThreadMessage[]
 
   @@index([accountId, lastMessageAt]) // the site owner's list, newest activity first
   @@index([lastMessageAt]) // the admin's list
+  @@index([accountId, ownerDeletedAt]) // the site owner's Recently Deleted
+  @@index([adminDeletedAt]) // the admin's Recently Deleted
   @@map("thread")
 }
 

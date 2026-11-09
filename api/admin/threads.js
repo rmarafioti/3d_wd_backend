@@ -11,6 +11,7 @@ const {
 } = require('../../validation/thread');
 const {
   THREAD_SELECT,
+  inMailboxWhere,
   toThread,
   unreadWhere,
   listThreads,
@@ -23,9 +24,13 @@ const router = express.Router();
 
 const THREAD_NOT_FOUND = 'Thread not found.';
 
-// Any site owner's thread, or a 404.
-async function findThread(id) {
-  const thread = await prisma.thread.findUnique({ where: { id }, select: { id: true } });
+// Any site owner's thread in the admin's mailbox, or a 404: one the admin deleted reads as not
+// found.
+async function findThread(id, select = { id: true }) {
+  const thread = await prisma.thread.findFirst({
+    where: { id, ...inMailboxWhere('admin') },
+    select,
+  });
   if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
   return thread;
 }
@@ -56,23 +61,21 @@ router.post('/', async (req, res) => {
 // (limit, cursor), each with who started it and whether it has a reply the admin hasn't read.
 router.get('/', async (req, res) => {
   const input = validate(listThreadsSchema, req.query);
-  res.json(await listThreads({}, input, 'admin'));
+  res.json(await listThreads(inMailboxWhere('admin'), input, 'admin'));
 });
 
 // GET /api/admin/threads/unreadCount — threads with a message the admin hasn't read, for the
 // navbar badge. Registered before /:id so "unreadCount" is never read as an id.
 router.get('/unreadCount', async (req, res) => {
-  const threads = await prisma.thread.count({ where: unreadWhere('admin') });
+  const threads = await prisma.thread.count({
+    where: { ...inMailboxWhere('admin'), ...unreadWhere('admin') },
+  });
   res.json({ data: { threads } });
 });
 
 // GET /api/admin/threads/:id — one thread with its messages, oldest first.
 router.get('/:id', async (req, res) => {
-  const thread = await prisma.thread.findUnique({
-    where: { id: req.params.id },
-    select: THREAD_SELECT,
-  });
-  if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
+  const thread = await findThread(req.params.id, THREAD_SELECT);
   res.json({ data: toThread(thread, 'admin') });
 });
 

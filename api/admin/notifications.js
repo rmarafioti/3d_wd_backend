@@ -5,10 +5,12 @@ const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
 const { notificationSchema, listNotificationsSchema } = require('../../validation/notification');
-const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { AUDIT_ACTIONS } = require('../../lib/audit');
 const {
   ADMIN_NOTIFICATION_SELECT,
   toAdminNotification,
+  ADMIN_MAILBOX_WHERE,
+  recordNotificationEvent,
   sendNotification,
 } = require('../../lib/notifications');
 
@@ -16,24 +18,14 @@ const router = express.Router();
 
 const NOTIFICATION_NOT_FOUND = 'Update not found.';
 
-// An update that hasn't been withdrawn, or a 404.
+// An update in the admin's mailbox, or a 404.
 async function findSentNotification(id) {
   const notification = await prisma.notification.findFirst({
-    where: { id, deletedAt: null },
+    where: { id, ...ADMIN_MAILBOX_WHERE },
     select: { id: true },
   });
   if (!notification) throw new ServerError(404, NOTIFICATION_NOT_FOUND);
   return notification;
-}
-
-function recordNotificationEvent(tx, req, action, notificationId) {
-  return recordAuditEvent(tx, req, {
-    action,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
-    targetType: 'notification',
-    targetId: notificationId,
-  });
 }
 
 // POST /api/admin/notifications — body { title, body }. Sends a site-wide update to every active
@@ -63,7 +55,7 @@ router.post('/', async (req, res) => {
   res.status(201).json({ data: toAdminNotification(notification) });
 });
 
-// GET /api/admin/notifications — the updates not withdrawn, newest first, a page at a time
+// GET /api/admin/notifications — the updates in the admin's mailbox, newest first, a page at a time
 // (limit, cursor), each with its recipients and how many have read it.
 router.get('/', async (req, res) => {
   const input = validate(listNotificationsSchema, req.query);
@@ -71,7 +63,7 @@ router.get('/', async (req, res) => {
   // UUIDv7 ids are time-ordered, so the cursor is the last id seen. One row more than the page is
   // read to tell whether another page follows.
   const notifications = await prisma.notification.findMany({
-    where: { deletedAt: null, ...(input.cursor && { id: { lt: input.cursor } }) },
+    where: { ...ADMIN_MAILBOX_WHERE, ...(input.cursor && { id: { lt: input.cursor } }) },
     orderBy: { id: 'desc' },
     take: input.limit + 1,
     select: ADMIN_NOTIFICATION_SELECT,

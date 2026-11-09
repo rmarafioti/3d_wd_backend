@@ -12,6 +12,7 @@ const {
 } = require('../../validation/gallery');
 const { publishAtSchema, assertPublishAtAllowed } = require('../../validation/fields');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
+const { assertNameAvailable, retryOnClash } = require('../../lib/galleryNames');
 const { findFreeSlug } = require('../../lib/slug');
 const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages');
 const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
@@ -23,13 +24,9 @@ const router = express.Router();
 
 const GALLERY_NOT_FOUND = 'Gallery not found.';
 const WEBSITE_NOT_FOUND = 'Website not found.';
-const GALLERY_NAME_TAKEN = 'A gallery with this name already exists.';
 const ADD_GALLERIES_FIRST = 'Add Photo Galleries to this website first.';
 const ALREADY_REQUESTED = 'This gallery has already been requested.';
 const NOT_REQUESTED = "This gallery hasn't been requested yet.";
-// Two creates at once can both fail their first try and clash again on the retry, so a create is
-// tried up to this many times before its clash is a 500.
-const MAX_CREATE_ATTEMPTS = 3;
 
 // The gallery fields the request routes check.
 const REQUEST_CHECK_SELECT = { id: true, websiteId: true, requestedAt: true };
@@ -116,22 +113,6 @@ async function writeImages(tx, galleryId, images) {
   }
 }
 
-// Throws the 409 when another gallery on the website, not deleted, has this name in any case:
-// two galleries with one name can't be told apart on the dashboard. `exceptId` is the gallery
-// being edited, which may keep its own name.
-async function assertNameAvailable(tx, websiteId, galleryName, exceptId) {
-  const taken = await tx.gallery.findFirst({
-    where: {
-      websiteId,
-      deletedAt: null,
-      galleryName: { equals: galleryName, mode: 'insensitive' },
-      ...(exceptId && { id: { not: exceptId } }),
-    },
-    select: { id: true },
-  });
-  if (taken) throw new ServerError(409, GALLERY_NAME_TAKEN);
-}
-
 // A gallery change's audit event, written with the transaction client that made the change.
 function recordGalleryEvent(tx, req, action, gallery) {
   return recordAuditEvent(tx, req, {
@@ -144,18 +125,9 @@ function recordGalleryEvent(tx, req, action, gallery) {
   });
 }
 
-// A create that lost to a concurrent one: a serialization failure (Postgres 40001, which the pg
-// driver adapter raises at commit as TransactionWriteConflict, or Prisma's P2034) or a unique
-// index clash (P2002).
-function isCreateClash(err) {
-  return (
-    err.code === 'P2002' || err.code === 'P2034' || err.cause?.kind === 'TransactionWriteConflict'
-  );
-}
-
 // Gallery, then images, in one transaction: if any insert fails the whole create rolls back.
 // Serializable, so two creates of the same name at once can't both pass the name check: Postgres
-// fails one of them, and the retry (createGalleryRetrying) then answers the 409.
+// fails one of them, and the retry (retryOnClash) then answers the 409.
 function createGallery(req, website, input) {
   return prisma.$transaction(
     async (tx) => {
@@ -181,19 +153,6 @@ function createGallery(req, website, input) {
   );
 }
 
-// createGallery, tried again while it clashes with a concurrent create (isCreateClash). Once the
-// other has committed, a retry answers the 409 for the same name, or saves a different name with
-// its own slug.
-async function createGalleryRetrying(req, website, input) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await createGallery(req, website, input);
-    } catch (err) {
-      if (!isCreateClash(err) || attempt === MAX_CREATE_ATTEMPTS) throw err;
-    }
-  }
-}
-
 // POST /api/siteOwner/galleries — create a gallery with its images.
 router.post('/', async (req, res) => {
   const input = validate(createGallerySchema, req.body ?? {});
@@ -212,7 +171,7 @@ router.post('/', async (req, res) => {
   assertImagesInFolder(input.images, website.mediaFolder);
 
   // Two creates on one website at the same moment clash, whatever their names.
-  const gallery = await createGalleryRetrying(req, website, input);
+  const gallery = await retryOnClash(() => createGallery(req, website, input));
 
   res.status(201).json({ data: toGallery(gallery) });
   // After commit and after responding; never awaited, never throws (services/revalidate.js).
