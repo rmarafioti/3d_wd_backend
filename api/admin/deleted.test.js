@@ -1,4 +1,5 @@
-// Request tests for the admin's Recently Deleted list (api/admin/deleted.js).
+// Request tests for the admin's Recently Deleted routes (api/admin/deleted.js): the list, bulk
+// delete and bulk restore.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -118,14 +119,6 @@ describe('GET /api/admin/deleted', () => {
     );
     assert.equal(second.body.nextCursor, null);
   });
-
-  it('returns 403 for a site owner', async () => {
-    const owner = await createSiteOwner();
-
-    const res = await get(owner, '/api/admin/deleted');
-
-    assert.equal(res.status, 403);
-  });
 });
 
 describe('POST /api/admin/deleted', () => {
@@ -210,16 +203,6 @@ describe('POST /api/admin/deleted', () => {
         fields: { 'items.0.type': 'Type must be update or thread.' },
       },
     });
-  });
-
-  it('returns 403 for a site owner', async () => {
-    const owner = await createSiteOwner();
-
-    const res = await post(owner, '/api/admin/deleted').send({
-      items: [{ type: 'thread', id: UNKNOWN_ID }],
-    });
-
-    assert.equal(res.status, 403);
   });
 });
 

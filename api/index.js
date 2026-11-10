@@ -7,6 +7,7 @@ const publicRouter = require('./public');
 
 const router = express.Router();
 
+// GET /api/health — the health check Render waits on before a deploy takes traffic.
 router.get('/health', (req, res) => {
   res.json({ data: { ok: true } });
 });

@@ -2,9 +2,10 @@
 // to R2 (services/backupDatabase.js), nightly by a Render cron job and by hand before a migration.
 require('dotenv/config');
 const { parseArgs } = require('node:util');
-const { initSentry, reportError, flushSentry } = require('../lib/sentry');
-const { missingEnv } = require('../lib/config');
+const { initSentry, exitWithError } = require('../lib/sentry');
+const { missingEnvMessage } = require('../lib/config');
 const { backupPublicKey } = require('../lib/crypto');
+const backupDatabase = require('../services/backupDatabase');
 
 const REQUIRED_ENV = [
   'DATABASE_URL',
@@ -14,36 +15,24 @@ const REQUIRED_ENV = [
   'R2_SECRET_ACCESS_KEY',
   'R2_BUCKET',
 ];
-// Logs the message (never the error object, which could hold the database URL), reports it, and
-// exits 1 once Sentry has sent it.
-async function fail(message) {
-  console.error(message);
-  reportError(new Error(message));
-  await flushSentry();
-  process.exit(1);
-}
-
 async function main() {
   initSentry();
 
-  const missing = missingEnv(REQUIRED_ENV, process.env);
-  if (missing.length) {
-    return fail(`Missing required environment variables: ${missing.join(', ')}`);
-  }
+  const missing = missingEnvMessage(REQUIRED_ENV, process.env);
+  if (missing) return exitWithError(missing);
   try {
     backupPublicKey();
   } catch (err) {
-    return fail(err.message);
+    return exitWithError(err.message);
   }
 
-  const backupDatabase = require('../services/backupDatabase');
   const { values } = parseArgs({ options: { label: { type: 'string' } } });
 
   try {
     const { key, size } = await backupDatabase({ label: values.label });
     console.log(`Database backup: uploaded ${key} (${size} bytes).`);
   } catch (err) {
-    await fail(`Database backup failed: ${err.message}`);
+    await exitWithError(`Database backup failed: ${err.message}`);
   }
 }
 

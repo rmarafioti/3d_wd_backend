@@ -1,16 +1,12 @@
-// Zod schemas for a website's abilities: add one, send its request form, turn it on or off, and
-// the admin setting it live.
+// Zod schemas for a website's abilities: add one, turn it on or off, and the admin setting it live.
+// The request form's body is requestNoteSchema (validation/fields.js).
 const { z } = require('zod');
-const { requiredText, websiteId } = require('./fields');
+const { websiteId } = require('./fields');
 
 const addAbilitySchema = z.object({
   websiteId,
   kind: z.enum(['posts', 'galleries'], { error: 'Choose posts or galleries.' }),
 });
-
-// The request form: where on the client website the ability's content should appear. Line breaks
-// are kept.
-const requestAbilitySchema = z.object({ requestNote: requiredText('Request note', 1000) });
 
 const turnedOnSchema = z.object({
   turnedOn: z.boolean({ error: 'Turned on must be true or false.' }),
@@ -21,4 +17,4 @@ const abilityStatusSchema = z.object({
   status: z.literal('live', { error: 'Status must be live.' }),
 });
 
-module.exports = { addAbilitySchema, requestAbilitySchema, turnedOnSchema, abilityStatusSchema };
+module.exports = { addAbilitySchema, turnedOnSchema, abilityStatusSchema };

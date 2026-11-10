@@ -100,10 +100,22 @@ describe('site owner route guards', () => {
     ['get', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id'],
     ['patch', '/api/siteOwner/posts/some-id/status'],
+    ['patch', '/api/siteOwner/posts/some-id/publishAt'],
     ['delete', '/api/siteOwner/posts/some-id'],
     ['get', '/api/siteOwner/posts/deleted'],
     ['post', '/api/siteOwner/posts/some-id/restore'],
     ['post', '/api/siteOwner/uploads/sign'],
+    ['get', '/api/siteOwner/notifications'],
+    ['get', '/api/siteOwner/notifications/unreadCount'],
+    ['post', '/api/siteOwner/notifications/some-id/read'],
+    ['post', '/api/siteOwner/threads'],
+    ['get', '/api/siteOwner/threads'],
+    ['get', '/api/siteOwner/threads/some-id'],
+    ['post', '/api/siteOwner/threads/some-id/messages'],
+    ['post', '/api/siteOwner/threads/some-id/read'],
+    ['get', '/api/siteOwner/deleted'],
+    ['post', '/api/siteOwner/deleted'],
+    ['post', '/api/siteOwner/deleted/restore'],
   ];
 
   for (const [method, path] of routes) {
@@ -798,14 +810,21 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     await revalidationCall();
   });
 
-  it('returns 400 on status when status is missing', async () => {
+  it('returns 400 on status when status is missing, and leaves the post unchanged', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const post = await createPost(website);
 
     const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({});
 
     assert.equal(res.status, 400);
-    assert.deepEqual(res.body.error.fields, { status: 'Status must be draft or published.' });
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: { status: 'Status must be draft or published.' },
+      },
+    });
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.status, 'published');
   });
 
   it('calls the revalidation webhook for the post after a status change', async () => {
@@ -819,24 +838,6 @@ describe('PATCH /api/siteOwner/posts/:id/status', () => {
     assert.deepEqual(JSON.parse(options.body), { websiteId: website.id, postId: post.id });
   });
 
-  it('returns 400 on status for the retired { active }, and leaves the post unchanged', async () => {
-    const { owner, website } = await createOwnerWithWebsite();
-    const post = await createPost(website);
-
-    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}/status`).send({
-      active: false,
-    });
-
-    assert.equal(res.status, 400);
-    assert.deepEqual(res.body, {
-      error: {
-        message: 'Please fix the highlighted fields.',
-        fields: { status: 'Status must be draft or published.' },
-      },
-    });
-    const stored = await prisma.post.findUnique({ where: { id: post.id } });
-    assert.equal(stored.status, 'published');
-  });
   it("returns 404 for another site owner's post and leaves it unchanged", async () => {
     const { owner } = await createOwnerWithWebsite();
     const { website: otherWebsite } = await createOwnerWithWebsite();

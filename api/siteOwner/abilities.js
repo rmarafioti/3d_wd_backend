@@ -4,20 +4,17 @@ const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const {
-  addAbilitySchema,
-  requestAbilitySchema,
-  turnedOnSchema,
-} = require('../../validation/ability');
+const { addAbilitySchema, turnedOnSchema } = require('../../validation/ability');
+const { requestNoteSchema } = require('../../validation/fields');
 const { ownedWebsiteWhere } = require('../../lib/ownership');
-const { DELETED_GRACE_MS } = require('../../lib/retention');
+const { restoreCutoff } = require('../../lib/retention');
 const {
   ABILITY_SELECT,
   findOwnedAbility,
   toAbility,
   recordAbilityEvent,
 } = require('../../lib/abilities');
-const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { AUDIT_ACTIONS, recordContentEvent } = require('../../lib/audit');
 const revalidate = require('../../services/revalidate');
 const sendRequestEmail = require('../../services/requestEmail');
 
@@ -35,14 +32,7 @@ const NOT_REQUESTED = "This ability hasn't been requested yet.";
 // One gallery event per gallery that removing or restoring the ability deleted or brought back.
 async function recordGalleryEvents(tx, req, action, galleries) {
   for (const gallery of galleries) {
-    await recordAuditEvent(tx, req, {
-      action,
-      actorId: req.user.id,
-      actorEmail: req.user.email,
-      targetType: 'gallery',
-      targetId: gallery.id,
-      metadata: { websiteId: gallery.websiteId },
-    });
+    await recordContentEvent(tx, req, action, 'gallery', gallery);
   }
 }
 
@@ -83,6 +73,20 @@ async function restoreAbility(tx, req, removed) {
   return ability;
 }
 
+// Saves the posts request note and puts their placement to requested, for the admin to place (or
+// move) posts on the client website. The ability's status is left as it is.
+function saveRequest(req, ability, requestNote, action) {
+  return prisma.$transaction(async (tx) => {
+    const requested = await tx.websiteAbility.update({
+      where: { id: ability.id },
+      data: { placement: 'requested', requestNote, requestedAt: new Date() },
+      select: ABILITY_SELECT,
+    });
+    await recordAbilityEvent(tx, req, action, requested);
+    return requested;
+  });
+}
+
 // POST /api/siteOwner/abilities — add an ability to one of the site owner's websites.
 router.post('/', async (req, res) => {
   const input = validate(addAbilitySchema, req.body ?? {});
@@ -100,8 +104,7 @@ router.post('/', async (req, res) => {
   });
   if (existing && existing.removedAt === null) throw new ServerError(409, ALREADY_ADDED);
 
-  const canRestore =
-    existing !== null && existing.removedAt.getTime() > Date.now() - DELETED_GRACE_MS;
+  const canRestore = existing !== null && existing.removedAt > restoreCutoff();
 
   let ability;
   try {
@@ -121,26 +124,12 @@ router.post('/', async (req, res) => {
   if (canRestore) revalidate(website.id, { ability: ability.kind });
 });
 
-// Saves the posts request note and puts their placement to requested, for the admin to place (or
-// move) posts on the client website. The ability's status is left as it is.
-function saveRequest(req, ability, requestNote, action) {
-  return prisma.$transaction(async (tx) => {
-    const requested = await tx.websiteAbility.update({
-      where: { id: ability.id },
-      data: { placement: 'requested', requestNote, requestedAt: new Date() },
-      select: ABILITY_SELECT,
-    });
-    await recordAbilityEvent(tx, req, action, requested);
-    return requested;
-  });
-}
-
 // POST /api/siteOwner/abilities/:id/request — the posts request form: where on the client website
 // posts should appear. Sent once, after the first post; deleting every post never asks for it
 // again, and the site owner changes it with the PATCH below. Moves posts' placement to requested
 // for the admin to place them. Photo Galleries are requested per gallery instead (./galleries.js).
 router.post('/:id/request', async (req, res) => {
-  const input = validate(requestAbilitySchema, req.body ?? {});
+  const input = validate(requestNoteSchema, req.body ?? {});
 
   const ability = await findOwnedAbility(req.user.id, req.params.id);
   if (!ability) throw new ServerError(404, ABILITY_NOT_FOUND);
@@ -162,7 +151,7 @@ router.post('/:id/request', async (req, res) => {
 // should go, live or not. Replaces the note and puts posts' placement back to
 // requested, so the admin's pill marks it until the component is moved and posts are set live.
 router.patch('/:id/request', async (req, res) => {
-  const input = validate(requestAbilitySchema, req.body ?? {});
+  const input = validate(requestNoteSchema, req.body ?? {});
 
   const ability = await findOwnedAbility(req.user.id, req.params.id);
   if (!ability) throw new ServerError(404, ABILITY_NOT_FOUND);

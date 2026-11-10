@@ -61,7 +61,7 @@ enum AbilityStatus {
   @@map("ability_status")
 }
 
-// Where an item is placed on the client website (issue #71): requested by its request message,
+// Where an item is placed on the client website: requested by its request message,
 // then set live by the admin once it is placed, styled and approved. Each gallery has its own;
 // posts have one, on the posts ability.
 enum Placement {
@@ -145,7 +145,7 @@ model Post {
   status      PostStatus @default(published)
   publishAt   DateTime?  @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
   publishedAt DateTime?  @map("published_at") // when it last went from draft to published; null while a draft
-  deletedAt   DateTime?  @map("deleted_at") // set by Delete a Post; the post is gone from every route
+  deletedAt   DateTime?  @map("deleted_at") // set by Delete a Post; gone from every route but Recently Deleted and its restore (30 days)
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
@@ -208,7 +208,7 @@ model Gallery {
   placement   Placement? // null until the request message is sent
   publishAt   DateTime?     @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
   publishedAt DateTime?     @map("published_at") // when it last went from draft to published; null while a draft
-  deletedAt   DateTime?     @map("deleted_at") // set by Delete a Gallery; gone from every route
+  deletedAt   DateTime?     @map("deleted_at") // set by Delete a Gallery; gone from every route but Recently Deleted and its restore (30 days)
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
@@ -361,8 +361,8 @@ model ThreadMessage {
 model AuditEvent {
   id         String   @id @default(uuid(7))
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
-  actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account
-  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token
+  actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account, or a scheduled publish
+  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token, or a scheduled publish
   targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification' or 'thread'
   targetId   String?  @map("target_id")
   metadata   Json?

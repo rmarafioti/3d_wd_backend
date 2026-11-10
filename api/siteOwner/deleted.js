@@ -4,15 +4,17 @@ const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const { listDeletedSchema, mailItemsSchema, allItemsSchema } = require('../../validation/deleted');
+const { mailItemsSchema, allItemsSchema } = require('../../validation/deleted');
+const { pageSchema } = require('../../validation/fields');
 const { restorablePostWhere, restorableGalleryWhere } = require('../../lib/ownership');
 const {
   inboxRecipientWhere,
   restorableRecipientWhere,
+  assertRecipientMatching,
   setRecipientDeleted,
 } = require('../../lib/notifications');
 const {
-  inMailboxWhere,
+  ownerMailboxWhere,
   restorableWhere: restorableThreadWhere,
   setThreadDeleted,
 } = require('../../lib/threads');
@@ -22,7 +24,6 @@ const revalidate = require('../../services/revalidate');
 
 const router = express.Router();
 
-const UPDATE_NOT_FOUND = 'Update not found.';
 const THREAD_NOT_FOUND = 'Thread not found.';
 
 const WEBSITE_NAME_SELECT = { select: { websiteName: true } };
@@ -100,18 +101,8 @@ function siteOwnerSources(accountId) {
   ];
 }
 
-// The account's copy of an update matched by `where`, or a 404.
-async function findRecipient(db, where, notificationId) {
-  const recipient = await db.notificationRecipient.findFirst({
-    where: { ...where, notificationId },
-    select: { id: true, notificationId: true },
-  });
-  if (!recipient) throw new ServerError(404, UPDATE_NOT_FOUND);
-  return recipient;
-}
-
 // The account's thread matched by `where`, or a 404.
-async function findThread(db, where, id) {
+async function assertThreadMatching(db, where, id) {
   const thread = await db.thread.findFirst({ where: { ...where, id }, select: { id: true } });
   if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
   return thread;
@@ -120,7 +111,7 @@ async function findThread(db, where, id) {
 // GET /api/siteOwner/deleted — the account's Recently Deleted, newest deletion first, a page at a
 // time (limit, cursor), each item with when it can no longer be restored.
 router.get('/', async (req, res) => {
-  const input = validate(listDeletedSchema, req.query);
+  const input = validate(pageSchema, req.query);
   res.json(await listDeleted(siteOwnerSources(req.user.id), input));
 });
 
@@ -135,11 +126,11 @@ router.post('/', async (req, res) => {
   const { done, failed } = await prisma.$transaction((tx) =>
     runPerItem(input.items, {
       update: async (id) => {
-        const recipient = await findRecipient(tx, inboxRecipientWhere(accountId), id);
+        const recipient = await assertRecipientMatching(tx, inboxRecipientWhere(accountId), id);
         await setRecipientDeleted(tx, req, recipient, now);
       },
       thread: async (id) => {
-        await findThread(tx, { accountId, ...inMailboxWhere('owner') }, id);
+        await assertThreadMatching(tx, ownerMailboxWhere(accountId), id);
         await setThreadDeleted(tx, req, id, 'owner', now);
       },
     }),
@@ -171,12 +162,16 @@ router.post('/restore', async (req, res) => {
     },
     update: (id) =>
       prisma.$transaction(async (tx) => {
-        const recipient = await findRecipient(tx, restorableRecipientWhere(accountId), id);
+        const recipient = await assertRecipientMatching(
+          tx,
+          restorableRecipientWhere(accountId),
+          id,
+        );
         await setRecipientDeleted(tx, req, recipient, null);
       }),
     thread: (id) =>
       prisma.$transaction(async (tx) => {
-        await findThread(tx, { accountId, ...restorableThreadWhere('owner') }, id);
+        await assertThreadMatching(tx, { accountId, ...restorableThreadWhere('owner') }, id);
         await setThreadDeleted(tx, req, id, 'owner', null);
       }),
   });

@@ -4,15 +4,12 @@ const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const {
-  startThreadSchema,
-  threadMessageSchema,
-  listThreadsSchema,
-} = require('../../validation/thread');
+const { startThreadSchema, threadMessageSchema } = require('../../validation/thread');
+const { pageSchema } = require('../../validation/fields');
 const { threadMessageRateLimit } = require('../../lib/rateLimit');
 const {
   THREAD_SELECT,
-  inMailboxWhere,
+  ownerMailboxWhere,
   toThread,
   listThreads,
   startThread,
@@ -26,9 +23,9 @@ const THREAD_NOT_FOUND = 'Thread not found.';
 
 // The account's own thread in its mailbox, or a 404: another site owner's thread, and one this
 // site owner deleted, read as not found.
-async function findOwnedThread(accountId, id, select = { id: true }) {
+async function assertOwnedThread(accountId, id, select = { id: true }) {
   const thread = await prisma.thread.findFirst({
-    where: { id, accountId, ...inMailboxWhere('owner') },
+    where: { id, ...ownerMailboxWhere(accountId) },
     select,
   });
   if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
@@ -50,15 +47,13 @@ router.post('/', threadMessageRateLimit, async (req, res) => {
 // GET /api/siteOwner/threads — the account's threads, newest activity first, a page at a time
 // (limit, cursor), each saying whether it has a reply they haven't read.
 router.get('/', async (req, res) => {
-  const input = validate(listThreadsSchema, req.query);
-  res.json(
-    await listThreads({ accountId: req.user.id, ...inMailboxWhere('owner') }, input, 'owner'),
-  );
+  const input = validate(pageSchema, req.query);
+  res.json(await listThreads(ownerMailboxWhere(req.user.id), input, 'owner'));
 });
 
 // GET /api/siteOwner/threads/:id — one of the account's threads with its messages, oldest first.
 router.get('/:id', async (req, res) => {
-  const thread = await findOwnedThread(req.user.id, req.params.id, THREAD_SELECT);
+  const thread = await assertOwnedThread(req.user.id, req.params.id, THREAD_SELECT);
   res.json({ data: toThread(thread, 'owner') });
 });
 
@@ -66,7 +61,7 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/messages', threadMessageRateLimit, async (req, res) => {
   const input = validate(threadMessageSchema, req.body ?? {});
 
-  const { id } = await findOwnedThread(req.user.id, req.params.id);
+  const { id } = await assertOwnedThread(req.user.id, req.params.id);
 
   const thread = await prisma.$transaction((tx) =>
     addThreadMessage(tx, req, id, 'owner', input.message),
@@ -76,7 +71,7 @@ router.post('/:id/messages', threadMessageRateLimit, async (req, res) => {
 
 // POST /api/siteOwner/threads/:id/read — marks one of the account's threads read for them.
 router.post('/:id/read', async (req, res) => {
-  const { id } = await findOwnedThread(req.user.id, req.params.id);
+  const { id } = await assertOwnedThread(req.user.id, req.params.id);
   res.json({ data: await markThreadRead(id, 'owner') });
 });
 

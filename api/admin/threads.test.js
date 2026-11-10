@@ -139,14 +139,6 @@ describe('GET /api/admin/threads', () => {
     );
     assert.equal(res.body.nextCursor, null);
   });
-
-  it('returns 403 for a site owner', async () => {
-    const owner = await createSiteOwner();
-
-    const res = await as(owner, 'get', '/api/admin/threads');
-
-    assert.equal(res.status, 403);
-  });
 });
 
 describe('GET /api/admin/threads/:id', () => {

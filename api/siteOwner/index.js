@@ -6,13 +6,8 @@ const { ServerError } = require('../../errors');
 const requireAuth = require('../../middleware/requireAuth');
 const requireRole = require('../../middleware/requireRole');
 const { validate } = require('../../validation/validate');
-const {
-  createPostSchema,
-  updatePostSchema,
-  postStatusSchema,
-  listDeletedPostsSchema,
-} = require('../../validation/post');
-const { publishAtSchema, assertPublishAtAllowed } = require('../../validation/fields');
+const { createPostSchema, updatePostSchema, postStatusSchema } = require('../../validation/post');
+const { publishAtSchema, assertPublishAtAllowed, pageSchema } = require('../../validation/fields');
 const { signUploadSchema } = require('../../validation/upload');
 const { toDateOnly, fromDateOnly } = require('../../lib/dates');
 const { toBody } = require('../../lib/postBody');
@@ -23,9 +18,10 @@ const {
   assertOwnImages,
   assertImagesInFolder,
 } = require('../../lib/ownership');
-const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { AUDIT_ACTIONS, recordContentEvent } = require('../../lib/audit');
 const { ABILITY_SELECT, toAbility } = require('../../lib/abilities');
 const { uploadSignRateLimit } = require('../../lib/rateLimit');
+const { toPage } = require('../../lib/paging');
 const { restorableUntil } = require('../../lib/retention');
 const { restorePost } = require('../../lib/restore');
 const { toStatusData } = require('../../lib/status');
@@ -132,18 +128,6 @@ async function writeBody(tx, postId, body) {
   await tx.element.createMany({ data: elements });
 }
 
-// A post change's audit event, written with the transaction client that made the change.
-function recordPostEvent(tx, req, action, post) {
-  return recordAuditEvent(tx, req, {
-    action,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
-    targetType: 'post',
-    targetId: post.id,
-    metadata: { websiteId: post.websiteId },
-  });
-}
-
 // GET /api/siteOwner/websites — the site owner's active websites, each with its abilities (not
 // removed, in the order they were added) and post and gallery summaries.
 router.get('/websites', async (req, res) => {
@@ -227,7 +211,7 @@ router.post('/posts', async (req, res) => {
       select: { id: true },
     });
     await writeBody(tx, created.id, input.body);
-    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_CREATED, {
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_CREATED, 'post', {
       id: created.id,
       websiteId: website.id,
     });
@@ -243,7 +227,7 @@ router.post('/posts', async (req, res) => {
 // deletion first, a page at a time (limit, cursor). Registered before /posts/:id so "deleted" is
 // never read as an id.
 router.get('/posts/deleted', async (req, res) => {
-  const input = validate(listDeletedPostsSchema, req.query);
+  const input = validate(pageSchema, req.query);
 
   // Sorted by deletion time, not id, so Prisma's own cursor pages from the cursor post's place in
   // that order. One row more than the page is read to tell whether another page follows.
@@ -263,9 +247,7 @@ router.get('/posts/deleted', async (req, res) => {
     },
   });
 
-  const hasNextPage = posts.length > input.limit;
-  const data = (hasNextPage ? posts.slice(0, input.limit) : posts).map(toDeletedPostSummary);
-  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+  res.json(toPage(posts, input.limit, toDeletedPostSummary));
 });
 
 // GET /api/siteOwner/posts/:id — one post with its body.
@@ -315,7 +297,7 @@ router.patch('/posts/:id', async (req, res) => {
     await tx.element.deleteMany({ where: { postId: post.id } });
     await tx.image.deleteMany({ where: { postId: post.id, id: { notIn: keptImageIds } } });
     await writeBody(tx, post.id, input.body);
-    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, post);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, 'post', post);
     return tx.post.findUnique({ where: { id: post.id }, select: POST_SELECT });
   });
 
@@ -337,7 +319,7 @@ router.patch('/posts/:id/status', async (req, res) => {
 
   const action = status === 'published' ? AUDIT_ACTIONS.POST_PUBLISHED : AUDIT_ACTIONS.POST_DRAFTED;
   const updated = await prisma.$transaction(async (tx) => {
-    await recordPostEvent(tx, req, action, post);
+    await recordContentEvent(tx, req, action, 'post', post);
     return tx.post.update({
       where: { id: post.id },
       data: toStatusData(status, post.status),
@@ -366,7 +348,7 @@ router.patch('/posts/:id/publishAt', async (req, res) => {
   assertPublishAtAllowed(input.publishAt, post);
 
   const updated = await prisma.$transaction(async (tx) => {
-    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, post);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_UPDATED, 'post', post);
     return tx.post.update({
       where: { id: post.id },
       data: { publishAt: input.publishAt },
@@ -385,7 +367,7 @@ router.delete('/posts/:id', async (req, res) => {
   if (!post) throw new ServerError(404, POST_NOT_FOUND);
 
   await prisma.$transaction(async (tx) => {
-    await recordPostEvent(tx, req, AUDIT_ACTIONS.POST_DELETED, post);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_DELETED, 'post', post);
     // A deleted post never publishes on schedule, and a restored one comes back unscheduled.
     await tx.post.update({
       where: { id: post.id },

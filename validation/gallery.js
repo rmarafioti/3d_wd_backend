@@ -1,4 +1,4 @@
-// Zod schemas for photo galleries: create, edit, status, the request message and the crop rules
+// Zod schemas for photo galleries: create, edit, status, the admin's placement and the crop rules
 // (docs/endpoints.md → Validation rules).
 const { z } = require('zod');
 const {
@@ -7,6 +7,7 @@ const {
   itemId,
   websiteId,
   imageShape,
+  status,
   publishAt,
   refinePublishAt,
 } = require('./fields');
@@ -92,8 +93,6 @@ const galleryFields = {
   copy: optionalText('Copy', 2000),
 };
 
-const status = z.enum(['draft', 'published'], { error: 'Status must be draft or published.' });
-
 // A new gallery is published unless the request says otherwise.
 // A go-live date is only for a draft (validation/fields.js → refinePublishAt).
 const createGallerySchema = z
@@ -115,9 +114,6 @@ const updateGallerySchema = z.object({
 
 const galleryStatusSchema = z.object({ status });
 
-// The request message sent once after a gallery is created: where on the site it should go.
-const requestGallerySchema = z.object({ requestNote: requiredText('Request note', 1000) });
-
 // The admin's Set a Gallery Live: live is the only placement the admin sets.
 const galleryPlacementSchema = z.object({
   placement: z.literal('live', { error: 'Placement must be live.' }),
@@ -127,6 +123,5 @@ module.exports = {
   createGallerySchema,
   updateGallerySchema,
   galleryStatusSchema,
-  requestGallerySchema,
   galleryPlacementSchema,
 };
