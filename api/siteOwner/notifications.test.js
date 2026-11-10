@@ -105,12 +105,21 @@ describe('GET /api/siteOwner/notifications', () => {
     assert.equal(page2.body.nextCursor, null);
   });
 
-  it('returns 403 for an admin', async () => {
-    const admin = await createAdmin();
+  it('returns 400 for a limit over 100 and a cursor that is not an id', async () => {
+    const owner = await createSiteOwner();
 
-    const res = await as(admin, 'get', '/api/siteOwner/notifications');
+    const res = await as(owner, 'get', '/api/siteOwner/notifications?limit=101&cursor=abc');
 
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: {
+          limit: 'Limit must be a whole number from 1 to 100.',
+          cursor: 'Invalid cursor.',
+        },
+      },
+    });
   });
 });
 

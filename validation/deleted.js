@@ -1,13 +1,10 @@
-// Zod schemas for Recently Deleted, either role: the list query, and the items a bulk delete or
-// restore names.
+// Zod schemas for Recently Deleted, either role: the items a bulk delete or restore names. The
+// list query is pageSchema (validation/fields.js).
 const { z } = require('zod');
-const { pageShape } = require('./fields');
 
 const MAX_ITEMS = 100;
 const MAIL_TYPES = ['update', 'thread'];
 const ALL_TYPES = ['post', 'gallery', 'update', 'thread'];
-
-const listDeletedSchema = z.object(pageShape);
 
 // { items: [{ type, id }] }: 1 to MAX_ITEMS items, each of one of `types`.
 function itemsSchema(types, typeMessage) {
@@ -29,4 +26,4 @@ function itemsSchema(types, typeMessage) {
 const mailItemsSchema = itemsSchema(MAIL_TYPES, 'Type must be update or thread.');
 const allItemsSchema = itemsSchema(ALL_TYPES, 'Type must be post, gallery, update or thread.');
 
-module.exports = { listDeletedSchema, mailItemsSchema, allItemsSchema };
+module.exports = { mailItemsSchema, allItemsSchema };

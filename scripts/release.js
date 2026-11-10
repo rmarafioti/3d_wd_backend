@@ -3,11 +3,15 @@
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const readline = require('node:readline/promises');
+const {
+  FRONTEND_REPO,
+  FRONTEND_DIR,
+  NOT_FRONTEND_REPO,
+  isFrontendRepo,
+} = require('./frontendRepo');
 
 const BACKEND_REPO = 'rmarafioti/3d_wd_backend';
-const FRONTEND_REPO = 'rmarafioti/3d_wd';
 const BACKEND_DIR = path.resolve(__dirname, '..');
-const FRONTEND_DIR = path.resolve(process.env.FRONTEND_DIR ?? path.join(BACKEND_DIR, '../3d_wd'));
 const STAGING_SERVICE = '3dwd-api-staging';
 const PRODUCTION_SERVICE = '3dwd-api-production';
 const POLL_MS = 15 * 1000;
@@ -221,10 +225,7 @@ async function releaseBackend() {
 // (its staging build) with nothing still building, so a broken frontend never follows a released
 // backend, and the deploy the release push starts is the only new one to wait for.
 function checkFrontend() {
-  const origin = git(FRONTEND_DIR, ['remote', 'get-url', 'origin']);
-  if (!/[:/]rmarafioti\/3d_wd(\.git)?$/.test(origin)) {
-    throw new ReleaseStopped(`${FRONTEND_DIR} isn't the ${FRONTEND_REPO} repo. Set FRONTEND_DIR.`);
-  }
+  if (!isFrontendRepo()) throw new ReleaseStopped(NOT_FRONTEND_REPO);
   const { main, production } = readBranches(FRONTEND_DIR);
   console.log(`Frontend: main is ${short(main)}, production is ${short(production)}.`);
   if (production === main) return { main, production, before: null };

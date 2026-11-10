@@ -52,8 +52,7 @@ async function failLogin(req, { reason, actorId, actorEmail }) {
 }
 
 // The session a cookie belongs to ({ sub, sv }), or null when it is missing, doesn't verify or has
-// no sv (a token from before session versions). Prisma skips an undefined filter, so a missing sv
-// must never reach the logout update.
+// no sv. Prisma skips an undefined filter, so a missing sv must never reach the logout update.
 function cookieSession(req) {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;

@@ -103,7 +103,7 @@ projects:
                 sync: false
               - key: SEED_ADMIN_EMAIL
                 sync: false
-              # Sentry error reporting (lib/sentry.js), production only, on all three services.
+              # Sentry error reporting (lib/sentry.js), production only, on all four services.
               - key: SENTRY_DSN
                 sync: false
               # Request emails to the admin (services/requestEmail.js), production's API only.

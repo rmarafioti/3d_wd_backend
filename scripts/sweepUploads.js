@@ -1,8 +1,8 @@
 // Entry point for `npm run sweep:uploads` (services/sweepUploads.js), run daily by a Render cron
 // job. Logs counts only; on a failure exits 1 and reports to Sentry.
 require('dotenv/config');
-const { initSentry, reportError, flushSentry } = require('../lib/sentry');
-const { missingEnv } = require('../lib/config');
+const { initSentry, reportError, flushSentry, exitWithError } = require('../lib/sentry');
+const { missingEnvMessage } = require('../lib/config');
 
 const REQUIRED_ENV = [
   'DATABASE_URL',
@@ -14,15 +14,10 @@ const REQUIRED_ENV = [
 async function main() {
   initSentry();
 
-  const missing = missingEnv(REQUIRED_ENV, process.env);
-  if (missing.length) {
-    const err = new Error(`Missing required environment variables: ${missing.join(', ')}`);
-    console.error(err.message);
-    reportError(err);
-    await flushSentry();
-    process.exit(1);
-  }
+  const missing = missingEnvMessage(REQUIRED_ENV, process.env);
+  if (missing) return exitWithError(missing);
 
+  // Required only once the env is checked: prisma/index.js reads DATABASE_URL as it loads.
   const prisma = require('../prisma');
   const sweepUploads = require('../services/sweepUploads');
 

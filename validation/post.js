@@ -1,5 +1,5 @@
-// Zod schemas for posts: create, edit, status and the deleted posts list query, with a body of
-// paragraph and image elements (docs/endpoints.md → Validation rules).
+// Zod schemas for posts: create, edit and status, with a body of paragraph and image elements
+// (docs/endpoints.md → Validation rules).
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 const {
@@ -9,7 +9,7 @@ const {
   itemId,
   websiteId,
   imageShape,
-  pageShape,
+  status,
   publishAt,
   refinePublishAt,
 } = require('./fields');
@@ -51,8 +51,6 @@ const postFields = {
     .transform((value) => value ?? null),
 };
 
-const status = z.enum(['draft', 'published'], { error: 'Status must be draft or published.' });
-
 // A new post is published unless the request says otherwise.
 // A go-live date is only for a draft (validation/fields.js → refinePublishAt).
 const createPostSchema = z
@@ -74,6 +72,4 @@ const updatePostSchema = z.object({
 
 const postStatusSchema = z.object({ status });
 
-const listDeletedPostsSchema = z.object(pageShape);
-
-module.exports = { createPostSchema, updatePostSchema, postStatusSchema, listDeletedPostsSchema };
+module.exports = { createPostSchema, updatePostSchema, postStatusSchema };

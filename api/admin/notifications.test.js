@@ -139,18 +139,6 @@ describe('POST /api/admin/notifications', () => {
     assert.equal(res.status, 403);
     assert.deepEqual(res.body, { error: { message: 'Request blocked.' } });
   });
-
-  it('returns 403 for a site owner', async () => {
-    const owner = await createSiteOwner();
-
-    const res = await as(owner, 'post', '/api/admin/notifications').send({
-      title: 'Hi',
-      body: 'Hello',
-    });
-
-    assert.equal(res.status, 403);
-    assert.deepEqual(res.body, { error: { message: 'You do not have access to this page.' } });
-  });
 });
 
 describe('GET /api/admin/notifications', () => {

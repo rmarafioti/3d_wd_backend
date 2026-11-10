@@ -161,6 +161,23 @@ describe('GET /api/siteOwner/threads', () => {
     );
     assert.equal(page2.body.nextCursor, null);
   });
+
+  it('returns 400 for a limit over 100 and a cursor that is not an id', async () => {
+    const owner = await createSiteOwner();
+
+    const res = await as(owner, 'get', '/api/siteOwner/threads?limit=101&cursor=abc');
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: {
+          limit: 'Limit must be a whole number from 1 to 100.',
+          cursor: 'Invalid cursor.',
+        },
+      },
+    });
+  });
 });
 
 describe('GET /api/siteOwner/threads/:id', () => {
@@ -223,6 +240,19 @@ describe('POST /api/siteOwner/threads/:id/messages', () => {
       (await auditEvents()).map((event) => [event.action, event.actorId, event.targetId]),
       [['thread.replied', owner.id, thread.id]],
     );
+  });
+
+  it('returns 400 for a blank reply, and adds nothing', async () => {
+    const owner = await createSiteOwner();
+    const thread = await createThread(owner);
+
+    const res = await as(owner, 'post', `/api/siteOwner/threads/${thread.id}/messages`).send({
+      message: ' ',
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body.error.fields, { message: 'Message is required.' });
+    assert.equal(await prisma.threadMessage.count({ where: { threadId: thread.id } }), 1);
   });
 
   it('returns 409 once the thread has 100 messages, and adds nothing', async () => {

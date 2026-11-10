@@ -4,8 +4,10 @@ const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const { notificationSchema, listNotificationsSchema } = require('../../validation/notification');
+const { notificationSchema } = require('../../validation/notification');
+const { pageSchema } = require('../../validation/fields');
 const { AUDIT_ACTIONS } = require('../../lib/audit');
+const { toPage } = require('../../lib/paging');
 const {
   ADMIN_NOTIFICATION_SELECT,
   toAdminNotification,
@@ -16,15 +18,15 @@ const {
 
 const router = express.Router();
 
-const NOTIFICATION_NOT_FOUND = 'Update not found.';
+const UPDATE_NOT_FOUND = 'Update not found.';
 
 // An update in the admin's mailbox, or a 404.
-async function findSentNotification(id) {
+async function assertSentNotification(id) {
   const notification = await prisma.notification.findFirst({
     where: { id, ...ADMIN_MAILBOX_WHERE },
     select: { id: true },
   });
-  if (!notification) throw new ServerError(404, NOTIFICATION_NOT_FOUND);
+  if (!notification) throw new ServerError(404, UPDATE_NOT_FOUND);
   return notification;
 }
 
@@ -58,7 +60,7 @@ router.post('/', async (req, res) => {
 // GET /api/admin/notifications — the updates in the admin's mailbox, newest first, a page at a time
 // (limit, cursor), each with its recipients and how many have read it.
 router.get('/', async (req, res) => {
-  const input = validate(listNotificationsSchema, req.query);
+  const input = validate(pageSchema, req.query);
 
   // UUIDv7 ids are time-ordered, so the cursor is the last id seen. One row more than the page is
   // read to tell whether another page follows.
@@ -69,11 +71,7 @@ router.get('/', async (req, res) => {
     select: ADMIN_NOTIFICATION_SELECT,
   });
 
-  const hasNextPage = notifications.length > input.limit;
-  const data = (hasNextPage ? notifications.slice(0, input.limit) : notifications).map(
-    toAdminNotification,
-  );
-  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+  res.json(toPage(notifications, input.limit, toAdminNotification));
 });
 
 // PATCH /api/admin/notifications/:id — body { title, body }. Edits a sent update. Its recipients
@@ -81,7 +79,7 @@ router.get('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const input = validate(notificationSchema, req.body ?? {});
 
-  const { id } = await findSentNotification(req.params.id);
+  const { id } = await assertSentNotification(req.params.id);
 
   const notification = await prisma.$transaction(async (tx) => {
     await recordNotificationEvent(tx, req, AUDIT_ACTIONS.NOTIFICATION_UPDATED, id);
@@ -98,7 +96,7 @@ router.patch('/:id', async (req, res) => {
 // DELETE /api/admin/notifications/:id — withdraws an update: deletedAt is set (never a hard
 // delete), and it is gone from every inbox and every route.
 router.delete('/:id', async (req, res) => {
-  const { id } = await findSentNotification(req.params.id);
+  const { id } = await assertSentNotification(req.params.id);
 
   await prisma.$transaction(async (tx) => {
     await recordNotificationEvent(tx, req, AUDIT_ACTIONS.NOTIFICATION_WITHDRAWN, id);

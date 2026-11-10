@@ -248,8 +248,9 @@ function mockGoogle(tracker, { payload, error }) {
   });
 }
 
-// Replaces the global fetch (the revalidation call). `outcome` is a status code to respond with,
-// an Error to reject with, or 'hang' for a call that never settles. `tracker` as in mockGoogle.
+// Replaces the global fetch, for every outbound call (revalidation, Resend, R2, Sentry). `outcome`
+// is a status code to respond with, an Error to reject with, or 'hang' for a call that never
+// settles. `tracker` as in mockGoogle.
 function mockFetch(tracker, outcome = 200) {
   return tracker.method(globalThis, 'fetch', async () => {
     if (outcome instanceof Error) throw outcome;

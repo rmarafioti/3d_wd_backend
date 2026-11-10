@@ -4,9 +4,9 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { FRONTEND_DIR, NOT_FRONTEND_REPO, isFrontendRepo } = require('./frontendRepo');
 
 const BACKEND_DIR = path.resolve(__dirname, '..');
-const FRONTEND_DIR = path.resolve(process.env.FRONTEND_DIR ?? path.join(BACKEND_DIR, '../3d_wd'));
 
 // Each pair: a name for the report, the backend file, the frontend file, and an optional cut that
 // takes the part of each file that must match.
@@ -89,10 +89,7 @@ function readFrontendFile(file) {
 }
 
 function checkSync() {
-  const origin = git(FRONTEND_DIR, ['remote', 'get-url', 'origin']).trim();
-  if (!/[:/]rmarafioti\/3d_wd(\.git)?$/.test(origin)) {
-    throw new Error(`${FRONTEND_DIR} isn't the rmarafioti/3d_wd repo. Set FRONTEND_DIR.`);
-  }
+  if (!isFrontendRepo()) throw new Error(NOT_FRONTEND_REPO);
   git(FRONTEND_DIR, ['fetch', '--quiet', 'origin', 'main']);
   console.log(`Backend: this working tree. Frontend: ${FRONTEND_DIR} at origin/main.\n`);
 

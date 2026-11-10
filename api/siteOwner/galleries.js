@@ -8,14 +8,17 @@ const {
   createGallerySchema,
   updateGallerySchema,
   galleryStatusSchema,
-  requestGallerySchema,
 } = require('../../validation/gallery');
-const { publishAtSchema, assertPublishAtAllowed } = require('../../validation/fields');
+const {
+  publishAtSchema,
+  assertPublishAtAllowed,
+  requestNoteSchema,
+} = require('../../validation/fields');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
 const { assertNameAvailable, retryOnClash } = require('../../lib/galleryNames');
 const { findFreeSlug } = require('../../lib/slug');
 const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages');
-const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { AUDIT_ACTIONS, recordContentEvent } = require('../../lib/audit');
 const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const sendRequestEmail = require('../../services/requestEmail');
@@ -113,18 +116,6 @@ async function writeImages(tx, galleryId, images) {
   }
 }
 
-// A gallery change's audit event, written with the transaction client that made the change.
-function recordGalleryEvent(tx, req, action, gallery) {
-  return recordAuditEvent(tx, req, {
-    action,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
-    targetType: 'gallery',
-    targetId: gallery.id,
-    metadata: { websiteId: gallery.websiteId },
-  });
-}
-
 // Gallery, then images, in one transaction: if any insert fails the whole create rolls back.
 // Serializable, so two creates of the same name at once can't both pass the name check: Postgres
 // fails one of them, and the retry (retryOnClash) then answers the 409.
@@ -146,11 +137,24 @@ function createGallery(req, website, input) {
         select: { id: true, websiteId: true },
       });
       await writeImages(tx, created.id, input.images);
-      await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_CREATED, created);
+      await recordContentEvent(tx, req, AUDIT_ACTIONS.GALLERY_CREATED, 'gallery', created);
       return tx.gallery.findUnique({ where: { id: created.id }, select: GALLERY_SELECT });
     },
     { isolationLevel: 'Serializable' },
   );
+}
+
+// Saves a gallery's request note and puts its placement to requested (from none or live), so the
+// admin's pill flags the gallery to place or move.
+function saveRequest(req, gallery, requestNote, action) {
+  return prisma.$transaction(async (tx) => {
+    await recordContentEvent(tx, req, action, 'gallery', gallery);
+    return tx.gallery.update({
+      where: { id: gallery.id },
+      data: { requestNote, requestedAt: new Date(), placement: 'requested' },
+      select: GALLERY_SELECT,
+    });
+  });
 }
 
 // POST /api/siteOwner/galleries — create a gallery with its images.
@@ -223,7 +227,7 @@ router.patch('/:id', async (req, res) => {
       where: { galleryId: gallery.id, id: { notIn: keptImageIds } },
     });
     await writeImages(tx, gallery.id, input.images);
-    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_UPDATED, gallery);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.GALLERY_UPDATED, 'gallery', gallery);
     return tx.gallery.findUnique({ where: { id: gallery.id }, select: GALLERY_SELECT });
   });
 
@@ -233,7 +237,7 @@ router.patch('/:id', async (req, res) => {
 
 // PATCH /api/siteOwner/galleries/:id/status — set a gallery to draft or published. A draft is
 // hidden from the client website; the site owner still sees it. Publishing by hand clears a go-live
-// time.
+// date.
 router.patch('/:id/status', async (req, res) => {
   const { status } = validate(galleryStatusSchema, req.body ?? {});
 
@@ -247,7 +251,7 @@ router.patch('/:id/status', async (req, res) => {
   const action =
     status === 'published' ? AUDIT_ACTIONS.GALLERY_PUBLISHED : AUDIT_ACTIONS.GALLERY_DRAFTED;
   const updated = await prisma.$transaction(async (tx) => {
-    await recordGalleryEvent(tx, req, action, gallery);
+    await recordContentEvent(tx, req, action, 'gallery', gallery);
     return tx.gallery.update({
       where: { id: gallery.id },
       data: toStatusData(status, gallery.status),
@@ -275,7 +279,7 @@ router.patch('/:id/publishAt', async (req, res) => {
   assertPublishAtAllowed(input.publishAt, gallery);
 
   const updated = await prisma.$transaction(async (tx) => {
-    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_UPDATED, gallery);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.GALLERY_UPDATED, 'gallery', gallery);
     return tx.gallery.update({
       where: { id: gallery.id },
       data: { publishAt: input.publishAt },
@@ -286,23 +290,10 @@ router.patch('/:id/publishAt', async (req, res) => {
   res.json({ data: toGallery(updated) });
 });
 
-// Saves a gallery's request note and puts its placement to requested (from none or live), so the
-// admin's pill flags the gallery to place or move.
-function saveRequest(req, gallery, requestNote, action) {
-  return prisma.$transaction(async (tx) => {
-    await recordGalleryEvent(tx, req, action, gallery);
-    return tx.gallery.update({
-      where: { id: gallery.id },
-      data: { requestNote, requestedAt: new Date(), placement: 'requested' },
-      select: GALLERY_SELECT,
-    });
-  });
-}
-
 // POST /api/siteOwner/galleries/:id/request — the gallery's request message: where on the client
 // website it should go. Sent once, after the gallery is created.
 router.post('/:id/request', async (req, res) => {
-  const input = validate(requestGallerySchema, req.body ?? {});
+  const input = validate(requestNoteSchema, req.body ?? {});
 
   const gallery = await findOwnedGallery(req.user.id, req.params.id, REQUEST_CHECK_SELECT);
   if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
@@ -320,10 +311,10 @@ router.post('/:id/request', async (req, res) => {
 });
 
 // PATCH /api/siteOwner/galleries/:id/request — the site owner changed their mind about where the
-// gallery should go, live or not (Rich, 2026-11-02). Replaces the note, and the gallery goes back
-// to requested until the admin moves it and sets it live again.
+// gallery should go, live or not. Replaces the note, and the gallery goes back to requested until
+// the admin moves it and sets it live again.
 router.patch('/:id/request', async (req, res) => {
-  const input = validate(requestGallerySchema, req.body ?? {});
+  const input = validate(requestNoteSchema, req.body ?? {});
 
   const gallery = await findOwnedGallery(req.user.id, req.params.id, REQUEST_CHECK_SELECT);
   if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
@@ -355,7 +346,7 @@ router.delete('/:id', async (req, res) => {
   if (!gallery) throw new ServerError(404, GALLERY_NOT_FOUND);
 
   await prisma.$transaction(async (tx) => {
-    await recordGalleryEvent(tx, req, AUDIT_ACTIONS.GALLERY_DELETED, gallery);
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.GALLERY_DELETED, 'gallery', gallery);
     await tx.gallery.update({
       where: { id: gallery.id },
       data: { deletedAt: new Date(), publishAt: null },

@@ -172,7 +172,7 @@ One check per rule from `CLAUDE.md` (Role Ownership Check Rule, Anti-Patterns, P
 - `revalidate(` called after the response, never awaited: `grep -rn 'revalidate(' api` and read each.
 - No hard deletes: `grep -rn -E '\.(delete|deleteMany)\(' --include='*.js' --exclude='*.test.js' api services lib scripts prisma` shows only `element`, `image` and `galleryImage` deletes inside an edit's transaction.
 - Inactive accounts and websites honoured (`requireAuth`, `requireApiKey`, `lib/ownership.js`, `services/revalidate.js`).
-- Emails lowercased and URLs through `normalizeUrl` in `validation/`.
+- Emails lowercased in `validation/`, and every website URL through `normalizeUrl` (`lib/normalizeUrl.js`) before it is compared or saved.
 - CORS origin from `CORS_ORIGIN`, never `*`.
 - No audit `metadata` holding a secret or content: read every `metadata:` passed to `recordAuditEvent`.
 - Rate limits in `lib/rateLimit.js` mounted on login, the public router and upload signing.

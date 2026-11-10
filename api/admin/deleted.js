@@ -4,9 +4,13 @@ const express = require('express');
 const prisma = require('../../prisma');
 const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const { listDeletedSchema, mailItemsSchema } = require('../../validation/deleted');
-const { restoreCutoff } = require('../../lib/retention');
-const { ADMIN_MAILBOX_WHERE, setAdminDeleted } = require('../../lib/notifications');
+const { mailItemsSchema } = require('../../validation/deleted');
+const { pageSchema } = require('../../validation/fields');
+const {
+  ADMIN_MAILBOX_WHERE,
+  restorableUpdateWhere,
+  setAdminDeleted,
+} = require('../../lib/notifications');
 const {
   inMailboxWhere,
   restorableWhere: restorableThreadWhere,
@@ -18,12 +22,6 @@ const router = express.Router();
 
 const UPDATE_NOT_FOUND = 'Update not found.';
 const THREAD_NOT_FOUND = 'Thread not found.';
-
-// Sent updates in the admin's Recently Deleted: deleted by the admin in the last 30 days, not
-// withdrawn. A withdrawn update is gone for good, so it leaves this list too.
-function restorableUpdateWhere() {
-  return { deletedAt: null, adminDeletedAt: { gt: restoreCutoff() } };
-}
 
 // The admin's types: their sent updates and threads.
 function adminSources() {
@@ -60,14 +58,14 @@ function adminSources() {
 }
 
 // The update matched by `where`, or a 404.
-async function findUpdate(db, where, id) {
+async function assertUpdateMatching(db, where, id) {
   const update = await db.notification.findFirst({ where: { ...where, id }, select: { id: true } });
   if (!update) throw new ServerError(404, UPDATE_NOT_FOUND);
   return update;
 }
 
 // The thread matched by `where`, or a 404.
-async function findThread(db, where, id) {
+async function assertThreadMatching(db, where, id) {
   const thread = await db.thread.findFirst({ where: { ...where, id }, select: { id: true } });
   if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
   return thread;
@@ -76,7 +74,7 @@ async function findThread(db, where, id) {
 // GET /api/admin/deleted — the admin's Recently Deleted, newest deletion first, a page at a time
 // (limit, cursor), each item with when it can no longer be restored.
 router.get('/', async (req, res) => {
-  const input = validate(listDeletedSchema, req.query);
+  const input = validate(pageSchema, req.query);
   res.json(await listDeleted(adminSources(), input));
 });
 
@@ -91,11 +89,11 @@ router.post('/', async (req, res) => {
   const { done, failed } = await prisma.$transaction((tx) =>
     runPerItem(input.items, {
       update: async (id) => {
-        await findUpdate(tx, ADMIN_MAILBOX_WHERE, id);
+        await assertUpdateMatching(tx, ADMIN_MAILBOX_WHERE, id);
         await setAdminDeleted(tx, req, id, now);
       },
       thread: async (id) => {
-        await findThread(tx, inMailboxWhere('admin'), id);
+        await assertThreadMatching(tx, inMailboxWhere('admin'), id);
         await setThreadDeleted(tx, req, id, 'admin', now);
       },
     }),
@@ -113,12 +111,12 @@ router.post('/restore', async (req, res) => {
   const { done, failed } = await runPerItem(input.items, {
     update: (id) =>
       prisma.$transaction(async (tx) => {
-        await findUpdate(tx, restorableUpdateWhere(), id);
+        await assertUpdateMatching(tx, restorableUpdateWhere(), id);
         await setAdminDeleted(tx, req, id, null);
       }),
     thread: (id) =>
       prisma.$transaction(async (tx) => {
-        await findThread(tx, restorableThreadWhere('admin'), id);
+        await assertThreadMatching(tx, restorableThreadWhere('admin'), id);
         await setThreadDeleted(tx, req, id, 'admin', null);
       }),
   });

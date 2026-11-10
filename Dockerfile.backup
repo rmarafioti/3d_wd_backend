@@ -10,10 +10,11 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# The backup needs only dotenv at runtime, but it is installed with a plain `npm ci` like everywhere
-# else: every package is checked against package-lock.json's integrity hashes, and the extra size
-# (Prisma and the API's packages, never used here) costs nothing on Render. --ignore-scripts skips
-# postinstall's prisma generate, which needs the Prisma CLI, a devDependency.
+# The backup needs only dotenv and @sentry/node at runtime, but it is installed with a plain
+# `npm ci` like everywhere else: every package is checked against package-lock.json's integrity
+# hashes, and the extra size (Prisma and the API's packages, never used here) costs nothing on
+# Render. --ignore-scripts skips postinstall's prisma generate, which needs the Prisma CLI, a
+# devDependency.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 

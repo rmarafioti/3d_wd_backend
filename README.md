@@ -6,7 +6,7 @@ Headless CMS project. Two repos for frontend and backend.
 
 The frontend serves a public, static landing page and sign-in for two separate authenticated dashboards. Two roles to account for, an Administrator and a Site Owner, each with their own dashboard view, auth and API routes. The Administrator uses the frontend to see a summary of site owner accounts and their websites, create new site owner accounts, link websites to them, set an ability live once its code is wired, set each gallery (and posts) live once placed, send site-wide updates, and message a site owner in a thread. The Site Owner uses the frontend to view, create, edit and delete posts and photo galleries, set them to draft or published, add Photo Galleries to a website, say where each gallery and their posts should go, turn an ability on or off, read the admin's updates in an Inbox, and message the admin in a thread.
 
-This backend stores everything in PostgreSQL, serves the dashboards through an authenticated API, serves published post content to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post changes.
+This backend stores everything in PostgreSQL, serves the dashboards through an authenticated API, serves published posts and galleries to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post or gallery changes.
 
 - Production API: `https://api.3dwebdev.com` (Render, defined in `render.yaml`)
 - Production frontend: `https://3dwebdev.com` (Vercel)
@@ -73,7 +73,7 @@ npm run dev                # starts the API on http://localhost:4000
 npx prisma studio          # optional - browser GUI to inspect the database; handy right after seeding to confirm the admin row landed
 ```
 
-Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no post uses; only under `CLOUDINARY_FOLDER`):
+Upload cleanup (deletes Cloudinary uploads more than 24 hours old that no kept post or gallery image uses; only under `CLOUDINARY_FOLDER`):
 
 ```
 npm run sweep:uploads
@@ -123,7 +123,7 @@ When testing in Postman, every POST/PATCH/DELETE needs the header `X-CSRF-Protec
 Cross-repo check:
 
 ```
-npm run check:sync         # diffs what must be identical in both repos (the API Contract, the guard hook)
+npm run check:sync         # diffs what must be identical in both repos (the API Contract, the guard hook and its tests, docs/process.md)
 ```
 
 It reads the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR`, at its `origin/main`, and edits nothing. The Documentation Sync (`/doc-sync`, `CLAUDE.md` → Documentation Sync) runs it first.
@@ -137,4 +137,4 @@ npm run release -- --dry-run   # shows what would be released, pushes nothing
 npm run release                # backend to Render, then the frontend to Vercel
 ```
 
-It needs the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR` set, and `gh` signed in. It pushes the backend's `main` to `production`, waits until Render reports the API live (CI, migrations, then the deploy, which also rebuilds both cron jobs), then pushes the frontend's `main` to its `production` branch, and tags each repo that went live (`release-YYYY-MM-DD`, `docs/process.md` → Releases). The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.
+It needs the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR` set, and `gh` signed in. It pushes the backend's `main` to `production`, waits until Render reports the API live (CI, migrations, then the deploy, which also rebuilds the three cron jobs), then pushes the frontend's `main` to its `production` branch, and tags each repo that went live (`release-YYYY-MM-DD`, `docs/process.md` → Releases). The full flow, including the backup before a destructive migration, is in `docs/deploy.md` → Every deploy after launch.

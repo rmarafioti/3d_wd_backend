@@ -107,6 +107,7 @@ describe('site owner gallery route guards', () => {
     ['get', '/api/siteOwner/galleries/some-id'],
     ['patch', '/api/siteOwner/galleries/some-id'],
     ['patch', '/api/siteOwner/galleries/some-id/status'],
+    ['patch', '/api/siteOwner/galleries/some-id/publishAt'],
     ['post', '/api/siteOwner/galleries/some-id/request'],
     ['patch', '/api/siteOwner/galleries/some-id/request'],
     ['delete', '/api/siteOwner/galleries/some-id'],
@@ -729,7 +730,7 @@ describe('DELETE /api/siteOwner/galleries/:id', () => {
     assert.deepEqual(await revalidationBody(), { websiteId: website.id, galleryId: gallery.id });
   });
 
-  it('leaves the ability as it was when a requested gallery is deleted (issue #71)', async () => {
+  it('leaves the ability as it was when a requested gallery is deleted', async () => {
     const { owner, website } = await createOwnerWithWebsite();
     const ability = await createAbility(website, 'galleries');
     const gallery = await createGallery(website);

@@ -2,26 +2,25 @@
 // api/siteOwner/index.js, behind its site owner guards.
 const express = require('express');
 const prisma = require('../../prisma');
-const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
-const { listNotificationsSchema } = require('../../validation/notification');
+const { pageSchema } = require('../../validation/fields');
 const {
   NOTIFICATION_SELECT,
   toNotification,
   inboxRecipientWhere,
+  assertRecipientMatching,
 } = require('../../lib/notifications');
-const { unreadWhere, inMailboxWhere } = require('../../lib/threads');
+const { unreadWhere, ownerMailboxWhere } = require('../../lib/threads');
+const { toPage } = require('../../lib/paging');
 
 const router = express.Router();
-
-const NOTIFICATION_NOT_FOUND = 'Update not found.';
 
 const RECIPIENT_SELECT = { readAt: true, notification: { select: NOTIFICATION_SELECT } };
 
 // GET /api/siteOwner/notifications — the account's updates, newest first, a page at a time
 // (limit, cursor), each with its readAt.
 router.get('/', async (req, res) => {
-  const input = validate(listNotificationsSchema, req.query);
+  const input = validate(pageSchema, req.query);
 
   // Notification ids are UUIDv7, so time-ordered: the cursor is the last notification id seen.
   // One row more than the page is read to tell whether another page follows.
@@ -35,9 +34,7 @@ router.get('/', async (req, res) => {
     select: RECIPIENT_SELECT,
   });
 
-  const hasNextPage = recipients.length > input.limit;
-  const data = (hasNextPage ? recipients.slice(0, input.limit) : recipients).map(toNotification);
-  res.json({ data, nextCursor: hasNextPage ? data.at(-1).id : null });
+  res.json(toPage(recipients, input.limit, toNotification));
 });
 
 // GET /api/siteOwner/notifications/unreadCount — unread updates and threads with an unread reply,
@@ -48,7 +45,7 @@ router.get('/unreadCount', async (req, res) => {
       where: { ...inboxRecipientWhere(req.user.id), readAt: null },
     }),
     prisma.thread.count({
-      where: { accountId: req.user.id, ...inMailboxWhere('owner'), ...unreadWhere('owner') },
+      where: { ...ownerMailboxWhere(req.user.id), ...unreadWhere('owner') },
     }),
   ]);
   res.json({ data: { updates, threads } });
@@ -57,11 +54,11 @@ router.get('/unreadCount', async (req, res) => {
 // POST /api/siteOwner/notifications/:id/read — marks one of the account's updates read. Reading
 // it again keeps the first readAt. Not audited: a read changes nothing the admin acts on.
 router.post('/:id/read', async (req, res) => {
-  const recipient = await prisma.notificationRecipient.findFirst({
-    where: { ...inboxRecipientWhere(req.user.id), notificationId: req.params.id },
-    select: { id: true },
-  });
-  if (!recipient) throw new ServerError(404, NOTIFICATION_NOT_FOUND);
+  const recipient = await assertRecipientMatching(
+    prisma,
+    inboxRecipientWhere(req.user.id),
+    req.params.id,
+  );
 
   await prisma.notificationRecipient.updateMany({
     where: { id: recipient.id, readAt: null },

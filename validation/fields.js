@@ -1,5 +1,5 @@
-// Zod field builders shared by the post, gallery, update, thread, upload and list query schemas,
-// and the go-live date checks, so a rule more than one uses can't drift between them.
+// Zod field builders and schemas shared by the schemas in validation/, and the go-live date checks,
+// so a rule more than one uses can't drift between them.
 const { z } = require('zod');
 const { blankToUndefined } = require('./validate');
 const { ServerError } = require('../errors');
@@ -123,6 +123,18 @@ const imageShape = {
   altText: requiredText('Alt text', 200),
 };
 
+// A post's or gallery's status.
+const status = z.enum(['draft', 'published'], { error: 'Status must be draft or published.' });
+
+// The request message's body: where on the client website posts or a gallery should go. Line
+// breaks are kept.
+const requestNoteSchema = z.object({ requestNote: requiredText('Request note', 1000) });
+
+// Absent stays undefined, while null or blank becomes null: a field that can be cleared.
+function blankToNull(value) {
+  return value === undefined ? undefined : (blankToUndefined(value) ?? null);
+}
+
 // An ISO 8601 instant with an offset ("2026-11-20T14:00:00.000Z"), turned into a Date.
 const isoInstant = z.iso
   .datetime({ offset: true, error: 'Enter a valid date and time.' })
@@ -130,18 +142,12 @@ const isoInstant = z.iso
 
 // A draft's go-live date. Absent stays undefined (edit leaves it unchanged, for frontends that
 // don't send it), while null or blank is null (cleared).
-const publishAt = z.preprocess(
-  (value) => (value === undefined ? undefined : (blankToUndefined(value) ?? null)),
-  isoInstant.nullable().optional(),
-);
+const publishAt = z.preprocess(blankToNull, isoInstant.nullable().optional());
 
 // The body of a post's or gallery's Set publish date route: publishAt is required, as a date or
 // null to clear it.
 const publishAtSchema = z.object({
-  publishAt: z.preprocess(
-    (value) => (value === undefined ? undefined : (blankToUndefined(value) ?? null)),
-    isoInstant.nullable(),
-  ),
+  publishAt: z.preprocess(blankToNull, isoInstant.nullable()),
 });
 
 // Why a go-live date can't be saved on an item with this status, or null if it can. The date is
@@ -186,15 +192,20 @@ const pageShape = {
   cursor: z.preprocess(blankToUndefined, z.uuid({ error: 'Invalid cursor.' }).optional()),
 };
 
+// A list route's query when the page is all it takes.
+const pageSchema = z.object(pageShape);
+
 module.exports = {
   requiredText,
   optionalText,
-  httpsUrl,
   formattedText,
   itemId,
   websiteId,
   imageShape,
   pageShape,
+  pageSchema,
+  status,
+  requestNoteSchema,
   isoInstant,
   publishAt,
   publishAtSchema,

@@ -19,13 +19,14 @@ const {
   hashApiKey,
   encryptSecret,
 } = require('../../lib/crypto');
-const { AUDIT_ACTIONS, recordAuditEvent } = require('../../lib/audit');
+const { AUDIT_ACTIONS, recordAuditEvent, recordContentEvent } = require('../../lib/audit');
 const { ABILITY_SELECT, toAbility, recordAbilityEvent } = require('../../lib/abilities');
 const {
   ABILITY_LIVE_MESSAGES,
   notifyWebsiteOwners,
   galleryLiveMessage,
 } = require('../../lib/notifications');
+const { toPage } = require('../../lib/paging');
 const notifications = require('./notifications');
 const threads = require('./threads');
 const deleted = require('./deleted');
@@ -127,8 +128,8 @@ async function createWebsiteWithCredentials(tx, websiteName, url) {
   return { website, credentials: { apiKey, webhookSecret } };
 }
 
-// Every new website starts with the posts ability, added: its site owner's first post and request
-// form move it on (api/siteOwner/abilities.js).
+// Every new website starts with the posts ability, added. Its request form, sent after the first
+// post, makes its placement requested (api/siteOwner/abilities.js).
 async function addPostsAbility(tx, req, websiteId) {
   const ability = await tx.websiteAbility.create({
     data: { websiteId, kind: 'posts' },
@@ -141,8 +142,6 @@ async function addPostsAbility(tx, req, websiteId) {
 function recordWebsiteCreated(tx, req, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.WEBSITE_CREATED,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
     targetType: 'website',
     targetId: websiteId,
   });
@@ -151,8 +150,6 @@ function recordWebsiteCreated(tx, req, websiteId) {
 function recordAccountCreated(tx, req, accountId, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.ACCOUNT_CREATED,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
     targetType: 'account',
     targetId: accountId,
     metadata: { websiteId },
@@ -162,8 +159,6 @@ function recordAccountCreated(tx, req, accountId, websiteId) {
 function recordWebsiteLinked(tx, req, accountId, websiteId) {
   return recordAuditEvent(tx, req, {
     action: AUDIT_ACTIONS.WEBSITE_LINKED,
-    actorId: req.user.id,
-    actorEmail: req.user.email,
     targetType: 'account',
     targetId: accountId,
     metadata: { websiteId },
@@ -239,7 +234,7 @@ router.get('/accounts', async (req, res) => {
               },
               galleries: {
                 where: { deletedAt: null },
-                orderBy: { createdAt: 'desc' },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
                 select: ADMIN_GALLERY_SELECT,
               },
             },
@@ -296,13 +291,7 @@ router.get('/auditEvents', async (req, res) => {
     prisma.auditEvent.count({ where: inRange }),
   ]);
 
-  const hasNextPage = events.length > input.limit;
-  const data = hasNextPage ? events.slice(0, input.limit) : events;
-  res.json({
-    data,
-    nextCursor: hasNextPage ? data.at(-1).id : null,
-    pages: Math.ceil(count / input.limit),
-  });
+  res.json({ ...toPage(events, input.limit), pages: Math.ceil(count / input.limit) });
 });
 
 // GET /api/admin/auditEvents/months — every UTC month with at least one audit event, as YYYY-MM,
@@ -504,14 +493,7 @@ router.patch('/galleries/:id/placement', async (req, res) => {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    await recordAuditEvent(tx, req, {
-      action: AUDIT_ACTIONS.GALLERY_LIVE,
-      actorId: req.user.id,
-      actorEmail: req.user.email,
-      targetType: 'gallery',
-      targetId: gallery.id,
-      metadata: { websiteId: gallery.websiteId },
-    });
+    await recordContentEvent(tx, req, AUDIT_ACTIONS.GALLERY_LIVE, 'gallery', gallery);
     await notifyWebsiteOwners(tx, req, gallery.websiteId, galleryLiveMessage(gallery.galleryName));
     return tx.gallery.update({
       where: { id: gallery.id },

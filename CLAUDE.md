@@ -57,12 +57,12 @@ Use subagents for research/exploration/investigation for a plan and for completi
 
 ## Role Ownership Check Rule
 
-Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`; the update and thread checks, used only by their own routes, are in `api/siteOwner/notifications.js` and `api/siteOwner/threads.js`. A failed check returns `404`, identical to "not found".
+Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`, and the mail checks beside their shapes in `lib/notifications.js` and `lib/threads.js`. A failed check returns `404`, identical to "not found".
 
 ## Anti-Patterns to Avoid
 
 **Never log the API key, webhook secret, session token, Cloudinary API secret, R2 secret or Resend key:**
-The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is read only in `lib/r2.js`, and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is read only in `services/requestEmail.js`, and a request email's failure is logged with the website id only, never an email address or the note. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
+The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is used only in `lib/r2.js` (`lib/sentry.js` reads it only to redact it), and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is used only in `services/requestEmail.js` (`lib/config.js` checks its prefix and `lib/sentry.js` redacts it), and a request email's failure is logged with the website id only, never an email address or the note. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
 
 **Never trust frontend validation alone:**
 Independently re-validate every field on every request with the zod schemas in `validation/`.
@@ -283,7 +283,7 @@ root
 │   ├── publishScheduled.js   *scheduled publish: drafts whose go-live date has passed become published, then revalidated
 │   └── backupDatabase.js     *pg_dump, encrypted with the backup public key, uploaded to R2
 ├── scripts/
-│   ├── sweepUploads.js       *entry point for npm run sweep:uploads (Render cron job once deployed)
+│   ├── sweepUploads.js       *entry point for npm run sweep:uploads (daily Render cron job)
 │   ├── publishScheduled.js   *entry point for npm run publish:scheduled (Render cron job every 15 minutes)
 │   ├── backupDatabase.js     *entry point for npm run backup:database (nightly Render cron job)
 │   ├── generateBackupKeys.js *npm run backup:keygen: the backup key pair, written outside the repo
@@ -291,20 +291,21 @@ root
 │   ├── release.js            *npm run release: backend to production, then the frontend, then the release tags
 │   ├── checkSync.js          *npm run check:sync: what must be identical in both repos, diffed against ../3d_wd
 │   ├── checkRules.js         *npm run check:rules: the Code Style rules a search can prove (CI)
+│   ├── frontendRepo.js       *the frontend repo's folder (../3d_wd or FRONTEND_DIR) and its origin check, for release and check:sync
 │   └── sentryCheck.js        *npm run sentry:check: one test error to Sentry, from production's Render Shell
 ├── validation/               *zod schemas, one per resource
 │   ├── auth.js               *login body ({ credential })
 │   ├── account.js
 │   ├── website.js
 │   ├── post.js
-│   ├── gallery.js            *gallery create / edit / status / request, the admin's placement, the crop rules
-│   ├── fields.js             *field builders shared by post, gallery, update and thread (text, formatted text, https URL, image, go-live date, paging)
+│   ├── gallery.js            *gallery create / edit / status, the admin's placement, the crop rules
+│   ├── fields.js             *field builders and schemas shared by the others (text, formatted text, https URL, image, status, request note, go-live date, paging)
 │   ├── upload.js             *Sign an Upload body ({ websiteId })
-│   ├── ability.js            *add an ability, its request form, on / off, the admin's live
+│   ├── ability.js            *add an ability, on / off, the admin's live
 │   ├── auditEvent.js         *audit event list query (month, limit, cursor)
-│   ├── notification.js       *the admin's update (title, body), the updates list query
-│   ├── thread.js             *start a thread (either side), a reply, the threads list query
-│   ├── deleted.js            *the Recently Deleted list query, bulk delete and restore items
+│   ├── notification.js       *the admin's update (title, body)
+│   ├── thread.js             *start a thread (either side), a reply
+│   ├── deleted.js            *Recently Deleted's bulk delete and restore items
 │   └── validate.js           *validate() → 400 envelope, blankToUndefined
 ├── middleware/
 │   ├── requireAuth.js        *verifies the session cookie, loads req.user
@@ -313,7 +314,7 @@ root
 │   └── requireApiKey.js      *public endpoint: hashes Bearer key, loads req.website
 ├── lib/                      *shared utilities
 │   ├── abilities.js          *Ability shape (status apart from placement), owned-ability lookup, its audit event
-│   ├── audit.js              *audit_event writer and action names
+│   ├── audit.js              *audit_event writer, a post's or gallery's event, and action names
 │   ├── cloudinary.js         *upload signature, image src folder check, cropped URLs, Admin API list/delete
 │   ├── config.js             *startup config check: required env vars, secret strength
 │   ├── crypto.js             *key/secret generation, hash, encrypt/decrypt, backup encryption
@@ -324,14 +325,15 @@ root
 │   ├── jwt.js                *sign/verify session JWT, cookie options
 │   ├── mediaFolder.js        *website media_folder name from its URL, -2/-3 on a clash
 │   ├── normalizeUrl.js       *https, lowercase host, no trailing slash
-│   ├── notifications.js      *update shapes, sending one with its recipients, the automatic updates, deleting and restoring a copy
+│   ├── notifications.js      *update shapes, the site owner's update check, sending one with its recipients, the automatic updates, deleting and restoring a copy
 │   ├── ownership.js          *site owner ownership checks: owned website, restorable posts and galleries, own image ids, image folder
+│   ├── paging.js             *cursor paging: a list's page and nextCursor from one row more than the page
 │   ├── postBody.js           *element rows → the post body list in API responses
 │   ├── r2.js                 *Cloudflare R2 upload (Signature V4, no AWS SDK) for backups
 │   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages
 │   ├── restore.js            *restoring a deleted post or gallery: its check, name rule and audit event
 │   ├── retention.js          *how long deleted content stays recoverable (30 days): the cutoff and restorableUntil
-│   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush
+│   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush, a cron job's failure exit
 │   ├── slug.js               *gallery slug: 8 random lowercase letters and digits, unique within the website
 │   ├── status.js             *a post's or gallery's draft / published change: publishedAt and the go-live date
 │   └── threads.js            *thread shapes, unread and deleted state per side, starting one, a reply under the 100-message cap, delete and restore
@@ -378,18 +380,21 @@ root
 ├── .env.example
 ├── .prettierrc
 ├── eslint.config.js          *ESLint flat config (recommended rules)
+├── .gitignore
+├── package.json              *dependencies and the npm scripts (README.md)
+├── package-lock.json
 ├── CLAUDE.md                 *project context, loaded automatically every session
 ├── README.md                 *human-facing overview and local setup
 ├── app.js                    *Express app: middleware stack, routers, error handler (no listen)
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-09)
+## Current progress (as of 2026-11-10)
 
 - **Now:**
-  - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 16 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-06-3`.
+  - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 17 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-09`.
   - **How work runs:** from a GitHub issue Rich writes, one branch per repo (`docs/process.md`); breaking changes through expand → migrate → contract (`docs/scaling.md` §0, §3); production released with `npm run release` from this repo after staging, backend first, each release tagged (`docs/process.md` → Releases).
-  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 8).
+  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 9).
   - **Issue #73 done:** the session docs trimmed, the legacy fields dropped (released), and the process shared with the frontend in `docs/process.md`; `npm run check:sync` reports all four pairs identical.
   - **Issue #90 done:** every file header is one or two lines on what the file is for, with no history, and `npm run check:rules` enforces it. The frontend's half of the V1 trim (frontend issue #77) is merged.
   - **Issue #69 done:** `build-spec` is its own GitHub template repo, `rmarafioti/build-spec` (local `../build-spec`), outside the 3DWD `gh` token: Rich pushes there himself.
@@ -397,18 +402,20 @@ root
   - **Issue #85 done** (frontend issue #83): the site owner's Recently deleted posts, listed for 30 days and restorable with their images and status; Audit Events show "Page N of M". Additive; one index migration.
   - **Issue #96 done** (frontend issue #85): scheduled publish. A draft post or gallery gets a go-live date (date only, midnight local), set on create, edit or its page, and the `3dwd-publish-scheduled` cron job publishes it every 15 minutes; `publishedAt` records when an item went live, and deleting posts no longer clears or re-asks the posts placement. Additive; two migrations (`add_publish_at`, `add_published_at` with its backfill). Released as `release-2026-11-06-2`; its cron job runs in production, and a restored published post was checked on Stevie's site.
   - **Issue #98 done** (frontend issue #87): the notification inbox. The admin's site-wide updates and automatic ones when an ability or gallery goes live (one way, read counts only), and message threads either side starts (at most 100 messages), with unread counts for the navbar mail icon. Additive; two migrations (`add_notifications`, `add_threads`). Released as `release-2026-11-06-3`.
-  - **Issue #100 done** (frontend issue #89): deleting mail and one Recently Deleted. Either side ticks updates and threads to delete from its own mailbox (a reply brings a deleted thread back), and one Recently Deleted per role lists posts, galleries and mail for 30 days, restored in bulk. Nothing is purged: after 30 days an item can't be restored. Additive; two migrations (`add_mail_deleted_at`, `add_gallery_deleted_index`).
+  - **Issue #100 done** (frontend issue #89): deleting mail and one Recently Deleted. Either side ticks updates and threads to delete from its own mailbox (a reply brings a deleted thread back), and one Recently Deleted per role lists posts, galleries and mail for 30 days, restored in bulk. Nothing is purged: after 30 days an item can't be restored. Additive; two migrations (`add_mail_deleted_at`, `add_gallery_deleted_index`). Released as `release-2026-11-09`.
+  - **Issue #107 done:** the fixes from the full code sweep of 2026-11-10 (`full@9b0e55a`, reminder #106): shared helpers for paging, audit events, mail checks, validation and the cron scripts, `assertX` names for lookups that throw, guard tests for every mail and go-live date route, and doc fixes. Behaviour-neutral; no migration.
   - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot.
   - **The master doc** is now the Proposal, Build vs Buy and a Glossary; its Client Portal tabs, Deployment and Client to Website included, are deleted.
 - **Next:**
   1. The frontend drops its master doc mentions (frontend issue #65), and Stevie's `CLAUDE.md` and `.prettierignore` stop calling its guide a copy of the master doc (a handoff to its session).
   2. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
   3. Stevie The Dog: its `/api/revalidate` route ignores the body, so `{ websiteId, ability }` needs no change; its guide's revalidation section gains the new body (the same Stevie handoff). Rich copies the guide into the client repos by hand.
-  4. The first real reminders: the code sweep (`/code-sweep 7a42142`) and Documentation Sync on 2026-11-09, the dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
-  5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website.
-  6. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
-  7. #100: release backend first, then the frontend (frontend PR #90), and run `/doc-sync`, since the contract changed. Then a later backend PR removes `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
-  8. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
+  4. The reminders: the backend's code sweep is done (#107; the next starts at `/code-sweep 9b0e55a`). Then the frontend's code sweep, then `/doc-sync` (reminder #105) for the backend and frontend only: Stevie is skipped this once, since #102 replaces its guide. The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
+  5. Issue #102, after the Documentation Sync: the shared client docs in a `client-kit` repo, synced to the client repos by PR, with a drift check; `/doc-sync` then reads `client-kit` in place of Stevie's copy. Stevie's known guide fixes (Next 3) go into its split. Check the GitHub plan first: branch protection on private repos needs Pro or Team.
+  6. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website.
+  7. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
+  8. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
+  9. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
@@ -418,7 +425,7 @@ root
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-09, after #100's test):
+- **Local database baseline** (test rows cleared on 2026-11-10, after #107's test):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
@@ -436,11 +443,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-10** `chore/code-sweep-fixes` (issue #107; frontend issue for the `docs/api.md` copy): the fixes from the full code sweep (`full@9b0e55a`): `lib/paging.js`, `recordAuditEvent` taking the actor from `req.user` and `recordContentEvent`, the mail checks and wheres in `lib/notifications.js` and `lib/threads.js`, shared `status`, `requestNoteSchema`, `pageSchema` and `blankToNull`, `exitWithError` for the cron scripts and `scripts/frontendRepo.js`; throwing lookups renamed `assertX`, guard tests for every mail and go-live date route, and doc and comment fixes. Behaviour-neutral. 775 tests.
 - **2026-11-09** `feat/delete-mail` (issue #100; frontend issue #89): per-viewer delete state on mail (`notification_recipient.deleted_at`, `notification.admin_deleted_at`, `thread.owner_deleted_at` / `admin_deleted_at`), a merged Recently Deleted list per role (`GET /api/{siteOwner|admin}/deleted`), and bulk delete and restore (`POST .../deleted`, `.../deleted/restore`) with partial results; a reply clears the other side's delete. Delete all read and the single-item routes were dropped before release. Additive. 730 tests.
 - **2026-11-06** `feat/notification-inbox` (issue #98; frontend issue #87): the admin's site-wide updates (`/api/admin/notifications`) and automatic ones written when an ability or gallery goes live, read in the site owner's Inbox with counts only for the admin; message threads either side starts and both reply to (`/api/admin/threads`, `/api/siteOwner/threads`), capped at 100 messages and rate limited for site owners; unread counts for the navbar. The link scanner moves to `validation/fields.js` as `formattedText`, and `testing/setup.js` stubs `fetch` so no test call leaves the machine. Additive. 692 tests.
 - **2026-11-06** `feat/scheduled-publish` (issue #96; frontend issue #85): a draft post or gallery takes a go-live date (`publishAt`, on create, edit and the new `PATCH .../:id/publishAt` routes), and `npm run publish:scheduled`, a production cron job every 15 minutes, publishes it with a no-actor audit event and revalidates; `publishedAt` records when an item went live (`lib/status.js`), backfilled from `createdAt`. Deleting posts no longer clears the posts placement, and the request form is sent only once. Additive. 643 tests.
 - **2026-11-05** `feat/recently-deleted-posts` (issue #85; frontend issue #83): the site owner lists the posts deleted in the last 30 days (`GET /api/siteOwner/posts/deleted`, paged) and restores one with `POST /api/siteOwner/posts/:id/restore` (`post.restored`), backed by a (`website_id`, `deleted_at`) index; the admin's Audit Events gain `pages` for a "Page N of M" counter, and `pageShape` holds the shared 50-per-page default. Additive. 617 tests.
-- **2026-11-05** `feat/ui-adjustments` (issue #93; frontend issue #81, the lead): deleting a website's last post clears a `requested` posts placement (`ability.request_cleared`), and new galleries get 8 random lowercase letters and digits as their slug, created at Serializable isolation so a same-name race still answers 409. `AdminGallerySummary` gains `slug`, and `GET /api/admin/auditEvents` takes an optional `from` / `to` range. Additive. 596 tests.
 
 ## Features
 

@@ -28,7 +28,8 @@ const HEADER_RULE_SKIPS = ['.claude/hooks/guard.js', '.claude/hooks/guard.test.j
 // A file's header comment: at most this many lines on what the file is for.
 const MAX_HEADER_LINES = 2;
 
-// This checker and its test spell out every pattern they look for, so no rule reads them.
+// This checker and its test spell out every pattern they look for, so only the header rule reads
+// them.
 const CHECKER_FILES = ['scripts/checkRules.js', 'scripts/checkRules.test.js'];
 
 const SECRET_COLUMN = /\b(apiKeyHash|webhookSecretEncrypted)\b/;

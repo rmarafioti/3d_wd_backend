@@ -73,6 +73,19 @@ describe('admin route guards', () => {
     ['get', '/api/admin/auditEvents/months'],
     ['patch', '/api/admin/abilities/some-id/status'],
     ['patch', '/api/admin/galleries/some-id/placement'],
+    ['post', '/api/admin/notifications'],
+    ['get', '/api/admin/notifications'],
+    ['patch', '/api/admin/notifications/some-id'],
+    ['delete', '/api/admin/notifications/some-id'],
+    ['post', '/api/admin/threads'],
+    ['get', '/api/admin/threads'],
+    ['get', '/api/admin/threads/unreadCount'],
+    ['get', '/api/admin/threads/some-id'],
+    ['post', '/api/admin/threads/some-id/messages'],
+    ['post', '/api/admin/threads/some-id/read'],
+    ['get', '/api/admin/deleted'],
+    ['post', '/api/admin/deleted'],
+    ['post', '/api/admin/deleted/restore'],
   ];
 
   for (const [method, path] of routes) {
