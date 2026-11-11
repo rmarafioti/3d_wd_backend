@@ -1,5 +1,5 @@
-# Reminders: opens an issue for each routine job on a calendar (CLAUDE.md → Reminders), with the
-# issue bodies in .github/reminders/.
+# Reminders: opens an issue for each routine job on a calendar or, for the code sweep and
+# Documentation Sync, by merges (CLAUDE.md → Reminders), with the issue bodies in .github/reminders/.
 name: Reminders
 
 on:
@@ -12,7 +12,7 @@ on:
       job:
         description: Which reminder to run
         type: choice
-        options: [restore-drill, dependency-audit, biweekly]
+        options: [restore-drill, dependency-audit, activity]
 
 permissions:
   contents: read
@@ -66,31 +66,41 @@ jobs:
           } > body.md
           .github/reminders/open.sh audit "Dependency audit, $(date -u +%Y-%m)" body.md
 
-  biweekly:
-    if: github.event.schedule == '0 13 * * 1' || inputs.job == 'biweekly'
+  activity:
+    if: github.event.schedule == '0 13 * * 1' || inputs.job == 'activity'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # GitHub's cron has no "every 2 weeks", so this job runs weekly and skips odd ISO weeks
-      # (after a year with a week 53, the gap is 3 weeks once). A run by hand skips the check.
-      - name: Open the Documentation Sync and code sweep reminders (even ISO weeks)
+      # Each reminder opens only when due.sh finds merges to check (docs/process.md → Reminders). A
+      # run by hand opens it whatever the count, which is still logged.
+      - name: Open the Documentation Sync reminder when merges in either repo make it due
         run: |
-          if [ "${{ github.event_name }}" = schedule ] && [ $(( 10#$(date -u +%V) % 2 )) -ne 0 ]; then
-            echo "Odd ISO week: skipped."
+          decision=$(.github/reminders/due.sh doc-sync "$GH_REPO" rmarafioti/3d_wd)
+          if [ "$decision" = skip ] && [ "${{ github.event_name }}" = schedule ]; then
             exit 0
           fi
-          today=$(date -u +%Y-%m-%d)
-          .github/reminders/open.sh doc-sync "Documentation Sync, $today" .github/reminders/doc-sync.md
+          .github/reminders/open.sh doc-sync "Documentation Sync, $(date -u +%Y-%m-%d)" .github/reminders/doc-sync.md
 
-          # The first sweep in January, April, July and October is the quarterly full sweep. Exactly
-          # one even-week Monday falls on days 1 to 14 of a month.
+      - name: Open the code sweep reminder when due, or the quarterly full sweep
+        run: |
+          # The quarter's full sweep opens on the first Monday of January, April, July or October,
+          # whatever was merged. While a sweep reminder is still open, open.sh skips it and the next
+          # Monday of that month tries again, since no issue with its title exists yet.
           month=$(date -u +%-m)
-          day=$(date -u +%-d)
-          if [ $(( month % 3 )) -eq 1 ] && [ "$day" -le 14 ]; then
+          full_title="Full code sweep, $(date -u +%Y)-Q$(( (month + 2) / 3 ))"
+          full_count=$(gh issue list --label code-sweep --state all --limit 100 --json title \
+            --jq "map(select(.title == \"$full_title\")) | length")
+          if [ $(( month % 3 )) -eq 1 ] && [ "$full_count" -eq 0 ]; then
+            title=$full_title
             command='/code-sweep full'
           else
+            decision=$(.github/reminders/due.sh code-sweep "$GH_REPO")
+            if [ "$decision" = skip ] && [ "${{ github.event_name }}" = schedule ]; then
+              exit 0
+            fi
+            title="Code sweep, $(date -u +%Y-%m-%d)"
             command='/code-sweep <the end commit of the last backend row in the Code Sweep Tracker>'
           fi
           sed "s|{{COMMAND}}|$command|" .github/reminders/code-sweep.md > body.md
-          .github/reminders/open.sh code-sweep "Code sweep, $today" body.md
+          .github/reminders/open.sh code-sweep "$title" body.md

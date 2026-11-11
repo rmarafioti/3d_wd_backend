@@ -17,8 +17,8 @@ A sweep finds what per-step reviews miss: dead code, style drift, stale comments
 
 Run it:
 
-- **every 2 weeks**, from the "Code sweep" reminder issue (`.github/workflows/reminders.yml`), with the commit the reminder names;
-- **once a quarter, in full**: the first sweep in January, April, July and October (the reminder says `/code-sweep full`);
+- **after merges**, from the "Code sweep" reminder issue, which opens by activity (`docs/process.md` → Reminders), with the commit the reminder names;
+- **once a quarter, in full**: from the "Full code sweep" reminder, opened the first Monday of January, April, July and October (it says `/code-sweep full`);
 - **`diff` at the end of every piece of work**, as the Workflow Checklist's self-review. Claude reads this file and follows its `diff` mode there, since it can't type the command itself.
 
 Don't run it to fix something, in the middle of other work, or on a branch with uncommitted work you mean to keep separate from the review.
