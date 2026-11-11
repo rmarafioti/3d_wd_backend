@@ -92,7 +92,7 @@ A new cron job can fail its first run: Render creates it from `render.yaml` and 
 A production failure reaches Rich by email (`docs/security.md` → Controls in place):
 
 - **Render:** failure notifications on `3dwd-api-production` deploys and on the three cron jobs. None for staging, whose failures are the safety net working.
-- **Uptime monitor (UptimeRobot):** checks `https://api.3dwebdev.com/api/health` every few minutes, outside Render. Render's health check only gates a deploy; it doesn't watch the live API. It also checks each live client website's home page (Onboarding a client website, step 6), since Vercel emails a failed deployment but doesn't watch a live site.
+- **Uptime monitor (UptimeRobot):** checks `https://api.3dwebdev.com/api/health` every few minutes, outside Render. Render's health check only gates a deploy; it doesn't watch the live API. It also checks each live client website's home page (Onboarding a client website, path A step 6), since Vercel emails a failed deployment but doesn't watch a live site.
 - **Sentry:** production only (`SENTRY_DSN` on the four services; empty on staging and locally, so nothing is sent). The API reports unexpected 500s and uncaught errors, and the three cron jobs report a failed run (`lib/sentry.js`). A failed revalidation call is a warning, one Sentry issue per website: the client website is usually up but set up wrong (a webhook secret that doesn't match, a missing `/api/revalidate` route, a redirect), so its site owner's changes silently never appear. Its "new issue" alert emails the admin. After `SENTRY_DSN` is first set, run `npm run sentry:check` once from the API's Render Shell and find the test event in Sentry, with no request data in it.
 
 ### Email
@@ -146,18 +146,39 @@ For a release that broke production. A rollback puts back earlier code; it never
 
 ## Onboarding a client website
 
-The repeatable flow for each new client website. Stevie The Dog ran it first (`docs/launch-record.md` step 27).
+The runbook for each client website, so Rich can follow it alone. Stevie The Dog ran it first (`docs/launch-record.md` step 27). Each step names who does it:
 
-1. In the production admin dashboard, create the site owner account with a new website (or link a new website to an existing account). Enter the URL the website is actually served on, with no redirect (`https://www.steviethedog.com` for Stevie): revalidation calls that exact URL, and a redirect drops its Authorization header. Copy the API key and webhook secret from the one-time reveal straight into 1Password (3DWD Clients), with the Vercel project that serves the website.
-2. On the client website's Vercel project, set `HEADLESS_CMS_API_URL=https://api.3dwebdev.com`, `HEADLESS_CMS_API_KEY` and `HEADLESS_CMS_WEBHOOK_SECRET`, for Production only.
-3. In the client website's `next.config`, the `remotePatterns` entries allow its own folder, `3dwd/<media_folder>` (`docs/setup.md` → Client websites). `media_folder` follows the rule in `docs/setup.md` → media_folder; confirm it with a query from the API's Render Shell (`psql "$DATABASE_URL" -c "SELECT media_folder FROM website"`), since a clash adds `-2`.
-4. Give the client repo the client guide, `client-kit`'s `docs/cms/`, kept in step by its Sync workflow (`client-kit`'s README):
-   1. Install the `3dwd-sync` GitHub App on the repo: GitHub → Settings → Developer settings → GitHub Apps → `3dwd-sync` → Install App → the repo's owner → Only select repositories, and add it.
-   2. Add the repo to `client-kit`'s `clients.json` with `autoMerge: false`, through a `client-kit` PR. Once merged, run Actions → Sync → Run workflow with dry run unticked: it opens a sync PR adding `docs/cms/`, which Rich merges by hand.
-   3. In the client repo, on a branch: `docs/site.md` (the site's name, pages, design, quirks, `media_folder`, static folder, and which ability docs in `docs/cms/` it reads), `CLAUDE.md` importing `@docs/cms/client-website.md` and `@docs/site.md`, `docs/cms/` in `.prettierignore` (so formatting never changes a byte), and `.github/workflows/ci.yml` copied from `client-kit`'s `templates/ci.yml`.
-   4. Settings → General → Pull Requests: tick Allow auto-merge and Automatically delete head branches. Settings → Rules → New branch ruleset on `main`, requiring the `cms` and `check` status checks.
-   5. On the client's Vercel project, Settings → Build and Deployment → Ignored Build Step → Custom: `git diff --quiet HEAD^ HEAD -- . ':(exclude)docs'`, so a docs-only merge doesn't redeploy.
-   6. Set the repo's `autoMerge` to `true` in `clients.json`, through a `client-kit` PR. From then on its sync PRs merge on green CI.
-5. Redeploy the client website, then run Tests A–C (`docs/client-website-test.md`) against production.
-6. Add the website's home page to the uptime monitor (Alerts), so Rich hears when it is down.
-7. The site owner signs in with their Google account and writes their first post.
+- **[Rich]:** outside the repos (GitHub, Vercel, 1Password, the admin dashboard, the Render Shell), done alone.
+- **[Backend session]:** a Claude session in this repo. The quoted line is what Rich types to start it.
+- **[Client session]:** a Claude session opened in the client website's repo. The quoted line is what Rich types to start it; this section is its brief, so no handoff is written.
+
+Path A is a new client website. Path B gives a client repo the client guide, `client-kit`'s `docs/cms/`, kept in step by its Sync workflow (`client-kit`'s README): a new client runs it inside path A, and an onboarded client still on the old `docs/client-website.md` runs it alone.
+
+### Path A: a new client website
+
+1. **[Rich]** In the production admin dashboard, create the site owner account with a new website (or link a new website to an existing account). Enter the URL the website is actually served on, with no redirect (`https://www.steviethedog.com` for Stevie): revalidation calls that exact URL, and a redirect drops its Authorization header. Copy the API key and webhook secret from the one-time reveal straight into 1Password (3DWD Clients), with the Vercel project that serves the website.
+2. **[Rich]** On the client website's Vercel project, set `HEADLESS_CMS_API_URL=https://api.3dwebdev.com`, `HEADLESS_CMS_API_KEY` and `HEADLESS_CMS_WEBHOOK_SECRET`, for Production only.
+3. **[Rich]** Confirm the website's `media_folder` from the API's Render Shell (`psql "$DATABASE_URL" -c "SELECT media_folder FROM website"`): it follows the rule in `docs/setup.md` → media_folder, but a clash adds `-2`.
+4. Path B, steps 1 to 6. Its one client session (step 4) also wires the site to the CMS.
+5. **[Rich]** Redeploy the client website, then run Tests A–C (`docs/client-website-test.md`) against production.
+6. **[Rich]** Add the website's home page to the uptime monitor (Alerts), so Rich hears when it is down.
+7. **[Rich]** The site owner signs in with their Google account and writes their first post.
+
+### Path B: give a client repo `client-kit`
+
+1. **[Rich]** Install the `3dwd-sync` GitHub App on the repo: GitHub → Settings → Developer settings → GitHub Apps → `3dwd-sync` → Install App → the repo's owner → Only select repositories, add the repo, Save. The repo is now listed under the installation's selected repositories.
+2. **[Backend session]** "Add `<owner>/<repo>` to client-kit, per `docs/deploy.md` → Onboarding, path B step 2." On a branch in `client-kit`, add the repo to `clients.json` with `autoMerge: false`, and open the PR.
+3. **[Rich]** Merge that PR. Then in `client-kit`, Actions → Sync → Run workflow, untick dry run, Run. The run opens a sync PR in the client repo adding `docs/cms/`; merge it by hand (its CI doesn't exist yet, so there is no check to wait for).
+4. **[Client session]** "Move this repo to client-kit, per the backend's `docs/deploy.md` → Onboarding, path B step 4." For a new client, add: "It's a new client; its `media_folder` is `<folder>`." One session does everything the client repo needs, from an up-to-date `main`, on a branch:
+   - For a new client only: in `next.config`, the `remotePatterns` entries allow its own folder, `3dwd/<media_folder>` (`docs/setup.md` → Client websites).
+   - `docs/site.md`: the site's name, pages, design, quirks, `media_folder`, static folder, and which ability docs in `docs/cms/` it reads. An old `docs/client-website.md` gives up its site-specific parts to it and is deleted.
+   - `CLAUDE.md` imports `@docs/cms/client-website.md` and `@docs/site.md` (in place of `@docs/client-website.md`).
+   - `docs/cms/` in `.prettierignore`, with a comment that the folder is synced unchanged from `client-kit`, so formatting never changes a byte.
+   - `.github/workflows/ci.yml` copied from `client-kit`'s `templates/ci.yml`.
+
+   Then the PR. **[Rich]** merges it once its `cms` and `check` checks are green.
+
+5. **[Rich]** In the client repo, Settings → General → Pull Requests: tick Allow auto-merge and Automatically delete head branches. Settings → Rules → Rulesets → New branch ruleset, targeting `main`, requiring the `cms` and `check` status checks. On the client's Vercel project, Settings → Build and Deployment → Ignored Build Step → Custom: `git diff --quiet HEAD^ HEAD -- . ':(exclude)docs'`, so a docs-only merge doesn't redeploy.
+6. **[Backend session]** "Turn on auto-merge for `<owner>/<repo>` in client-kit, per `docs/deploy.md` → Onboarding, path B step 6." A `client-kit` PR sets the repo's `autoMerge` to `true`; **[Rich]** merges it. From then on its sync PRs merge on green CI.
+
+Done when the next change to `client-kit`'s `docs/cms/` opens a sync PR in the client repo that merges itself once its CI is green.
