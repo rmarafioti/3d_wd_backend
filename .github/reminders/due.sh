@@ -6,11 +6,14 @@ set -euo pipefail
 # A reminder opens once this many PRs have merged, or once this many weeks have passed with any.
 SPRINT_THRESHOLD=5
 FLOOR_WEEKS=2
+# The code sweep doesn't count merges from docs/ branches, which change no code to sweep.
+SWEEP_SKIPS_PREFIX=docs/
 
 kind=$1
 shift
 
-# TODAY, CLOSED_AT and MERGED stand in for the clock and the gh calls, to test the rule offline.
+# TODAY, CLOSED_AT, MERGED and DOCS_MERGED stand in for the clock and the gh calls, to test the
+# rule offline.
 today=${TODAY:-$(date -u +%F)}
 
 # The newest close of a reminder of this kind, or "" when none has been closed yet.
@@ -34,20 +37,31 @@ fi
 # The REST list, not search: search silently drops what the token can't read, where the list
 # fails the run. A PR is updated when it merges, so the 100 most recently updated closed PRs hold
 # every merge since the close, unless more than 100 were updated since.
+# Each repo gives two numbers: its merges since the close, and how many came from docs/ branches.
 if [ -z "${MERGED+set}" ]; then
   MERGED=0
+  DOCS_MERGED=0
   for repo in "$@"; do
-    count=$(gh api "repos/$repo/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
-      --jq "[.[] | select(.merged_at != null and .merged_at > \"$since\")] | length")
+    counts=$(gh api "repos/$repo/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
+      --jq "[.[] | select(.merged_at != null and .merged_at > \"$since\")]
+        | \"\\(length) \\(map(select(.head.ref | startswith(\"$SWEEP_SKIPS_PREFIX\"))) | length)\"")
+    read -r count docs_count <<<"$counts"
     MERGED=$((MERGED + count))
+    DOCS_MERGED=$((DOCS_MERGED + docs_count))
   done
 fi
 
-summary="$kind: PRs merged to main in $* since $since: $MERGED, week $weeks"
-if [ "$MERGED" -eq 0 ]; then
+counted=$MERGED
+summary="$kind: PRs merged to main in $* since $since: $MERGED"
+if [ "$kind" = code-sweep ] && [ "${DOCS_MERGED:-0}" -gt 0 ]; then
+  counted=$((MERGED - DOCS_MERGED))
+  summary="$summary, $DOCS_MERGED from $SWEEP_SKIPS_PREFIX branches not counted: $counted"
+fi
+summary="$summary, week $weeks"
+if [ "$counted" -eq 0 ]; then
   echo "$summary: skipped, nothing to check." >&2
   echo skip
-elif [ "$MERGED" -ge "$SPRINT_THRESHOLD" ]; then
+elif [ "$counted" -ge "$SPRINT_THRESHOLD" ]; then
   echo "$summary: due, $SPRINT_THRESHOLD or more merged." >&2
   echo open
 elif [ "$weeks" -ge "$FLOOR_WEEKS" ]; then
