@@ -220,7 +220,7 @@ Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
   actor_id    string   [null]      // the signed-in account; null for a failed login with no account, or a scheduled publish
-  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token
+  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token or a scheduled publish
   target_type string   [null]      // account, website, post, gallery, ability, notification or thread
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
@@ -419,7 +419,7 @@ A client website shows its images with `next/image`, so its `next.config` must a
 | `/<cloud name>/image/upload/*/*/3dwd/<media_folder>/**`     | its gallery crops, production (only with a gallery)    |
 | `/<cloud name>/image/upload/*/*/3dwd-dev/<media_folder>/**` | its gallery crops, local testing (only with a gallery) |
 
-In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The client guide (Stevie The Dog's `docs/client-website.md`) carries the same rule.
+In a pattern `*` matches exactly one path segment: the version (`v1760000000`) in a stored `src`, and the crop then the version in a gallery crop (Gallery crops). The crop rows are added when the website first shows a gallery (the one-`*` pattern refuses a cropped URL, the `*/*` pattern accepts it, and both refuse `steviethedog-2`). Another website's folder, a sibling folder such as `steviethedog-2`, and other Cloudinary accounts are refused. The client guide (`client-kit`'s `docs/cms/`, synced into each client repo: `client-website.md` → Images and `galleries.md` → Images) carries the same rule.
 
 ## Seed Users
 

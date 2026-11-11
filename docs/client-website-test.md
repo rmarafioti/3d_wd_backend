@@ -2,7 +2,7 @@
 
 The runbook for testing a client website against this backend, end to end: posts render on the website, and a post change reaches the live site within moments. Not imported into `CLAUDE.md`: read it when onboarding or testing a client website (`docs/deploy.md` → Onboarding a client website).
 
-The client side (env vars, `getPosts()`, rendering, the `/api/revalidate` route) is specced in the client guide, Stevie The Dog's `docs/client-website.md`, which each client website copies as its own. This file covers only what is done from this repo's side. The backend behaviour it tests is in `docs/endpoints.md` → Public and → Revalidation.
+The client side (env vars, `getPosts()`, rendering, the `/api/revalidate` route) is specced in the client guide, `client-kit`'s `docs/cms/` (the base `client-website.md` and `posts.md`), which is synced unchanged into each client website's repo. This file covers only what is done from this repo's side. The backend behaviour it tests is in `docs/endpoints.md` → Public and → Revalidation.
 
 The test website is Stevie The Dog (`https://www.steviethedog.com`, deployed on Vercel). Its API key and webhook secret were recorded at the one-time reveal, and its stored URL serves the site directly with no redirect (checked 2026-10-09).
 
@@ -10,7 +10,7 @@ The test website is Stevie The Dog (`https://www.steviethedog.com`, deployed on 
 
 - Local Postgres running (`docker compose up -d`) and the backend running (`npm run dev`, port 4000).
 - The frontend running (port 3000), to create and edit posts as the test site owner.
-- The client website has the code from its `docs/client-website.md`.
+- The client website has the code from its `docs/cms/client-website.md` and `docs/cms/posts.md`.
 
 ## Test A — local rendering (no deploy)
 
@@ -59,7 +59,7 @@ A tunnel gives the local backend a public https URL for the length of the test, 
    - edit it: the change appears
    - set it to draft: it disappears
    - publish it: it returns
-4. Each change should show on the first refresh after saving. If one only shows after a second refresh, the route is serving stale data first; check the `revalidateTag` profile in the client's `docs/client-website.md` → Check the installed Next.js version.
+4. Each change should show on the first refresh after saving. If one only shows after a second refresh, the route is serving stale data first; check the `revalidateTag` profile in the client's `docs/cms/client-website.md` → Check the installed Next.js version.
 
 ## Restore and clean up
 
