@@ -41,6 +41,7 @@ Hard rules for git, the databases and cloud storage, so no work and no data is l
 ### Branches
 
 - Never delete a branch that isn't merged into `main`. Check with `git branch --merged origin/main`, and delete with `git branch -d` (which refuses an unmerged branch), never `-D`.
+- Once a PR is merged and the local `main` is up to date, every local branch `git branch --merged origin/main` lists is deleted with `git branch -d`, without asking (never `main` or `production`).
 - Never delete a branch or tag on GitHub. GitHub deletes a merged PR's branch itself ("Automatically delete head branches" is on in both repos). `main` and `production` are never deleted, whatever a merge check says (`production` always looks merged, since it trails `main`).
 - No force pushes (`--force`, `--force-with-lease`, a `+` refspec), and no history rewrites (rebase, amend, reset) on a branch that has been pushed.
 - Uncommitted work is discarded only with approval: `git reset --hard`, `git clean -f`, `git checkout -- …`, `git restore`, `git stash drop` and `git stash clear`.
@@ -84,5 +85,7 @@ Every production release is tagged, so the history shows what went live and when
 ## Reminders
 
 Routine jobs open a GitHub issue on a calendar (each repo's `.github/workflows/reminders.yml`), so GitHub emails Rich and the issue is the to-do. Each repo lists its own reminders in its `CLAUDE.md` → Reminders. Times are 13:00 UTC. A reminder isn't opened while the last one of its kind is still open, and each can be run by hand from the Actions tab.
+
+The code sweep and Documentation Sync reminders open by activity, so a quiet stretch spends no tokens and a sprint is checked early. Every Monday the workflow counts the PRs merged to `main` since the last reminder of that kind was closed (`.github/reminders/due.sh`, with `gh` alone): none skips it; 5 or more opens it now; fewer opens it once 2 weeks have passed, counted in Mondays from the week of the close. A code sweep counts its own repo's merges, a Documentation Sync both repos'. The run log shows each count and decision. A run by hand opens the reminder whatever the count. The rest stay on the calendar, since what they guard changes without a merge: the quarterly full sweep (the first Monday of January, April, July and October, whatever was merged), the backend's restore drill and the dependency audit.
 
 No reminder runs Claude unattended: a skill's output is findings for Rich to decide, and Claude never comments on or closes a reminder issue.

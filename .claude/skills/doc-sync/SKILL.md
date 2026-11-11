@@ -14,7 +14,7 @@ Three repos describe the same system: this backend (the source of truth), the fr
 
 Run it:
 
-- every 2 weeks, from the "Documentation Sync" reminder issue (`.github/workflows/reminders.yml`);
+- from the "Documentation Sync" reminder issue, which opens after merges in either repo (`docs/process.md` → Reminders);
 - after a change to the API contract, the schema or a flow, once it is merged in both repos, whatever the date;
 - before a production deploy;
 - whenever Rich asks.
