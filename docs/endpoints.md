@@ -784,7 +784,7 @@ Called **server-side** by a client's website (at build/regeneration time) with `
 
 Called server-side by a client's website with its API key, like the posts route. Returns the website's **published** gallery with that slug (never a draft, a deleted one, another website's, or any while its galleries ability is turned off or removed: all `404` "Gallery not found."), as `PublicGallery`, its images in order. A crop's `src` is the stored image's URL with a Cloudinary crop transformation after `/image/upload/` (`lib/cloudinary.js` → `croppedSrc`, `docs/setup.md` → Gallery crops), and its `width` and `height` are the crop's.
 
-How the client website uses these is specced in the client guide (Stevie The Dog's `docs/client-website.md`, which each client website copies). The end-to-end test against a client website is `docs/client-website-test.md`.
+How the client website uses these is specced in the client guide, `client-kit`'s `docs/cms/` (`posts.md` and `galleries.md`, on the base `client-website.md`), synced unchanged into each client repo. The end-to-end test against a client website is `docs/client-website-test.md`.
 
 ### Health — `GET /api/health`
 
@@ -862,7 +862,7 @@ It is safe to re-run or overlap: an item already published no longer matches. A 
   `POST {website.url}/api/revalidate` with headers `Authorization: Bearer <webhookSecret>` and `Content-Type: application/json`, body `{ "websiteId": "...", "postId": "..." }` for a post, `{ "websiteId": "...", "galleryId": "..." }` for a gallery, or `{ "websiteId": "...", "ability": "posts" | "galleries" }` for an ability, timeout 5 seconds (`AbortSignal.timeout(5000)`).
 - Non-2xx response, timeout or network error → log the website id and status, and report the same line to Sentry as a warning grouped per website (production only, `lib/sentry.js` → `reportWarning`). **Never** log or report the secret, the URL, the Authorization header or the request headers.
 - A client website's `/api/revalidate` route must not require `postId` (nor `galleryId`): it revalidates its whole `cms` tag whatever the body names (Stevie The Dog's route ignores the body).
-- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the client guide (Stevie The Dog's `docs/client-website.md`, which each client website copies).
+- The client-website side of this call (the `/api/revalidate` route that receives it) is specced in the client guide (`client-kit`'s `docs/cms/client-website.md` → The revalidate route, synced into each client repo).
 
 ## Request Emails
 

@@ -29,6 +29,7 @@ Installs:
 - zod
 - Prisma / @prisma/client
 - Prisma driver adapter (`@prisma/adapter-pg`, `pg`)
+- @sentry/node (error reports, production only)
 - No Cloudinary SDK: uploads are signed with Node's `crypto`, and the cleanup calls Cloudinary's Admin API with `fetch`
 - Dev: Prettier, ESLint, Supertest (tests run on Node's built-in `node:test`)
 

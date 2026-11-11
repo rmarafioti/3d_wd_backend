@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: The Documentation Sync from CLAUDE.md, step by step. Checks this repo's docs against its code, then the frontend (3d_wd) and the Stevie The Dog pilot repo against the backend, the source of truth, and reports findings with a handoff for each repo.
+description: The Documentation Sync from CLAUDE.md, step by step. Checks this repo's docs against its code, then the frontend (3d_wd) and the shared client guide (client-kit's docs/cms/) against the backend, the source of truth, and reports findings with a handoff for the frontend.
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ The procedure for `CLAUDE.md` → Documentation Sync. `CLAUDE.md` holds when to 
 
 ## 1. Purpose and when
 
-Three repos describe the same system: this backend (the source of truth), the frontend `3d_wd`, and Stevie The Dog (`stevie_the_dog`), the client-side pilot whose `docs/client-website.md` is the client guide: every client repo copies and tailors it, and its facts come from the backend docs, so Stevie's session changes it only from a sync's handoff, and Rich copies the result into the other client repos. The sync keeps them from drifting. It finds differences; fixes are made in each repo by its own session.
+Three repos describe the same system: this backend (the source of truth), the frontend `3d_wd`, and `client-kit`, whose `docs/cms/` is the client guide. `client-kit`'s Sync workflow copies `docs/cms/` unchanged into every client repo, and each client repo's CI fails when its copy differs, so the guide is checked once, in `client-kit`, and no client repo is read. `client-kit` is maintained from this backend session (`CLAUDE.md` → Documentation Sync). The sync keeps the three from drifting. It finds differences; the frontend's fixes are made by its own session.
 
 Run it:
 
@@ -29,16 +29,16 @@ None. The master doc isn't synced: it holds only the business (`CLAUDE.md` → D
 
 Check each in order. If one fails, stop and tell Rich which, and how to fix it. Never work around it.
 
-1. **Sessions open.** `ListAgents` lists a Claude Code session in `3d_wd` and one in `stevie_the_dog`. Fixes are handed to them, so if either is missing, ask Rich to open it and stop.
+1. **Session open.** `ListAgents` lists a Claude Code session in `3d_wd`. Its fixes are handed to it, so if it is missing, ask Rich to open it and stop.
 2. **This repo:** `git fetch origin`, then `git status` shows `main`, up to date with `origin/main`, and a clean tree.
-3. **The sibling folders:** `../3d_wd` (or `FRONTEND_DIR`) has origin `rmarafioti/3d_wd`, and `../stevie_the_dog` has origin `rmarafioti/stevie_the_dog` (`git -C <dir> remote get-url origin`). Then `git -C <dir> fetch origin` in each. Both are read only at `origin/main` with `git show origin/main:<path>`, so their working trees and branches don't matter.
+3. **The sibling folders:** `../3d_wd` (or `FRONTEND_DIR`) has origin `rmarafioti/3d_wd`, and `../client-kit` has origin `rmarafioti/client-kit` (`git -C <dir> remote get-url origin`). Then `git -C <dir> fetch origin` in each. Both are read only at `origin/main` with `git show origin/main:<path>`, so their working trees and branches don't matter.
 
 ## 4. Scope
 
 - **Backend (the truth):** `CLAUDE.md`, every file in `docs/` but `docs/proposal-notes.md` (the business Proposal's notes, not synced), `README.md`, `.env.example`.
 - **Frontend:** `CLAUDE.md`, `AGENTS.md`, `README.md`, every file in `docs/` (`git -C ../3d_wd ls-tree --name-only origin/main docs/`).
-- **Stevie The Dog:** `CLAUDE.md` and `docs/client-website.md`.
-- **The other client repos** (`good_boys_website`, `legacy_tattoo` and the rest): not read. Rich copies Stevie's revised md files into them by hand; the sync only lists which ones changed (step 6).
+- **client-kit:** `README.md` and every file in `docs/cms/` (`git -C ../client-kit ls-tree --name-only origin/main docs/cms/`).
+- **Client repos:** not read. Their `docs/cms/` is `client-kit`'s, enforced by their CI, and their `docs/site.md` is site-specific.
 
 ## 5. Steps
 
@@ -46,7 +46,7 @@ Each step names what counts as a finding. A difference in wording that changes n
 
 ### Step 1: Sessions
 
-Done in Preconditions. Note the two sessions' names for the handoffs.
+Done in Preconditions. Note the frontend session's name for the handoff.
 
 ### Step 2: The truth first
 
@@ -67,9 +67,9 @@ The frontend's other docs point to the backend's rules rather than restating the
 
 Finding: a stale backend fact, a Feature missing or different, or a restated rule that belongs in a pointer.
 
-### Step 5: Stevie The Dog
+### Step 5: client-kit
 
-`docs/client-website.md` and `CLAUDE.md` against:
+`docs/cms/` (the base `client-website.md` and each ability doc) and `README.md` against:
 
 - `docs/endpoints.md` → API Contract: `PublicPost`, `PublicGallery`, the public routes and their errors (`401` "Invalid API key.", `404` "Gallery not found.", `429`), the rate limit;
 - `docs/endpoints.md` → Revalidation: the method, path, `Authorization: Bearer` header, body (`{ websiteId, postId }`, `{ websiteId, galleryId }` or `{ websiteId, ability }`), the 5-second timeout, and that the route mustn't require `postId`;
@@ -77,16 +77,12 @@ Finding: a stale backend fact, a Feature missing or different, or a restated rul
 - `docs/setup.md` → Client websites: the `remotePatterns` rows, the gallery crop rows included;
 - `docs/client-website-test.md`: the env vars and the steps Tests A–C rely on.
 
-Finding: a contradiction, or a public feature the backend serves that the client guide doesn't describe yet (galleries, until the guide gains `getGallery(slug)`).
-
-### Step 6: Client repos
-
-List each of Stevie's md files that this sync's findings will change. Rich copies them, then tailors them, into the other client repos by hand. This may change if a better workflow is found.
+Finding: a contradiction, something site-specific in `docs/cms/`, an ability doc that copies the base's code instead of linking to it, or a public feature the backend serves that no ability doc describes yet.
 
 ## 6. Hard rules
 
 - Read-only in every repo until Rich decides the findings. Backend fixes then go on a branch here, as usual.
-- Never edit the frontend, Stevie or any client repo. Their fixes go to their sessions as handoffs, sent with `SendMessage` only once Rich agrees to the findings.
+- Never edit the frontend or any client repo. The frontend's fixes go to its session as a handoff, sent with `SendMessage` only once Rich agrees to the findings. `client-kit`'s fixes are made from this session, on a branch in `client-kit`, once Rich decides them.
 - Never read or print `.env` or `.env.*` in any repo.
 - Nothing against staging or production.
 - Never comment on, edit or close an issue: Rich closes the reminder.
@@ -94,30 +90,28 @@ List each of Stevie's md files that this sync's findings will change. Rich copie
 
 ## 7. When a step fails
 
-- A session isn't open, a sibling folder is missing or isn't the right repo, or `git fetch` fails: stop (Preconditions).
+- The frontend session isn't open, a sibling folder is missing or isn't the right repo, or `git fetch` fails: stop (Preconditions).
 - `npm run check:sync` exits 1: each difference is a finding; go on.
 - A file listed in Scope is missing in a repo: a finding (**decision**: is it gone on purpose?); go on.
 
 ## 8. Output
 
-1. **Findings** in the `/code-sweep` Output format, most important first: **file:line** (with the repo), the **tier** (identical, frontend docs, Stevie) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
-2. **A handoff for each repo with findings**, in `docs/process.md` → Cross-Repo Handoff's form, for a reader with no context: what changed in the backend and on which branch, each fix to make with the backend text to match, and a "done when" checklist. Shown to Rich first; sent with `SendMessage` once he agrees.
-3. **Client repo md files** to copy from Stevie (step 6), or "none".
-4. **What was checked:** each step and its result in one line, with the commits read (`origin/main` of each repo). A sync with no findings still reports this.
+1. **Findings** in the `/code-sweep` Output format, most important first: **file:line** (with the repo), the **tier** (identical, frontend docs, client-kit) in place of the checklist item, **what differs**, the **proposed fix**, and its **type** (bug, cleanup, doc or decision). Where the other repo is right and the backend is wrong or missing something, the finding is a **decision** for Rich, never a plan to overwrite the other repo.
+2. **A handoff for the frontend** when it has findings, in `docs/process.md` → Cross-Repo Handoff's form, for a reader with no context: what changed in the backend and on which branch, each fix to make with the backend text to match, and a "done when" checklist. Shown to Rich first; sent with `SendMessage` once he agrees.
+3. **What was checked:** each step and its result in one line, with the commits read (`origin/main` of each repo). A sync with no findings still reports this.
 
 ## 9. After
 
 - Rich decides each finding.
 - Backend fixes: a branch here (a docs fix rides on the next real branch where one is open).
-- The handoffs go to the frontend and Stevie sessions; each fixes its own docs on its own branch.
-- Rich copies the listed md files into the other client repos.
+- `client-kit` fixes: a branch in `client-kit` from this session. Once merged, its Sync workflow opens the client repos' pull requests.
+- The handoff goes to the frontend session, which fixes its own docs on its own branch.
 - Rich closes the reminder issue once all of that is done.
 
 ## 10. Done when
 
-- [ ] Both sessions open, and every precondition checked
+- [ ] The frontend session open, and every precondition checked
 - [ ] Step 2 run, with this repo's drift reported
 - [ ] `npm run check:sync` run
 - [ ] Every check of step 4 and every source of step 5 compared
-- [ ] Client repo md files listed
 - [ ] Findings, handoffs and what was checked reported
