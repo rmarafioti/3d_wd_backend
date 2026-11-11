@@ -31,11 +31,14 @@ else
   weeks=$FLOOR_WEEKS
 fi
 
+# The REST list, not search: search silently drops what the token can't read, where the list
+# fails the run. A PR is updated when it merges, so the 100 most recently updated closed PRs hold
+# every merge since the close, unless more than 100 were updated since.
 if [ -z "${MERGED+set}" ]; then
   MERGED=0
   for repo in "$@"; do
-    count=$(gh pr list -R "$repo" --base main --state merged --search "merged:>$since" \
-      --limit 200 --json number --jq length)
+    count=$(gh api "repos/$repo/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" \
+      --jq "[.[] | select(.merged_at != null and .merged_at > \"$since\")] | length")
     MERGED=$((MERGED + count))
   done
 fi
