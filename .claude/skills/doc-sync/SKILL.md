@@ -54,13 +54,13 @@ This repo's docs must match this repo's code before anything is compared, or the
 
 ### Step 3: Identical tier
 
-`npm run check:sync`. It compares the API Contract section of `docs/endpoints.md` with the frontend's `docs/api.md`, the guard hook and its tests, and `docs/process.md` (the shared process) with the frontend's copies. Each `differs` or `missing` is a finding, with the diff it printed.
+`npm run check:sync`. It compares the API Contract section of `docs/endpoints.md` with the frontend's `docs/api.md`, the guard hook and its tests, and `docs/process.md` (the shared process) with the frontend's copies, then scans the frontend's own docs for backend facts they restate (a limit, a timing, the 30-day retention, a cookie attribute, a column name). Each `differs`, `missing` or `restated` line is a finding, with what it printed: a `restated` fact becomes a pointer to its `docs/api.md` heading, or the script's pattern is narrowed if the line is a frontend fact.
 
 ### Step 4: Frontend docs
 
-The frontend's other docs point to the backend's rules rather than restating them (the shared process is `docs/process.md`, checked in step 3). Check:
+The frontend's other docs point to the backend's rules rather than restating them; step 3's script catches the restated values, so don't re-check each one by hand. Check only what a script can't:
 
-- **Backend facts:** each backend fact the frontend's docs state (a route, a status code, a message, a limit, a field, a cookie or CSRF rule, an environment or release step) is still true. Don't audit their UI content.
+- **Pointers:** each pointer to `docs/api.md` or a backend doc names a heading that still exists and still holds that fact. A backend fact stated in words the script can't match (a route, a status code, a rule) is a finding. Don't audit their UI content.
 - **Features:** its Features list matches `CLAUDE.md` → Features, one line per Feature, the frontend-only Features included.
 - **Planned Later:** it points to the backend's `later` issues (`CLAUDE.md` → Planned Later) rather than keeping its own list.
 - **Current progress:** its own state, with no contradiction of the backend's Now and Next.

@@ -1,32 +1,37 @@
-# Proposal Notes
+# Value Proposition Notes
 
-Notes for us, not for the reader, kept beside the Proposal. When a section of the Proposal is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating the Proposal; it is read only when working on it.
+Notes for us, not for the reader, kept beside the Value Proposition (called the Proposal until its v2) and the Pitch. When a section is audited, anything that is a working note, a reminder or internal copy moves here instead of staying in the doc. Read this before updating either; it is read only when working on them.
 
 ## The master doc
 
 Rich's Google Doc, outside the repos, holds only the business, edited when the business changes rather than on a sync (`CLAUDE.md` → Documentation Sync):
 
-- **Proposal:** 3D Web Dev's business proposal, shared with colleagues and engineer friends for insight and feedback: the mission, who it's for, how Rich works with clients, the clients so far, the Client Portal, pricing, how Rich finds clients, and what is still being validated. 3D Web Dev is the business; the Client Portal is the tool, built because every client needed to post to their own site (three asked, and Rich recommended it to the fourth).
+- **Value Proposition:** 3D Web Dev's business case (v2; v1, the Proposal, is deleted), shared with colleagues and engineer friends for insight and feedback: the mission, who it's for, how Rich works with clients, the clients so far, the Client Portal, pricing, how Rich finds clients, and what is still being validated. 3D Web Dev is the business; the Client Portal is the tool, built because every client needed to post to their own site (three asked, and Rich recommended it to the fourth).
 - **Build vs Buy:** engineering decisions, not a go-to-market comparison. Its CMS child tab is why the Client Portal was built rather than using a headless CMS, and its Drag and Drop child tab (not started) is why client websites are custom builds rather than a site builder. When a feature resolves an item on the CMS tab's "Where we're behind" list, it moves into the table, once Rich next edits the doc.
+- **Pitch:** the client-facing copy the landing page and the brochure are built from, written to the owner. It is with a copy editor; a shorter cut for the brochure follows.
 - **Glossary:** Rich's own explanations of the terms, A to W, not in any repo and not synced.
 
 The Proposal is 3D Web Dev's business proposal, version 1, written 2026-10-25 from Rich's answers after a B2B sales friend's review of the pitch. That review asked four questions: what expensive problem it solves, what it delivers that existing solutions don't, whether it can be delivered profitably as it grows, and how it will be marketed and sold.
 
-## How the Proposal reads
+## How the Value Proposition reads
 
-General to specific, top to bottom, like the code: the mission and Rich's background first, then how he works, then the clients, then what was built for them, then pricing. Each section sets up the next, so nothing appears before the reader has the context for it (Rich, 2026-10-25). The Client Portal section follows Clients because it answers what every client asked for.
+Results first, the bottom line up front: a real client's numbers before Rich's story, then why not a drag-and-drop platform (with the five-year cost charts), why not build it with AI, pricing, and the leaving policy. A sales review found v1's general-to-specific order buried the result.
+
+- **Platforms are named** (Wix, Squarespace, Square) in the Value Proposition, for reviewers. The landing page, the brochure and the Pitch say "drag-and-drop website platforms".
+- **Leaving policy:** the domain is always the client's (Rich never buys it). A client can keep running on Hosting; hand over to their next developer for a fixed $150 (code and hosting transferred, content saved into the site), fixed so it can't run up like an hourly rate; or take their content (posts and photos as files) for free. Hosting is paid yearly, with a full refund if cancelled within the first 3 months of a paid year; after that no refund, and the site stays up for the rest of the year.
+- **Vendor prices** (official US pricing pages, checked 2026-11-11): Wix Core $29 a month billed yearly ($348; first-year promo $14.50 a month), booking from Core up. Squarespace Basic $19 a month yearly ($25 monthly, 2% store fee) plus Acuity Starter $16 a month yearly for booking, about $420 a year. Square Online Free $0 with a site and booking (online payments 3.3% + 30¢), Plus $49, Premium $149. Webflow Basic $15, Premium $25 yearly, no booking (one line only). GoDaddy dropped. The charts' model is the "3DWD Proposal charts" Google Sheet (Model tab, inputs with sources); Business is always charted at its low end, $2,000, and the owner's hour at $25.
 
 ## Still to gather
 
 The evidence that would answer the review's questions 1 and 3 with real numbers:
 
-- **Client questionnaire** (the four owners): written, below (Client questionnaire). GB Grooming and Legacy Tattoo have answered: their inquiries before and after launch, GB Grooming's hours saved and what changed, and both quotes are in the Proposal's Clients. The Pet Bodega and Estudio Castelo are still to answer. Whether they would pay for Hosting is asked in person, not in writing.
+- **Client questionnaire** (the four owners): written, below (Client questionnaire). GB Grooming and Legacy Tattoo have answered: their inquiries before and after launch, GB Grooming's hours saved and what changed, and both quotes are in the Value Proposition. The Pet Bodega and Estudio Castelo are still to answer. Whether they would pay for Hosting is asked in person, not in writing.
 - **Rich's worksheet:** hours per project, the effective hourly rate on each build, monthly support time, the hours each week Rich has for 3D Web Dev alongside his full-time job, and from those, how many builds and Partner clients he can carry.
-- **More UX moments** like the "Book now" button, from the four projects (Rich). Once there are a few, they go back into the Proposal together (decided 2026-10-25); one example alone read oddly.
+- **More UX moments** like the "Book now" button, from the four projects (Rich). Once there are a few, they go into the Value Proposition together (decided 2026-10-25); one example alone read oddly.
 
-The Proposal's "What I'm validating next" list leads with the four clients posting to their sites on their own, now that the Portal is live and they are being onboarded; then the clients' numbers and Rich's own, a feature built for one client used by another (starting with photo galleries), and last, whether clients move to Hosting or Partner once their site has run on the Portal for a year.
+The Value Proposition's "What I'm validating next" list leads with the four clients posting to their sites on their own, now that the Portal is live and they are being onboarded; then the clients' numbers and Rich's own, a feature built for one client used by another (starting with photo galleries), and last, whether clients move to Hosting or Partner once their site has run on the Portal for a year.
 
-Once these are in, the Proposal gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $585 a year in total, so three clients on Hosting cover them." (Updated 2026-11-04: staging is kept through onboarding, Pricing → Fixed costs. Without staging it is about $425, and two clients cover it.) It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
+Once these are in, the Value Proposition gains the owner's-time argument and a capacity and margin section. That section also gets the server-cost line held back from v1 (Rich, 2026-10-25): "The Portal's servers cost about $585 a year in total, so three clients on Hosting cover them." (Updated 2026-11-04: staging is kept through onboarding, Pricing → Fixed costs. Without staging it is about $425, and two clients cover it.) It answers the review's question 3 (profit as it grows), so it goes in with the rest of the numbers, not alone.
 
 ## Feedback on v1 (Mark, 2026-10-26)
 
@@ -76,6 +81,17 @@ For the four owners, written 2026-10-26. Bucketed choices so answers can be comp
 
 Built as a Google Form: questions 3, 4, 13, 14, 16 and 17 are optional, the rest required; question 1 is checkboxes limited to two; question 5 is a grid (rows Before the site and Now).
 
+**Time and return**, added 2026-11-14 (wording from the form's linked responses sheet; the answer choices are in the form):
+
+- What do you do with the time the website saves you?
+- Has that time made a difference to your business? If it has, what changed?
+- Out of every 10 inquiries you get, about how many become paying customers?
+- About how much does a typical customer spend per visit or purchase?
+- How many times a year does a typical customer come back?
+- Have you filled in this survey before? and Name, so repeat answers can be matched.
+
+The return questions turn inquiries into money: new inquiries a month × the share that become customers × spend × visits a year gives the new revenue a site brings, and how soon it pays for itself. The survey is re-asked every 6 to 12 months, so the numbers are weighted as more answers come in. No multipliers ("5x") are drawn from bucketed answers.
+
 ## Moved out of the Proposal
 
 Filled in section by section as the Proposal is audited (started 2026-10-25).
@@ -123,7 +139,7 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 
 ### For the landing page
 
-The landing page speaks to the owner ("you"); the Proposal speaks about the owner, for a reviewer. Lead line, from the Mission (2026-10-25):
+The landing page speaks to the owner ("you"); the Value Proposition speaks about the owner, for a reviewer. Lead line, from the Mission (2026-10-25):
 
 - "Not only will your website look great, it will help run your business."
 
@@ -143,7 +159,8 @@ Copy rules:
 
 - Customer language only: no "headless", "multi-tenant", "API key" or "webhook".
 - Say "within moments", never "instant", until revalidation timing is measured.
-- No "own your platform" or "no lock-in" until an export or handover path exists.
+- "Never locked in" is true now that the leaving policy gives an export and a handover path. The Pitch states no handover price.
+- Client copy sympathizes with the owner: it never puts down their site, their skills or what they tried ("you made a real start"; building websites is its own trade, and they already have one), and never plays on fear. It reads as marketing copy (the result first, benefit headlines, calls to action), never as a shorter Value Proposition.
 - No gaps or weaknesses on the landing page.
-- No competitor names or prices: say "drag-and-drop platforms".
+- No competitor names or prices: say "drag-and-drop website platforms".
 - 3D Web Dev is the business; the Client Portal is the tool.

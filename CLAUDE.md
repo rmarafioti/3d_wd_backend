@@ -209,7 +209,7 @@ The review's Scope, its Output format and the concrete check behind each Checkli
 - **`/code-sweep <commit>`** from the code sweep reminder, opened after merges (Reminders): the code changed since the last sweep, plus three checks over the whole repo (items 6, 7 and 9), which catch drift between files that a diff can't show.
 - **`/code-sweep full`** once a quarter (the full sweep reminder, the first Monday of January, April, July and October), and for the first sweep ever.
 
-Each sweep ends with a row for Rich's Code Sweep Tracker sheet, kept outside the repo: repo, date, commit range, and the issues found. Its end commit is where the next sweep starts. Every few sweeps, an item that keeps producing findings is a sign the checklist needs tuning, and a change to it is proposed through a PR, so sweeps find fewer issues over time.
+Every review, `diff` included, ends with rows for Rich's Code Sweep Tracker sheet, kept outside the repo: one per review on its Sweeps tab and one per finding on its Findings tab (the skill's Output). The end commit is where the next sweep starts. At each full sweep the rows are counted by checklist item: a finding that recurs, or escaped a diff self-review, becomes a script in `check:rules` where one can catch it, and a written rule only where it can't, proposed through a PR, so reviews find fewer issues over time.
 
 A change to the Checklist changes the skill in the same PR.
 
@@ -226,18 +226,18 @@ Not on every branch. Run it:
 - before any production deploy
 - whenever Rich asks
 
-**The master doc** (Rich's Google Doc, outside the repos) holds only the business: the Proposal, Build vs Buy and a Glossary. No sync reads it, and it copies nothing from the repos, which are the only project docs; a decision that matters at scale goes into `docs/scaling.md` and Features. Read `docs/proposal-notes.md` before changing the Proposal.
+**The master doc** (Rich's Google Doc, outside the repos) holds only the business: the Value Proposition, the Pitch, Build vs Buy and a Glossary. No sync reads it, and it copies nothing from the repos, which are the only project docs; a decision that matters at scale goes into `docs/scaling.md` and Features. Read `docs/proposal-notes.md` before changing the Value Proposition or the Pitch.
 
 ## Reminders
 
 This repo's four reminders (`.github/workflows/reminders.yml`). How a reminder works, and the activity rule that opens the code sweep and Documentation Sync, is `docs/process.md` → Reminders.
 
-| Reminder           | When                                                                    | What to do                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Restore drill      | the 1st of January, April, July, October                                | restore the newest backup locally and record it in `docs/security.md` → Restore drills                             |
-| Dependency audit   | the 1st of every month, if anything found                               | the full `npm audit` (dev included) found a moderate or worse advisory: fix on a branch, or accept it              |
-| Documentation Sync | a Monday, after merges in either repo                                   | `/doc-sync`, with a session open in `3d_wd` (Documentation Sync)                                                   |
-| Code sweep         | a Monday, after merges in this repo; full the first Monday of a quarter | `/code-sweep <last swept commit>`, or `full` once a quarter, then the tracker row (Code Review → Running a review) |
+| Reminder           | When                                                                    | What to do                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Restore drill      | the 1st of January, April, July, October                                | restore the newest backup locally and record it in `docs/security.md` → Restore drills                              |
+| Dependency audit   | the 1st of every month, if anything found                               | the full `npm audit` (dev included) found a moderate or worse advisory: fix on a branch, or accept it               |
+| Documentation Sync | a Monday, after merges in either repo                                   | `/doc-sync`, with a session open in `3d_wd` (Documentation Sync)                                                    |
+| Code sweep         | a Monday, after merges in this repo; full the first Monday of a quarter | `/code-sweep <last swept commit>`, or `full` once a quarter, then the tracker rows (Code Review → Running a review) |
 
 The frontend has its own dependency audit and code sweep reminders; the restore drill and the Documentation Sync run only here.
 
@@ -293,7 +293,7 @@ root
 │   ├── generateBackupKeys.js *npm run backup:keygen: the backup key pair, written outside the repo
 │   ├── restoreBackup.js      *npm run backup:restore: decrypt a backup into an empty database
 │   ├── release.js            *npm run release: backend to production, then the frontend, then the release tags
-│   ├── checkSync.js          *npm run check:sync: what must be identical in both repos, diffed against ../3d_wd
+│   ├── checkSync.js          *npm run check:sync: what must be identical in both repos, diffed against ../3d_wd, and backend facts the frontend's docs restate
 │   ├── checkRules.js         *npm run check:rules: the Code Style rules a search can prove (CI)
 │   ├── frontendRepo.js       *the frontend repo's folder (../3d_wd or FRONTEND_DIR) and its origin check, for release and check:sync
 │   └── sentryCheck.js        *npm run sentry:check: one test error to Sentry, from production's Render Shell
@@ -364,7 +364,7 @@ root
 │   ├── deploy.md             *hosting plans, environments, env vars, every deploy, rollback, client onboarding
 │   ├── launch-record.md      *the first production deploy's checklist and pre-deploy checklist, the launch record
 │   ├── history.md            *older progress entries, the MVP Build Order, Features as recorded
-│   └── proposal-notes.md     *notes for the Proposal, a business doc outside the repo
+│   └── proposal-notes.md     *notes for the Value Proposition and the Pitch, business docs outside the repo
 ├── .github/
 │   ├── workflows/ci.yml      *lint, check:rules, format, npm audit and tests on every PR and push to main or production
 │   ├── workflows/reminders.yml *scheduled reminder issues: restore drill, dependency audit, Doc Sync, code sweep (Reminders)
@@ -410,14 +410,15 @@ root
   - **Issue #107 done:** the fixes from the full code sweep of 2026-11-10 (`full@9b0e55a`, reminder #106): shared helpers for paging, audit events, mail checks, validation and the cron scripts, `assertX` names for lookups that throw, guard tests for every mail and go-live date route, and doc fixes. Behaviour-neutral; no migration.
   - **Issue #102 done:** the client guide lives in `client-kit`'s `docs/cms/` (a base doc, `posts.md` and `galleries.md`), which the `3dwd-sync` GitHub App copies into each client repo as a pull request that auto-merges on green CI, and each client repo's CI fails if its copy drifts; `/doc-sync` reads `client-kit` in place of Stevie's copy. Stevie and Estudio Castelo are moved over (Estudio on 2026-11-11, its auto-merge proven only by the first guide change since); Good Boys is next (Next 2).
   - **Issue #112 done:** client onboarding is a runbook Rich follows alone (`docs/deploy.md` → Onboarding a client website), every step tagged with who does it, and one client session per client.
-  - **Issue #110 done** (frontend issue #96): the code sweep and Documentation Sync reminders open by activity (`docs/process.md` → Reminders): a Monday check counts the PRs merged since the last one closed, skips with none, opens at 5 or after 2 weeks; the quarterly full sweep stays on the calendar.
+  - **Issue #110 done** (frontend issue #96): the code sweep and Documentation Sync reminders open by activity (`docs/process.md` → Reminders): a Monday check counts the PRs merged since the last one closed, skips with none, opens at 5 or after 2 weeks; the quarterly full sweep stays on the calendar. Merged in both repos, and a run by hand counted right in each.
+  - **Issue #109 done** (frontend issue #99): the frontend's docs point to the contract instead of restating backend facts, and `npm run check:sync` fails on a restated one; every review logs one tracker row per finding, so a recurring one is caught and turned into a script.
   - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot.
-  - **The master doc** is now the Proposal, Build vs Buy and a Glossary; its Client Portal tabs, Deployment and Client to Website included, are deleted.
+  - **The master doc** is now the Value Proposition (v2: results first, the leaving policy, vendor prices; v1 deleted), the Pitch (client-facing copy for the landing page and brochure, with a copy editor), Build vs Buy and a Glossary; its Client Portal tabs are deleted.
 - **Next:**
   1. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
   2. Good Boys moves to `client-kit` by `docs/deploy.md` → Onboarding a client website, path B, when its CMS wiring starts. Estudio's first `3dwd-sync` PR after 2026-11-11 should merge itself on green CI: check it then.
-  3. Then issue #109 (each doc fact said once, optional), then coding pauses for business work on the Proposal: Build vs Buy for drag-and-drop site builders, the handoff strategy (what a client gets if they leave), and time logging to test the rates. Styling, branding, UI and a public landing page wait until those are settled; new code comes only from a bug, a client's request or a new client.
-  4. The reminders: the code sweep and Documentation Sync now open by activity (#110); the code sweep doesn't count merges from `docs/` branches. The frontend's #96 copies `due.sh` and `docs/process.md` from `main`, with `pull-requests: read`; after this merges, run Reminders → `activity` by hand and check the code sweep line shows the `docs/` merges not counted. The next backend sweep starts at `/code-sweep 9b0e55a`. The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
+  3. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. Then the brochure and a small landing page from the Pitch, the lead tracker sheet, prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
+  4. The reminders: the code sweep and Documentation Sync open by activity (#110), and the code sweep doesn't count merges from `docs/` branches. The next backend sweep starts at `/code-sweep 9b0e55a`, with the tracker's new per-finding rows (Code Review → Running a review). The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
   5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website, path A.
   6. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
   7. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
@@ -449,11 +450,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-14** `docs/doc-facts-once` (issue #109; frontend issue #99): `npm run check:sync` also lists backend facts the frontend's own docs restate (limits, timings, retention, cookie attributes), so they become pointers to `docs/api.md`; the contract gains the text field, post body and scheduled-publish audit facts the frontend relied on; every review also prints a row per finding for the Code Sweep Tracker's new Findings tab, and a recurring finding becomes a `check:rules` script before a written rule. The Proposal is renamed the Value Proposition in the docs, with its v2 decisions, the Pitch and the survey's time and return questions in `docs/proposal-notes.md`. 783 tests.
 - **2026-11-11** `chore/sweep-skips-docs` (follow-up to issue #110): the code sweep reminder no longer counts merges from `docs/` branches, read from each PR's branch in the same pull-request list, and logs how many it left out; the Documentation Sync still counts every merge. 778 tests.
 - **2026-11-11** `fix/reminder-pr-count` (follow-up to issue #110): the reminders counted 0 merged PRs because the workflow token had no pull-request access and search drops what it can't read; `reminders.yml` gains `pull-requests: read` and `due.sh` counts with the REST pull-request list, which fails the run instead. 778 tests.
 - **2026-11-11** `chore/adaptive-reminders` (issue #110; frontend issue #96): the code sweep and Documentation Sync reminders open by activity: `.github/reminders/due.sh` counts the PRs merged since the last reminder closed (none skips, 5 opens now, fewer opens after 2 weeks), the quarterly full sweep opens as `Full code sweep, YYYY-QN`, and `docs/process.md` gains the rule and the delete-merged-branches rule. Workflow and docs only. 778 tests.
 - **2026-11-11** `docs/onboarding-runbook` (issue #112): `docs/deploy.md` → Onboarding a client website becomes a runbook Rich follows alone, path A for a new client and path B for moving a client repo to `client-kit`, each step tagged [Rich], [Backend session] or [Client session] with the line that starts the session, and one client session per client. Estudio Castelo is added to `client-kit`'s `clients.json` (path B step 2). Docs only.
-- **2026-11-10** `feat/client-kit` (issue #102; `client-kit` PRs #1 and #2, Stevie PRs #12 to #14): the client guide split into `client-kit`'s `docs/cms/` and synced to client repos by the `3dwd-sync` GitHub App as pull requests that auto-merge on green CI, with a drift check in each client repo's CI; `/doc-sync` reads `client-kit` in place of Stevie, onboarding gains the client-repo steps and `docs/security.md` the App. A gallery name clash is now retried after a short random pause, up to 5 tries, so two same-name creates on a slow machine no longer end in a 500. 778 tests.
 
 ## Features
 

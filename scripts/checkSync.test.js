@@ -1,8 +1,8 @@
-// Tests for the cross-repo comparison in scripts/checkSync.js. Only the pure helpers are tested:
-// nothing here reads the frontend repo or fetches.
+// Tests for the cross-repo checks in scripts/checkSync.js. Only the pure helpers are tested: nothing
+// here reads the frontend repo or fetches.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { apiContractSection, compareTexts } = require('./checkSync');
+const { apiContractSection, compareTexts, findRestatedFacts, stripQuotes } = require('./checkSync');
 
 describe('apiContractSection', () => {
   it('takes the section from its heading up to the first --- line', () => {
@@ -36,5 +36,49 @@ describe('compareTexts', () => {
   it('reports a missing side as missing', () => {
     assert.deepEqual(compareTexts('guard hook', 'a\n', null), { status: 'missing' });
     assert.deepEqual(compareTexts('guard hook', null, 'a\n'), { status: 'missing' });
+  });
+});
+
+describe('stripQuotes', () => {
+  it('blanks straight and curly quoted spans and keeps the rest', () => {
+    assert.equal(stripQuotes('Shows "Max 5 MB" and “30 days left” here.'), 'Shows "" and "" here.');
+  });
+});
+
+describe('findRestatedFacts', () => {
+  it('reports a restated backend limit with its line number and label', () => {
+    const markdown = '# Flows\n\nThe post name is required, max 100.';
+
+    assert.deepEqual(findRestatedFacts(markdown), [
+      { line: 3, label: 'a field limit', text: 'The post name is required, max 100.' },
+    ]);
+  });
+
+  it('ignores a backend fact inside quoted UI copy', () => {
+    const markdown = 'The dialog says "Deleted posts stay here for 30 days."';
+
+    assert.deepEqual(findRestatedFacts(markdown), []);
+  });
+
+  it('leaves out a skipped section up to the next ## heading', () => {
+    const markdown = [
+      '## Features',
+      '1. Galleries of up to 30 images, restorable for 30 days.',
+      '## Flows',
+      'Deleted mail stays for 30 days.',
+    ].join('\n');
+
+    const found = findRestatedFacts(markdown, ['## Features']);
+
+    assert.deepEqual(
+      found.map(({ line, label }) => ({ line, label })),
+      [{ line: 4, label: 'the 30-day retention' }],
+    );
+  });
+
+  it('reports nothing for a doc that points to the contract', () => {
+    const markdown = 'Limits are in `docs/api.md` → Validation rules.';
+
+    assert.deepEqual(findRestatedFacts(markdown), []);
   });
 });
