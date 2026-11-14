@@ -1,5 +1,5 @@
-// Entry point for `npm run check:sync`: diffs what must be identical in the backend and the
-// frontend (the API Contract, the guard hook, docs/process.md) against ../3d_wd. Read-only.
+// Entry point for `npm run check:sync`: diffs what must match in the backend and ../3d_wd (the API
+// Contract, the guard hook, docs/process.md), and finds backend facts the frontend's docs restate.
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -24,6 +24,34 @@ const PAIRS = [
     frontend: '.claude/hooks/guard.test.js',
   },
   { name: 'shared process', backend: 'docs/process.md', frontend: 'docs/process.md' },
+];
+
+// The frontend's own docs, which point to the backend's facts rather than restating them. `skip` lists
+// the `## ` sections left out: Current progress is a record, and Features must match the backend's.
+const RESTATED_FACT_FILES = [
+  { file: 'CLAUDE.md', skip: ['## Current progress', '## Features'] },
+  { file: 'docs/flows.md' },
+  { file: 'docs/deploy.md' },
+  { file: 'docs/scaling.md' },
+];
+
+// Backend facts a frontend doc should only point to. Each matches the unquoted part of a line, since
+// quoted text is UI copy the frontend shows. A pattern that catches a frontend fact is narrowed.
+const RESTATED_FACTS = [
+  { label: 'a field limit', pattern: /\bmax [0-9]/ },
+  { label: 'an image count', pattern: /\b[0-9]+ to [0-9]+ images\b/ },
+  { label: 'a file size', pattern: /\b[0-9]+ ?MB\b/ },
+  { label: 'an upload or crop number', pattern: /\b2500\b|\b0\.85\b|[0-9]%/ },
+  { label: 'the 30-day retention', pattern: /\b30 days\b/ },
+  { label: 'a backend timing', pattern: /\b(15 minutes|24 hours)\b/ },
+  { label: 'a message or page count', pattern: /\b[0-9]+ (messages|events a page)\b/ },
+  { label: 'a cookie attribute', pattern: /SameSite|Domain=\./ },
+  { label: 'a database column', pattern: /\b[a-z]+_at\b/ },
+  {
+    label: 'a backend email or hosting fact',
+    pattern: /Reply-To|point-in-time|Hobby workspace|13\.30/,
+  },
+  { label: 'a backend transaction', pattern: /in one transaction/ },
 ];
 
 function git(dir, args) {
@@ -68,6 +96,27 @@ function compareTexts(name, backendText, frontendText) {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// Blanks every quoted span, straight or curly, so UI copy the frontend shows is never matched.
+function stripQuotes(line) {
+  return line.replace(/"[^"]*"|“[^”]*”/g, '""');
+}
+
+// Every line of a frontend doc that restates a backend fact: its 1-based line number, the fact's
+// label and the line. Lines under a heading in `skip` are left out, up to the next `## ` heading.
+function findRestatedFacts(markdown, skip = []) {
+  const found = [];
+  let isSkipping = false;
+  markdown.split('\n').forEach((text, index) => {
+    if (text.startsWith('## ')) isSkipping = skip.includes(text.trim());
+    if (isSkipping) return;
+    const unquoted = stripQuotes(text);
+    for (const fact of RESTATED_FACTS) {
+      if (fact.pattern.test(unquoted)) found.push({ line: index + 1, label: fact.label, text });
+    }
+  });
+  return found;
 }
 
 function readBackendFile(file) {
@@ -118,6 +167,24 @@ function checkSync() {
     console.log(`differs: ${pair.name} (- backend ${pair.backend}, + frontend ${pair.frontend})`);
     console.log(result.diff);
   }
+
+  for (const { file, skip } of RESTATED_FACT_FILES) {
+    const markdown = readFrontendFile(file);
+    if (markdown === null) {
+      isClean = false;
+      console.log(`missing: frontend ${file}`);
+      continue;
+    }
+    const found = findRestatedFacts(markdown, skip);
+    if (found.length === 0) {
+      console.log(`no restated facts: ${file}`);
+      continue;
+    }
+    isClean = false;
+    for (const { line, label, text } of found) {
+      console.log(`restated: ${file}:${line} ${label}\n  ${text.trim()}`);
+    }
+  }
   return isClean;
 }
 
@@ -130,4 +197,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { apiContractSection, compareTexts };
+module.exports = { apiContractSection, compareTexts, findRestatedFacts, stripQuotes };
