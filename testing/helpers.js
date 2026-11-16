@@ -32,7 +32,7 @@ function unique() {
 // Run in beforeEach: every test starts from an empty database and empty rate limit counts.
 async function resetState() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE thread_message, thread, notification_recipient, notification, website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event CASCADE',
+    'TRUNCATE TABLE thread_message, thread, notification_recipient, notification, website_ability, gallery_image, gallery, element, image, post, account_website, website, account, audit_event, inquiry CASCADE',
   );
   await resetRateLimits();
 }

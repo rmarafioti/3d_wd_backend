@@ -4,6 +4,7 @@ const authRouter = require('./auth');
 const adminRouter = require('./admin');
 const siteOwnerRouter = require('./siteOwner');
 const publicRouter = require('./public');
+const contactRouter = require('./contact');
 
 const router = express.Router();
 
@@ -16,5 +17,6 @@ router.use('/auth', authRouter);
 router.use('/admin', adminRouter);
 router.use('/siteOwner', siteOwnerRouter);
 router.use('/public', publicRouter);
+router.use('/contact', contactRouter);
 
 module.exports = router;

@@ -9,6 +9,7 @@ The backend codebase of our Headless CMS project. The frontend is in a separate 
 - The Administrator sees a summary of all site owner accounts and their websites (with each website's galleries as counts and crop flags), creates new site owner accounts, and links websites to existing accounts.
 - The Site Owner views, creates, edits, deletes and sets to draft or published the posts and photo galleries for their own websites, adds Photo Galleries to a website, says where on their site each gallery and their posts should go (and changes it), and turns an ability on or off. The Administrator is emailed each request, sets an ability live once its code is wired, and sets each gallery (and posts) live once placed.
 - The Inbox: the Administrator sends site-wide updates (one way; setting an ability or a gallery live sends one too), and either side starts a message thread that both reply to.
+- The landing page's contact form saves each inquiry, then emails it to the Administrator and a fixed confirmation to the sender.
 - The backend also serves published posts and galleries to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post or gallery changes. A draft given a go-live date is published by a cron job when that time passes.
 
 Production: this API runs on Render at `https://api.3dwebdev.com`, defined in `render.yaml`. The frontend runs on Vercel at `https://3dwebdev.com`. Both share the parent domain `3dwebdev.com`, which is why the session cookie is `SameSite=Lax` with `Domain=.3dwebdev.com`.
@@ -37,10 +38,12 @@ Only `docs/process.md` loads every session. The reference docs are read when the
 - Checks after building:
   - `npm test` passes, with new tests wherever Unit Tests says one is justified
   - Postman only for a new kind of route (logic only, with the `X-CSRF-Protection: 1` header). A route that follows an existing, proven pattern skips it: its request tests stand in
-  - Always a manual UI test through the real frontend, for every change the frontend reaches (validates the flow, CORS and cookie behaviour)
+  - Always a manual UI test through the real frontend, for every change the frontend reaches (validates the flow, CORS and cookie behaviour). When the frontend's half is still to be built, the cross-repo handoff goes out once Rich has answered the self-review (onto the frontend's open branch when one exists for the same work, rather than a new issue), and this branch isn't committed until the frontend is built and the flow is tested through it
   - After manual testing (the frontend, and Postman where used), delete every row the tests added (accounts, websites, `account_website` links, posts and their elements and images), so the local database is back to the baseline in Current progress. List the rows first and delete them by id in one transaction. (`npm test` uses its own test database and never touches these rows.)
-- Final step, always, once every check above is done: the self-review over the whole diff. Read `.claude/skills/code-sweep/SKILL.md` and follow its `diff` mode (Code Review → Running a review), which checks the role gate and ownership, transactions, CSRF, the contract, secrets, `npm audit` and the rest of the checklist. Report it to Rich as findings in its Output format, with a question for each one that needs his decision on correcting the code. Nothing is committed before he answers. A review that finds nothing is still reported.
+- Always, once the checks above that this repo can run are done (a frontend test waiting on a handoff comes after it): the self-review over the whole diff. Read `.claude/skills/code-sweep/SKILL.md` and follow its `diff` mode (Code Review → Running a review), which checks the role gate and ownership, transactions, CSRF, the contract, secrets, `npm audit` and the rest of the checklist. Report it to Rich as findings in its Output format, with a question for each one that needs his decision on correcting the code. Nothing is committed before he answers. A review that finds nothing is still reported.
+- Last before commit, once every coding handoff is done and tested: the risky-file walkthrough, when the diff touches a risky file (Code Review → Running a review)
 - Only commit once code is reviewed, approved and all validation and tests are green, and only commit, push and open the PR once Rich says so (`docs/process.md` → Issue Workflow step 6)
+- After Rich merges, before `/clear`: the self-review's tracker rows, for Rich to paste
 
 Step rhythm:
 
@@ -59,12 +62,12 @@ Use subagents for research/exploration/investigation for a plan and for completi
 
 ## Role Ownership Check Rule
 
-Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`, and the mail checks beside their shapes in `lib/notifications.js` and `lib/threads.js`. A failed check returns `404`, identical to "not found".
+Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`, and the mail checks beside their shapes in `lib/notifications.js` and `lib/threads.js`. A failed check returns `404`, identical to "not found". The contact form (`POST /api/contact`) is the one write route with no account: it only creates an inquiry, owned by no one, and no route reads one back.
 
 ## Anti-Patterns to Avoid
 
 **Never log the API key, webhook secret, session token, Cloudinary API secret, R2 secret or Resend key:**
-The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is used only in `lib/r2.js` (`lib/sentry.js` reads it only to redact it), and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is used only in `services/requestEmail.js` (`lib/config.js` checks its prefix and `lib/sentry.js` redacts it), and a request email's failure is logged with the website id only, never an email address or the note. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
+The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is used only in `lib/r2.js` (`lib/sentry.js` reads it only to redact it), and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is used only in `lib/resend.js` (`lib/config.js` checks its prefix and `lib/sentry.js` redacts it). A request email's failure is logged with the website id only, never an email address or the note, and an inquiry email's with the inquiry id only, never an address, a name or the message. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
 
 **Never trust frontend validation alone:**
 Independently re-validate every field on every request with the zod schemas in `validation/`.
@@ -76,7 +79,7 @@ The JWT appears only in the `Set-Cookie` header — never anywhere in a JSON bod
 Cookies silently fail to be accepted. The exact origin comes from `CORS_ORIGIN`.
 
 **Never let revalidation or an email affect the user's request:**
-Revalidation and the admin's request email run after the transaction commits, are not awaited before responding, and can never throw into the route. A client website or Resend being down must never stop a site owner saving a post or a request message.
+Revalidation, the admin's request email and the inquiry emails run after the transaction commits, are not awaited before responding, and can never throw into the route. A client website or Resend being down must never stop a site owner saving a post or a request message, or an inquiry being saved.
 
 **Never put secrets or content in the audit log:**
 An `audit_event` row's `metadata` holds ids and short facts only: never a key, secret, token, Google credential, header or post content. A failed login's reason is logged but never returned; login always answers with the single 401.
@@ -99,7 +102,7 @@ An `audit_event` row's `metadata` holds ids and short facts only: never a key, s
 `lib/crypto.js` is reused by Create an Account, Link a Website, `requireApiKey` and the revalidation service. Never duplicated inline.
 
 **Multi-row writes:**
-Account + website + its posts ability + account_website, website + its posts ability + account_website, post + elements + images, gallery + gallery images, removing or restoring an ability with its galleries, an update + its recipients, a thread + its first message, and a bulk delete with its audit events always happen inside a single `prisma.$transaction` (a bulk restore is one transaction per item, so one failure leaves the rest restored).
+Account + website + its posts ability + account_website, website + its posts ability + account_website, post + elements + images, gallery + gallery images, removing or restoring an ability with its galleries, an update + its recipients, a thread + its first message, an inquiry + its audit event, and a bulk delete with its audit events always happen inside a single `prisma.$transaction` (a bulk restore is one transaction per item, so one failure leaves the rest restored).
 
 **Audit events in the change's transaction:**
 Every sign-in, sign-out and change writes its `audit_event` through `recordAuditEvent` (`lib/audit.js`), with the transaction client `tx`, inside the same `prisma.$transaction` as the change it records (`docs/endpoints.md` → Audit Log). A new route that changes data adds its action to `AUDIT_ACTIONS` and the table in `docs/endpoints.md`.
@@ -209,7 +212,9 @@ The review's Scope, its Output format and the concrete check behind each Checkli
 - **`/code-sweep <commit>`** from the code sweep reminder, opened after merges (Reminders): the code changed since the last sweep, plus three checks over the whole repo (items 6, 7 and 9), which catch drift between files that a diff can't show.
 - **`/code-sweep full`** once a quarter (the full sweep reminder, the first Monday of January, April, July and October), and for the first sweep ever.
 
-Every review, `diff` included, ends with rows for Rich's Code Sweep Tracker sheet, kept outside the repo: one per review on its Sweeps tab and one per finding on its Findings tab (the skill's Output). The end commit is where the next sweep starts. At each full sweep the rows are counted by checklist item: a finding that recurs, or escaped a diff self-review, becomes a script in `check:rules` where one can catch it, and a written rule only where it can't, proposed through a PR, so reviews find fewer issues over time.
+Every review, `diff` included, ends with rows for Rich's Code Sweep Tracker sheet, kept outside the repo: one per review on its Sweeps tab and one per finding on its Findings tab (the skill's Output). A `diff` review's rows are given to Rich after the merge, before `/clear`, so every finding's outcome is final. The end commit is where the next sweep starts. At each full sweep the rows are counted by checklist item: a finding that recurs (in 2 or more reviews), or escaped a diff self-review, becomes a script in `check:rules` where one can catch it; where only judgment can, it becomes both a short rule here and a **focused check** in the skill, one narrow question naming the failure, run only when a diff touches its area. The tracker shows whether each focused check fires: one that misses again is sharpened or scripted, and one with no hits in 2 full sweeps while diffs touched its area is pruned (its rule stays). Each is proposed through a PR, so reviews find fewer issues over time.
+
+A review that finds nothing says "No findings: this is not a correctness sign-off": the tests, `check:rules` and the manual UI test are the proof. A diff that touches a **risky file** (the fixed list in the skill's Output: ownership, `requireAuth` / `requireRole`, crypto, a data-dropping migration, `api/public/`, `docs/endpoints.md`, the guard hook) is walked through with Rich in the session as the last step before commit, once every coding handoff is built and tested, so it covers the final code, one item at a time: the changed code, before and after in plain words, what goes wrong if it's wrong, and which test covers it. His "ok" on each item is the sign-off.
 
 A change to the Checklist changes the skill in the same PR.
 
@@ -226,7 +231,7 @@ Not on every branch. Run it:
 - before any production deploy
 - whenever Rich asks
 
-**The master doc** (Rich's Google Doc, outside the repos) holds only the business: the Value Proposition, the Pitch, Build vs Buy and a Glossary. No sync reads it, and it copies nothing from the repos, which are the only project docs; a decision that matters at scale goes into `docs/scaling.md` and Features. Read `docs/proposal-notes.md` before changing the Value Proposition or the Pitch.
+**The master doc** (Rich's Google Doc, outside the repos) holds the business, in four tabs: the Value Proposition, the Pitch, How It's Built (the architecture, infrastructure and process decisions, each as risk → decision → why it matters, for readers in tech who may not be engineers) and a Glossary. No sync reads it, and it copies nothing from the repos, which are the only project docs; a decision that matters at scale goes into `docs/scaling.md` and Features. A new or changed architecture decision also updates How It's Built, and its PR says so. Read `docs/proposal-notes.md` before changing the Value Proposition or the Pitch.
 
 ## Reminders
 
@@ -279,10 +284,13 @@ root
 │   │   └── deleted.js        *Recently Deleted: list, bulk delete of mail, bulk restore of posts, galleries and mail
 │   ├── public/
 │   │   └── index.js          *GET /public/posts, GET /public/galleries/:slug (API key auth)
+│   ├── contact/
+│   │   └── index.js          *POST /contact: the landing page's contact form (public, rate limited, honeypot)
 │   └── index.js              *mounts all routers + GET /health
 ├── services/
 │   ├── revalidate.js         *fire-and-forget webhook call to a client website
 │   ├── requestEmail.js       *fire-and-forget email to the admin on a request message (Resend)
+│   ├── inquiryEmail.js       *fire-and-forget inquiry email to the admin and confirmation to the sender (Resend)
 │   ├── sweepUploads.js       *upload cleanup: unused uploads over 24h old, deleted posts' and galleries' images after 30 days
 │   ├── publishScheduled.js   *scheduled publish: drafts whose go-live date has passed become published, then revalidated
 │   └── backupDatabase.js     *pg_dump, encrypted with the backup public key, uploaded to R2
@@ -303,13 +311,14 @@ root
 │   ├── website.js
 │   ├── post.js
 │   ├── gallery.js            *gallery create / edit / status, the admin's placement, the crop rules
-│   ├── fields.js             *field builders and schemas shared by the others (text, formatted text, https URL, image, status, request note, go-live date, paging)
+│   ├── fields.js             *field builders and schemas shared by the others (text, formatted text, https URL, email, image, status, request note, go-live date, paging)
 │   ├── upload.js             *Sign an Upload body ({ websiteId })
 │   ├── ability.js            *add an ability, on / off, the admin's live
 │   ├── auditEvent.js         *audit event list query (month, limit, cursor)
 │   ├── notification.js       *the admin's update (title, body)
 │   ├── thread.js             *start a thread (either side), a reply
 │   ├── deleted.js            *Recently Deleted's bulk delete and restore items
+│   ├── contact.js            *the contact form and its honeypot check
 │   └── validate.js           *validate() → 400 envelope, blankToUndefined
 ├── middleware/
 │   ├── requireAuth.js        *verifies the session cookie, loads req.user
@@ -334,7 +343,8 @@ root
 │   ├── paging.js             *cursor paging: a list's page and nextCursor from one row more than the page
 │   ├── postBody.js           *element rows → the post body list in API responses
 │   ├── r2.js                 *Cloudflare R2 upload (Signature V4, no AWS SDK) for backups
-│   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages
+│   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages, the contact form
+│   ├── resend.js             *the one Resend call (the only reader of RESEND_API_KEY)
 │   ├── restore.js            *restoring a deleted post or gallery: its check, name rule and audit event
 │   ├── retention.js          *how long deleted content stays recoverable (30 days): the cutoff and restorableUntil
 │   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush, a cron job's failure exit
@@ -393,12 +403,12 @@ root
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-11)
+## Current progress (as of 2026-11-15)
 
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 17 and issue #71 (placement apart from status) are live in both repos, the latest release `release-2026-11-09`.
   - **How work runs:** from a GitHub issue Rich writes, one branch per repo (`docs/process.md`); breaking changes through expand → migrate → contract (`docs/scaling.md` §0, §3); production released with `npm run release` from this repo after staging, backend first, each release tagged (`docs/process.md` → Releases).
-  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 8).
+  - **Staging** (`https://staging.3dwebdev.com`, `https://api-staging.3dwebdev.com`) is kept through onboarding, at $13.30/mo (Next 9).
   - **Issue #73 done:** the session docs trimmed, the legacy fields dropped (released), and the process shared with the frontend in `docs/process.md`; `npm run check:sync` reports all four pairs identical.
   - **Issue #90 done:** every file header is one or two lines on what the file is for, with no history, and `npm run check:rules` enforces it. The frontend's half of the V1 trim (frontend issue #77) is merged.
   - **Issue #69 done:** `build-spec` is its own GitHub template repo, `rmarafioti/build-spec` (local `../build-spec`), outside the 3DWD `gh` token: Rich pushes there himself.
@@ -412,17 +422,19 @@ root
   - **Issue #112 done:** client onboarding is a runbook Rich follows alone (`docs/deploy.md` → Onboarding a client website), every step tagged with who does it, and one client session per client.
   - **Issue #110 done** (frontend issue #96): the code sweep and Documentation Sync reminders open by activity (`docs/process.md` → Reminders): a Monday check counts the PRs merged since the last one closed, skips with none, opens at 5 or after 2 weeks; the quarterly full sweep stays on the calendar. Merged in both repos, and a run by hand counted right in each.
   - **Issue #109 done** (frontend issue #99): the frontend's docs point to the contract instead of restating backend facts, and `npm run check:sync` fails on a restated one; every review logs one tracker row per finding, so a recurring one is caught and turned into a script.
+  - **Issue #122 done** (frontend issue #101): the landing page's contact form posts to a public `POST /api/contact`, which saves an `inquiry` and emails the admin and a fixed confirmation to the sender. Reviews gain focused checks and a risky-file walkthrough last before commit, and the tracker rows come after the merge. Additive; one migration (`add_inquiry`). Not yet released.
   - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot.
-  - **The master doc** is now the Value Proposition (v2: results first, the leaving policy, vendor prices; v1 deleted), the Pitch (client-facing copy for the landing page and brochure, with a copy editor), Build vs Buy and a Glossary; its Client Portal tabs are deleted.
+  - **The master doc** is now the Value Proposition (v2: results first, the leaving policy, vendor prices; v1 deleted), the Pitch (client-facing copy for the landing page and brochure, with a copy editor), How It's Built and a Glossary; Build vs Buy and the Client Portal tabs are gone.
 - **Next:**
   1. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
   2. Good Boys moves to `client-kit` by `docs/deploy.md` → Onboarding a client website, path B, when its CMS wiring starts. Estudio's first `3dwd-sync` PR after 2026-11-11 should merge itself on green CI: check it then.
-  3. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. Then the brochure and a small landing page from the Pitch, the lead tracker sheet, prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
-  4. The reminders: the code sweep and Documentation Sync open by activity (#110), and the code sweep doesn't count merges from `docs/` branches. The next backend sweep starts at `/code-sweep 9b0e55a`, with the tracker's new per-finding rows (Code Review → Running a review). The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
-  5. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website, path A.
-  6. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
-  7. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
-  8. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
+  3. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. The landing page is built with five Pitch sections and the contact form (#101, #122); the rest wait for the copy editor. Then the brochure, the lead tracker sheet (the founding-client offer, `docs/proposal-notes.md`), prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
+  4. Release #122 with the frontend's #101 (`npm run release`; no new env var, production's `RESEND_API_KEY` is already set), then on production send one inquiry through `https://3dwebdev.com` with your own address: both emails arrive, and the row is in `inquiry` (SQL from the API's Render Shell).
+  5. The reminders: the code sweep and Documentation Sync open by activity (#110), and the code sweep doesn't count merges from `docs/` branches. The next backend sweep starts at `/code-sweep 9b0e55a`, with the tracker's new per-finding rows (Code Review → Running a review). The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
+  6. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website, path A.
+  7. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
+  8. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
+  9. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
@@ -432,11 +444,12 @@ root
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-10, after #107's test):
+- **Local database baseline** (test rows cleared on 2026-11-15, after #122's test):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element
   - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability, no galleries, updates or threads (#100's test update and thread deleted on 2026-11-09)
+  - no inquiries (#122's four test inquiries deleted on 2026-11-15)
   - the `audit_event` rows from local sign-ins and changes, kept: audit rows are not cleared after a test, locally or in production
 
   Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 and #93 test galleries' images. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Two client websites are waiting to onboard.
@@ -450,11 +463,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-15** `feat/contact-form` (issue #122; frontend issue #101): a public `POST /api/contact` saves the landing page form's inquiry with an `inquiry.received` audit event, then emails the admin (Reply-To the sender) and the sender a fixed confirmation that can't be replied to, at most one per address a day, through the shared `lib/resend.js`; a honeypot field and 5 sends per hour per IP guard it. Reviews gain focused checks, the risky-file walkthrough last before commit and the tracker rows after the merge; the master doc's tabs and the founding-client offer are in the docs. One migration (`add_inquiry`). 803 tests.
 - **2026-11-14** `docs/doc-facts-once` (issue #109; frontend issue #99): `npm run check:sync` also lists backend facts the frontend's own docs restate (limits, timings, retention, cookie attributes), so they become pointers to `docs/api.md`; the contract gains the text field, post body and scheduled-publish audit facts the frontend relied on; every review also prints a row per finding for the Code Sweep Tracker's new Findings tab, and a recurring finding becomes a `check:rules` script before a written rule. The Proposal is renamed the Value Proposition in the docs, with its v2 decisions, the Pitch and the survey's time and return questions in `docs/proposal-notes.md`. 783 tests.
 - **2026-11-11** `chore/sweep-skips-docs` (follow-up to issue #110): the code sweep reminder no longer counts merges from `docs/` branches, read from each PR's branch in the same pull-request list, and logs how many it left out; the Documentation Sync still counts every merge. 778 tests.
 - **2026-11-11** `fix/reminder-pr-count` (follow-up to issue #110): the reminders counted 0 merged PRs because the workflow token had no pull-request access and search drops what it can't read; `reminders.yml` gains `pull-requests: read` and `due.sh` counts with the REST pull-request list, which fails the run instead. 778 tests.
 - **2026-11-11** `chore/adaptive-reminders` (issue #110; frontend issue #96): the code sweep and Documentation Sync reminders open by activity: `.github/reminders/due.sh` counts the PRs merged since the last reminder closed (none skips, 5 opens now, fewer opens after 2 weeks), the quarterly full sweep opens as `Full code sweep, YYYY-QN`, and `docs/process.md` gains the rule and the delete-merged-branches rule. Workflow and docs only. 778 tests.
-- **2026-11-11** `docs/onboarding-runbook` (issue #112): `docs/deploy.md` → Onboarding a client website becomes a runbook Rich follows alone, path A for a new client and path B for moving a client repo to `client-kit`, each step tagged [Rich], [Backend session] or [Client session] with the line that starts the session, and one client session per client. Estudio Castelo is added to `client-kit`'s `clients.json` (path B step 2). Docs only.
 
 ## Features
 

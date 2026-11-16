@@ -7,7 +7,7 @@ Notes for us, not for the reader, kept beside the Value Proposition (called the 
 Rich's Google Doc, outside the repos, holds only the business, edited when the business changes rather than on a sync (`CLAUDE.md` → Documentation Sync):
 
 - **Value Proposition:** 3D Web Dev's business case (v2; v1, the Proposal, is deleted), shared with colleagues and engineer friends for insight and feedback: the mission, who it's for, how Rich works with clients, the clients so far, the Client Portal, pricing, how Rich finds clients, and what is still being validated. 3D Web Dev is the business; the Client Portal is the tool, built because every client needed to post to their own site (three asked, and Rich recommended it to the fourth).
-- **Build vs Buy:** engineering decisions, not a go-to-market comparison. Its CMS child tab is why the Client Portal was built rather than using a headless CMS, and its Drag and Drop child tab (not started) is why client websites are custom builds rather than a site builder. When a feature resolves an item on the CMS tab's "Where we're behind" list, it moves into the table, once Rich next edits the doc.
+- **How It's Built:** the architecture, infrastructure and process decisions (cron jobs, direct uploads and the cleanup, backups and restore drills, CI and releases, security, governance), each as risk → decision → why it matters, for readers in tech who may not be engineers. No commands, values or repo links. A new or changed architecture decision updates it, and its PR says so (`CLAUDE.md` → Documentation Sync).
 - **Pitch:** the client-facing copy the landing page and the brochure are built from, written to the owner. It is with a copy editor; a shorter cut for the brochure follows.
 - **Glossary:** Rich's own explanations of the terms, A to W, not in any repo and not synced.
 
@@ -130,18 +130,21 @@ Filled in section by section as the Proposal is audited (started 2026-10-25).
 - **Market figures behind the ranges (2026):** small business builds mostly $1,500 to $8,000 with a freelancer; mid-level US freelance rates about $60 to $100 an hour; freelance care plans about $50 to $300 a month. Most sources are agencies and vendors, so the figures are estimates. Sources: [Upwork](https://www.upwork.com/resources/how-much-does-it-cost-to-build-website), [Project Cost Estimator](https://projectcostestimator.com/freelance-website-cost), [FatLab](https://fatlabwebsupport.com/blog/website-maintenance/website-maintenance-packages-compared-your-complete-buyers-guide/), [goLance](https://golance.com/hiring/best-freelance-web-developers-hourly-rate).
 - **How Pricing is laid out (Rich, 2026-10-25):** three parts, matching how a client is billed: Website builds (Starter, Business site, Full build; fixed quotes), Changes after launch (hourly, a sentence, not a one-row table), and Hosting plans (Hosting, Partner; recurring, on top of the build). Every site on a hosting plan gets the 3DWD Client Portal, so it isn't a Full build feature. Hosting plans are billed yearly only, with no monthly price: $640 a year for Partner would be an awkward $53.33 a month.
 - **How the prices were set (2026-10-25):** Starter and Business were set a little under the market ranges. Partner is four quarterly one-hour check-ins at $100 on top of Hosting ($240 + $400 = $640).
+- **The founding-client offer:** 4 spots for new clients, with a discount on the initial build and the first year of hosting only (later years are the full Hosting or Partner price). In return, a founding client gives data (their site's results before and after), answers surveys, and agrees to a case study. Outreach for it waits until the copy editor's Pitch and the landing page or brochure are done.
 - **Online shops (removed from the Proposal, 2026-10-25):** for a client who wants a shop, Rich suggests connecting Square or Shopify rather than building one, to save them money, with the setup quoted with the build or billed by the hour. It's advice given in conversation with a client, one of the options at different costs in What I do, not a price line.
 
 ### Supporting material
 
 - **Still to write:** "Why not a drag-and-drop platform", a comparison for business owners. It says "drag-and-drop platforms" and names no platform (decided 2026-10-25). Client stories keep the platform names (Squarespace, Wix), since they are history.
-- **Where the technical detail lives:** the two repos on GitHub (`3d_wd_backend` and `3d_wd`, their `CLAUDE.md` and `docs/`), and Build vs Buy (CMS, and Drag and Drop, not started). The master doc's other tabs are deleted; it holds only the Proposal, Build vs Buy and a Glossary (The master doc, above).
+- **Where the technical detail lives:** the two repos on GitHub (`3d_wd_backend` and `3d_wd`, their `CLAUDE.md` and `docs/`), and How It's Built for readers who aren't engineers. The master doc holds only the Value Proposition, the Pitch, How It's Built and a Glossary (The master doc, above); Build vs Buy is no longer a tab.
 
 ### For the landing page
 
-The landing page speaks to the owner ("you"); the Value Proposition speaks about the owner, for a reviewer. Lead line, from the Mission (2026-10-25):
+The landing page speaks to the owner ("you"); the Value Proposition speaks about the owner, for a reviewer. Its lead line is the Pitch's hero, which replaces the Mission's earlier "Not only will your website look great, it will help run your business.":
 
-- "Not only will your website look great, it will help run your business."
+- "Your website brings in the customers. You get your time back."
+
+The Pitch sections live on the page (frontend issue #101): the Hero, Proof, Pricing with "Don't want to be boxed in?", About with What clients have to say, and Contact, whose form sends to `POST /api/contact`. The other Pitch sections wait for the copy editor.
 
 Draft lines about the Client Portal, and when each can be used:
 

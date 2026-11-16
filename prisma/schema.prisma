@@ -363,7 +363,7 @@ model AuditEvent {
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
   actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account, or a scheduled publish
   actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token, or a scheduled publish
-  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification' or 'thread'
+  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification', 'thread' or 'inquiry'
   targetId   String?  @map("target_id")
   metadata   Json?
   ip         String?
@@ -374,4 +374,29 @@ model AuditEvent {
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_event")
+}
+
+// Where a contact form sender is starting from; the frontend shows each as a sentence.
+enum InquiryStartingPoint {
+  has_website
+  unfinished_website
+  no_website
+
+  @@map("inquiry_starting_point")
+}
+
+// A contact form inquiry from the landing page (docs/endpoints.md → Inquiry Emails). Not tied to an
+// account: the sender isn't a user. Read with SQL; no route lists it.
+model Inquiry {
+  id            String               @id @default(uuid(7))
+  name          String
+  business      String
+  email         String // stored lowercase
+  startingPoint InquiryStartingPoint @map("starting_point")
+  goal          String               @db.Text
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  @@index([email, createdAt]) // the one-confirmation-a-day check
+  @@map("inquiry")
 }
