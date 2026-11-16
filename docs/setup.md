@@ -219,9 +219,9 @@ Table thread_message {           // at most 100 per thread
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
-  actor_id    string   [null]      // the signed-in account; null for a failed login with no account, or a scheduled publish
-  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token or a scheduled publish
-  target_type string   [null]      // account, website, post, gallery, ability, notification or thread
+  actor_id    string   [null]      // the signed-in account; null for a failed login with no account, a scheduled publish or an inquiry
+  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token, a scheduled publish or an inquiry
+  target_type string   [null]      // account, website, post, gallery, ability, notification, thread or inquiry
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
   ip          string   [null]
@@ -232,6 +232,21 @@ Table audit_event {
     actor_email
     (target_type, target_id)
     created_at
+  }
+}
+
+Table inquiry {                       // a contact form inquiry from the landing page; read with SQL
+  id             string                 [primary key, default: uuid v7]
+  name           string                 [not null]
+  business       string                 [not null]
+  email          string                 [not null]  // stored lowercase; not an account
+  starting_point inquiry_starting_point [not null]
+  goal           text                   [not null]
+  created_at     datetime               [not null, default: now()]
+  updated_at     datetime               [not null]
+
+  indexes {
+    (email, created_at)   // one confirmation per address a day (docs/endpoints.md → Inquiry Emails)
   }
 }
 
@@ -275,6 +290,12 @@ Enum element_type {
   image
 }
 
+Enum inquiry_starting_point {
+  has_website
+  unfinished_website
+  no_website
+}
+
 // join table - an account can have many websites,
 // a website can be overseen by many accounts
 Ref: account_website.account_id > account.id
@@ -293,11 +314,12 @@ Ref: thread.account_id > account.id
 Ref: thread_message.thread_id > thread.id
 Ref: thread_message.author_id > account.id
 // audit_event has no references on purpose: an event never blocks or depends on another row
+// inquiry has none either: its sender isn't an account
 ```
 
 ### Prisma conventions
 
-- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Gallery`, `GalleryImage`, `WebsiteAbility`, `AuditEvent`, `Notification`, `NotificationRecipient`, `Thread`, `ThreadMessage`) mapped to the snake_case tables above with `@@map`.
+- Use the current stable Prisma. Models are PascalCase singular (`Account`, `Website`, `AccountWebsite`, `Post`, `Element`, `Image`, `Gallery`, `GalleryImage`, `WebsiteAbility`, `AuditEvent`, `Notification`, `NotificationRecipient`, `Thread`, `ThreadMessage`, `Inquiry`) mapped to the snake_case tables above with `@@map`.
 - Every snake_case column has a camelCase field with `@map` (e.g. `apiKeyHash String @unique @map("api_key_hash")`), so nothing snake_case ever reaches an API response.
 - Every `id`: `String @id @default(uuid(7))`. UUIDv7 is time-ordered, so `orderBy: { id: 'asc' }` returns rows in the order they were created.
 - A post's body is its `element` rows, and a gallery's images its `gallery_image` rows, both read with `orderBy: { position: 'asc' }`. Elements are reordered on edit, so they carry an explicit `position` instead of relying on id order; an image's place in the post is its element's position.

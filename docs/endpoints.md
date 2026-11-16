@@ -32,7 +32,7 @@ The single agreement between the frontend and backend repos. The backend copy (`
 | 404  | Not found **or not yours** — the same answer either way, so ids can't be probed                                                                                                                                      |
 | 409  | Conflict — duplicate email, duplicate website URL, account already linked to that website, a gallery name the website already has, or an ability change its current state doesn't allow, or a reply to a full thread |
 | 413  | Request body over the 256 KB limit                                                                                                                                                                                   |
-| 429  | Too many requests: over a rate limit (login, the public API, upload signing, thread messages)                                                                                                                        |
+| 429  | Too many requests: over a rate limit (login, the public API, upload signing, thread messages, the contact form)                                                                                                      |
 | 500  | Server error — message is always the generic "Something went wrong, please try again."                                                                                                                               |
 
 ### Shapes
@@ -147,6 +147,7 @@ A post's `body` is its content as an ordered list of elements: each element is a
 | `GET /api/public/posts`                                      | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                                | `200 PublicPost[]`                                                                                                                           |
 | `GET /api/public/galleries/:slug`                            | client website (`Authorization: Bearer <apiKey>`) | —                                                                                                                                                                                | `200 PublicGallery`                                                                                                                          |
 | `GET /api/health`                                            | anyone                                            | —                                                                                                                                                                                | `200 { ok: true }`                                                                                                                           |
+| `POST /api/contact`                                          | anyone (no session)                               | `{ name, business, email, startingPoint, goal, contactCode? }`                                                                                                                   | `201 { received: true }`                                                                                                                     |
 
 Notes:
 
@@ -198,6 +199,9 @@ Notes:
 - **A reply brings a thread back:** when the other side writes in a thread you deleted, it returns to your mailbox, unread, and leaves your Recently Deleted, even after 30 days. A deleted thread never hides a new message.
 - Mail nobody deleted never expires. `AdminNotification` gives counts only, `recipientCount` (how many it was sent to) and `readCount` (how many opened it), never who: the admin doesn't see which site owner read an update.
 - A thread's `unread` is from the viewer's side: true while the other side has written a message since that side last marked it read (`POST .../threads/:id/read`). Writing a message, or starting the thread, never makes it unread for its author. Threads are listed newest activity (`lastMessageAt`) first, a page at a time; a thread that gets a message while paging moves to the top, so the list is fetched again from the start after a reply. A site owner sees only their own threads (another's is `404` "Thread not found."); the admin sees every site owner's, with `account` naming the site owner. A message's `from` says which side wrote it and `authorName` who.
+- **Contact form** (`POST /api/contact`): the landing page's inquiry form. It is public: no session is read, no role is checked, and it never answers `401` (the frontend's `apiFetch` turns a 401 into a sign-in redirect). Like every `POST`, it needs `X-CSRF-Protection: 1`. In production it is called cross-origin, from `https://3dwebdev.com` to `https://api.3dwebdev.com`, which `CORS_ORIGIN` already allows. The inquiry is saved first, then emailed (Inquiry Emails), so a failed email loses nothing.
+  - `startingPoint` is a key, not the sentence the form shows, so the form's copy can change without a contract change: `has_website` ("I have a website, but it isn't bringing in work"), `unfinished_website` ("I started a website, but didn't finish it") or `no_website` ("I don't have a website yet"). The frontend maps each key to its sentence.
+  - `contactCode` is a honeypot: the frontend renders it hidden from people (visually hidden, `tabIndex={-1}`, `autoComplete="off"`, `aria-hidden`), so only a bot fills it. It is named so browser autofill has no category for it. When it is not blank, the answer is the same `201 { received: true }`, and nothing is validated, saved or sent, so a bot can't tell it was caught.
 
 ### Error messages the frontend displays
 
@@ -235,7 +239,7 @@ Notes:
 | Create / edit: an image id that isn't on this post or gallery, or an image `src` outside this website's upload folder | 400  | Invalid image.                                                                                                    |
 | Public: missing / unknown key, or inactive website                                                                    | 401  | Invalid API key.                                                                                                  |
 | Request body over the 256 KB limit                                                                                    | 413  | Request body is too large.                                                                                        |
-| Over a rate limit: login, the public API, upload signing or thread messages                                           | 429  | Too many requests. Please try again later.                                                                        |
+| Over a rate limit: login, the public API, upload signing, thread messages or the contact form                         | 429  | Too many requests. Please try again later.                                                                        |
 
 ### Validation rules (identical on frontend and backend)
 
@@ -262,6 +266,7 @@ Notes:
 - Threads: `subject` required, max 120; `message` required, max 5000 (line breaks kept), with the paragraph link rules on `message`. The admin's new thread also needs `accountId` ("Choose an account."), an active site owner (`404` "Account not found." otherwise).
 - Deleted posts, Recently Deleted, updates and threads queries: `limit` and `cursor` as in the audit events query below.
 - Bulk delete and restore: `items` a list of 1 to 100 (on `items`: "Choose at least one item." when missing, empty or not a list, "Choose at most 100 items." over 100). Each item's `type` is `update` or `thread` for a delete and the admin's restore ("Type must be update or thread."), and `post`, `gallery`, `update` or `thread` for the site owner's restore ("Type must be post, gallery, update or thread."), on `items.N.type`; its `id` a UUID ("Invalid id.", on `items.N.id`).
+- Contact form: `name` required, max 100. `business` required, max 100 ("Business name is required.", "Business name must be 100 characters or fewer."). `email` as above. `startingPoint` one of `has_website`, `unfinished_website`, `no_website` ("Choose where you're starting from."). `goal` required, max 2000, line breaks kept, plain text with no formatting markup ("Tell me what you want your site to do." when missing or blank, "Your answer must be 2000 characters or fewer." over the limit). `contactCode` is the honeypot and is never validated.
 - Audit events query: `month` matches `YYYY-MM` with a month from 01 to 12 ("Enter a month as YYYY-MM."); `limit` is a whole number from 1 to 100 ("Limit must be a whole number from 1 to 100."); `cursor` is a UUID ("Invalid cursor."); `from` and `to` are ISO 8601 instants ("Enter a valid date and time."), sent together (on the missing one: "Send from and to together."), `to` after `from` (on `to`: "To must be after from.") and at most 31 days apart (on `to`: "The range can be at most 31 days."). A parameter sent twice fails its rule.
 
 ### Paragraph formatting
@@ -334,7 +339,7 @@ Applied in `app.js` / `api/index.js`, in this order:
 2. `cors({ origin: process.env.CORS_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Protection', 'Authorization'] })` — exact origin, never a wildcard.
 3. `express.json({ limit: '256kb' })` and `cookie-parser`. The limit is set explicitly (Express defaults to 100kb) so a post at its validation limits always fits.
 4. `requireCsrfHeader` — every `POST` / `PATCH` / `DELETE` without `X-CSRF-Protection: 1` returns `403`. `GET` passes through.
-5. Routers mounted at `/api/auth`, `/api/admin`, `/api/siteOwner`, `/api/public`, plus `GET /api/health`.
+5. Routers mounted at `/api/auth`, `/api/admin`, `/api/siteOwner`, `/api/public`, `/api/contact`, plus `GET /api/health`.
 6. A catch-all for unknown routes — `404` "Not found.", so they get the JSON envelope instead of Express's HTML page.
 7. The single error handler from `errors/` — every error leaves the server as the `{ error: { message, fields? } }` envelope. A malformed JSON body (rejected by `express.json()`) is `400` "Invalid request body."; a body over the limit is `413` "Request body is too large." Unexpected errors are logged and returned as a generic 500.
 
@@ -343,6 +348,7 @@ Per-router guards:
 - `/api/admin/*` → `requireAuth` then `requireRole('admin')`.
 - `/api/siteOwner/*` → `requireAuth` then `requireRole('site_owner')`.
 - `/api/public/*` → `invalidApiKeyRateLimit`, `requireApiKey`, then `publicApiRateLimit` (no cookie, no CSRF header — this is a server-to-server `GET`).
+- `/api/contact` → `contactRateLimit` only: no session, no role (the CSRF header is still checked by step 4).
 
 Rate limits (`lib/rateLimit.js`, express-rate-limit, in-memory per instance). Over a limit → `429` "Too many requests. Please try again later.", with the standard `RateLimit` and `RateLimit-Policy` headers. The numbers are a few times real use of each route, to be tuned from the audit log after launch:
 
@@ -353,6 +359,7 @@ Rate limits (`lib/rateLimit.js`, express-rate-limit, in-memory per instance). Ov
 | `GET /api/public/*`, refused key                                                               | 10 per minute | IP         |
 | `POST /api/siteOwner/uploads/sign`                                                             | 10 per 15 min | site owner |
 | `POST /api/siteOwner/threads` and `POST /api/siteOwner/threads/:id/messages`, counted together | 20 per 15 min | site owner |
+| `POST /api/contact`                                                                            | 5 per hour    | IP         |
 
 The public valid-key limit counts every public route together (posts and galleries) and is keyed by website, not IP, because client websites on Vercel share outgoing IP addresses. The refused-key limit counts only `requireApiKey`'s 401s, so a website's valid calls never use it up.
 
@@ -833,10 +840,13 @@ Returns `200 { data: { ok: true } }`. No auth. Render's health check (`render.ya
 | `notification.deleted` / `notification.restored`  | Bulk delete or restore (an update, either side's mailbox)                          | the site owner or the admin   | their email                                            | `notification` | —                                                    |
 | `thread.deleted` / `thread.restored`              | Bulk delete or restore (a thread, either side's mailbox)                           | the site owner or the admin   | their email                                            | `thread`       | —                                                    |
 | `ability.removed` / `ability.restored`            | Remove, Add (Abilities)                                                            | the site owner                | the site owner's email                                 | `ability`      | the state                                            |
+| `inquiry.received`                                | Contact form                                                                       | null                          | null                                                   | `inquiry`      | —                                                    |
 
 An ability event's `metadata` is the ability's whole state after the change: `{ websiteId, kind, status, turnedOn, placement, removed }`. The log alone can then rebuild every ability's history, one row per change, for analytics (issue #83, planned for later). The request note is the site owner's own text and is never in it.
 
 Audit rows are never rewritten, so older rows keep earlier names and shapes: a post's status change may be `post.archived` (now `post.drafted`) or `post.activated` (now `post.published`), an ability event may have no `placement`, and a gallery's request message may have written `ability.requested` with the status `requested`.
+
+An inquiry has no actor: the sender isn't an account, and the email they typed is unverified, so it is never `actorEmail`. Its `ip` is the sender's, and each inquiry shows on the Audit Events page, which is the only place inquiries are listed until a screen exists (the rows are read with SQL).
 
 A scheduled publish has no actor and no `ip`: the job wrote it, not a person. Its `metadata` carries `scheduled: true`, so the Audit Events page can show it as scheduled.
 
@@ -875,3 +885,27 @@ It is safe to re-run or overlap: an item already published no longer matches. A 
 - **After commit, fire-and-forget**, like Revalidation: the route responds first and doesn't await it, and it catches every error itself, so a failed email never affects the site owner's request. The note stays on the admin dashboard (`GET /api/admin/accounts`), so a lost email loses nothing.
 - **Production only:** with `RESEND_API_KEY` empty (locally, in tests and on staging) nothing is sent.
 - **Failure** (non-2xx, timeout, network error): log the website id and the status or error name, and report the same line to Sentry as a warning grouped per website (`lib/sentry.js` → `reportWarning`). **Never** log or report the key, an email address or the note.
+
+## Inquiry Emails
+
+`services/inquiryEmail.js` exports `sendInquiryEmails(inquiryId)`, called by the contact form (`POST /api/contact`) once the inquiry is saved. It sends two emails through Resend (`lib/resend.js`, the same call as Request Emails: the key, the URL and the 5 second timeout live there only).
+
+- **To the administrator:** to every active admin account, from `3D Web Dev <notifications@3dwebdev.com>`, **Reply-To the sender's email**, so the administrator answers with Reply. Plain text: the subject `New inquiry: <business>` (line breaks replaced by spaces), then the name, business, email and the starting point as its sentence, the goal under "What they want their site to do:", and "Reply to this email to answer <name>.". Never an id or a link.
+- **Confirmation to the sender:** from the same address, with **no Reply-To**: `3dwebdev.com` receives no mail, and the text says so. It is fixed text that repeats nothing the sender typed (not even their name), so the form can't be used to send someone else a message:
+
+  ```
+  Subject: Thanks for getting in touch
+
+  Thanks for reaching out to 3D Web Dev. Your message has been sent, and I'll reply to you soon.
+
+  This address doesn't receive replies.
+
+  Rich
+  3D Web Dev
+  https://3dwebdev.com
+  ```
+
+- **One confirmation per address a day:** when another inquiry from the same email was saved in the 24 hours before this one, no confirmation is sent (the administrator's email still is), so someone sending from many addresses can't fill a stranger's inbox.
+- **After commit, fire-and-forget,** like Request Emails: the route answers `201` first and doesn't await it, it catches every error itself, and each email fails on its own. The inquiry row is already saved, so a lost email loses nothing.
+- **Production only:** with `RESEND_API_KEY` empty (locally, in tests and on staging) nothing is sent.
+- **Failure** (non-2xx, timeout, network error, a database error): log the inquiry id and the status or error name, and report the same line to Sentry as a warning (`lib/sentry.js` → `reportWarning`). **Never** log or report the key, an email address, a name or the message.

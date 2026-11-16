@@ -1,17 +1,10 @@
-// Emails the admin through Resend when a site owner sends or edits a request message.
+// Emails the admin (lib/resend.js) when a site owner sends or edits a request message.
 // Fire-and-forget: it never rejects, and nothing is sent while RESEND_API_KEY is empty.
 const prisma = require('../prisma');
+const { failureReason, isEmailOn, sendEmail } = require('../lib/resend');
 const { reportWarning } = require('../lib/sentry');
 
-const RESEND_URL = 'https://api.resend.com/emails';
-const FROM = '3D Web Dev <notifications@3dwebdev.com>';
 const DASHBOARD_URL = 'https://3dwebdev.com/admin';
-const TIMEOUT_MS = 5000;
-
-// A subject is one line: a name with a line break in it can't add a header.
-function oneLine(text) {
-  return text.replace(/[\r\n]+/g, ' ');
-}
 
 function emailFailed(websiteId, reason) {
   const message = `Request email failed for website ${websiteId}: ${reason}`;
@@ -51,14 +44,13 @@ function composeEmail({ siteOwnerName, websiteName, label, note, isUpdate }) {
     DASHBOARD_URL,
     '',
   ].join('\n');
-  return { subject: oneLine(subject), text };
+  return { subject, text };
 }
 
 // `request` is { siteOwnerId, abilityId } for posts or { siteOwnerId, galleryId } for a gallery,
 // and `isUpdate` is true when an earlier message was edited.
 async function sendRequestEmail(websiteId, { siteOwnerId, abilityId, galleryId, isUpdate }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return;
+  if (!isEmailOn()) return;
   try {
     const [siteOwner, website, admins, request] = await Promise.all([
       prisma.account.findUnique({
@@ -81,24 +73,18 @@ async function sendRequestEmail(websiteId, { siteOwnerId, abilityId, galleryId, 
       note: request.note,
       isUpdate,
     });
-    const response = await fetch(RESEND_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: FROM,
-        to: admins.map((admin) => admin.email),
-        reply_to: siteOwner.email,
-        subject,
-        text,
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+    const response = await sendEmail({
+      to: admins.map((admin) => admin.email),
+      replyTo: siteOwner.email,
+      subject,
+      text,
     });
 
     if (!response.ok) emailFailed(websiteId, `HTTP ${response.status}`);
   } catch (err) {
-    // Timeout, network failure or a database error. Only the error's name and message are
-    // logged, never the key, an address or the note.
-    emailFailed(websiteId, `${err.name}: ${err.message}`);
+    // Timeout, network failure or a database error, never logged with the key, an address or
+    // the note.
+    emailFailed(websiteId, failureReason(err));
   }
 }
 

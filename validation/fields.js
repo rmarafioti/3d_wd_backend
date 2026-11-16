@@ -115,6 +115,19 @@ const itemId = z.preprocess(blankToUndefined, z.string().optional());
 // The website a post or gallery is created for, or an upload is signed for.
 const websiteId = z.preprocess(blankToUndefined, z.string({ error: 'Website is required.' }));
 
+// An email address: an account's, or a contact form sender's. Lowercased before validation, so it
+// is compared and stored lowercase.
+const email = z.preprocess(
+  (value) => {
+    const trimmed = blankToUndefined(value);
+    return typeof trimmed === 'string' ? trimmed.toLowerCase() : trimmed;
+  },
+  z.email({
+    error: (issue) =>
+      issue.input === undefined ? 'Email is required.' : 'Enter a valid email address.',
+  }),
+);
+
 // An uploaded image's fields, the same in a post body and a gallery.
 const imageShape = {
   src: httpsUrl('Image URL'),
@@ -201,6 +214,7 @@ module.exports = {
   formattedText,
   itemId,
   websiteId,
+  email,
   imageShape,
   pageShape,
   pageSchema,
