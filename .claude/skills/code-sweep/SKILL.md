@@ -250,10 +250,19 @@ backend	<YYYY-MM-DD>	<range>	<N>: <type> <item> <file:line>; <type> <item> <file
 **Findings** (Repo, Date, Reviewed, Item, Type, File:Line, Escaped, Outcome), one row per finding:
 
 ```
-backend	<YYYY-MM-DD>	<range>	<item>	<type>	<file:line>	<escaped>
+backend	<YYYY-MM-DD>	<range>	<item>	<type>	<file:line>	<escaped>	<outcome>
 ```
 
-`<range>` is `<sha>..<end>` (incremental), `full@<end>` (full) or `<branch>@<end>` (diff), with 7-character commits. `<N>` is the number of findings, `0` when none (with no Findings rows). `<item>` is the checklist item (1–9) and `<type>` the finding's type. `<escaped>` is `yes` for a finding a `full` or `<sha>` sweep makes under items 1–5 or 8 in merged code, since the branch's diff self-review read those lines and missed it. It is `no` under items 6, 7 and 9, whose drift between files no diff shows, and always `no` in `diff` mode. Outcome is left blank for Rich: `none`, `script`, `md rule` or `left`.
+`<range>` is `<sha>..<end>` (incremental), `full@<end>` (full) or `<branch>@<end>` (diff), with 7-character commits. `<N>` is the number of findings, `0` when none (with no Findings rows). `<item>` is the checklist item (1–9) and `<type>` the finding's type. `<escaped>` is `yes` for a finding a `full` or `<sha>` sweep makes under items 1–5 or 8 in merged code, since the branch's diff self-review read those lines and missed it. It is `no` under items 6, 7 and 9, whose drift between files no diff shows, and always `no` in `diff` mode. `<outcome>` is what the finding led to beyond its own fix, filled in by Claude once Rich has decided the finding (a `diff` review's rows wait for the merge, so theirs is always known); a blank Outcome is read as `none`:
+
+| Outcome   | Means                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| `script`  | a `check:rules` check was added, so a script catches it every time                                          |
+| `md rule` | a written rule was added (a line in `CLAUDE.md`, or a focused check here), where only judgment can catch it |
+| `none`    | fixed, or decided, with nothing added to stop it recurring                                                  |
+| `left`    | not fixed: Rich chose to keep it as is, with his reason                                                     |
+
+At the full sweep's Tuning (After), a finding that recurs after a `none` is the one to turn into a `script` or an `md rule`; a `left` one tells the sweep it was already seen.
 
 ## 9. After
 
@@ -263,7 +272,7 @@ backend	<YYYY-MM-DD>	<range>	<item>	<type>	<file:line>	<escaped>
   - **Body:** a link to the reminder issue (`#<n>`), the sweep's commit range, then each fix to make, grouped by type (bug, cleanup, doc), with its file:line, what's wrong and the fix Rich agreed. Each decision Rich made is written in as a rule to add (for example, to `CLAUDE.md` → Code Style). Findings Rich chose to leave are listed under "Left as is" with his reason, so the next sweep can tell they were seen. End with a "done when" checklist.
   - `gh` signs in as Rich, so the issue shows him as its author, and the Issue Workflow treats his issues as instructions: that is why it is only opened once he has read the draft.
   - In `diff` mode there is no fixes issue: the findings are fixed on the branch being reviewed, once Rich answers (Workflow Checklist).
-- Rich pastes the tracker rows into the Code Sweep Tracker sheet's Sweeps and Findings tabs and fills each finding's Outcome once it is decided. The end commit is where the next incremental sweep starts.
+- Rich pastes the tracker rows into the Code Sweep Tracker sheet's Sweeps and Findings tabs, with each finding's Outcome as Claude filled it once decided. The end commit is where the next incremental sweep starts.
 - Rich closes the reminder issue once the findings are settled.
 - **Tuning, at each `full` sweep:** count the sheet's rows by checklist item and type. Any finding that recurs (the same kind in 2 or more reviews), and every escaped one, gets a proposed change through a PR, so it stops recurring:
   1. A check in `scripts/checkRules.js` first, since a script can't be skipped and costs no tokens.
