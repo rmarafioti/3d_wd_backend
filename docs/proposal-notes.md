@@ -15,7 +15,7 @@ The Proposal is 3D Web Dev's business proposal, version 1, written 2026-10-25 fr
 
 ## How the Value Proposition reads
 
-Results first, the bottom line up front: a real client's numbers before Rich's story, then why not a drag-and-drop platform (with the five-year cost charts), why not build it with AI, pricing, and the leaving policy. A sales review found v1's general-to-specific order buried the result.
+A short mission with its proof, then who it's for, then the results: Mission → Who it's for → Results → Where I come from → How I work → The 3DWD Client Portal → Pricing → why not a drag-and-drop platform (with the five-year cost charts) → why not build it with AI → the leaving policy → What it costs to run. A first sales review found v1's general-to-specific order buried the result, so v2 led with it; Jett's review (Feedback on v2) put a concise mission and who it's for ahead of it, with each client's results right after.
 
 - **Platforms are named** (Wix, Squarespace, Square) in the Value Proposition, for reviewers. The landing page, the brochure and the Pitch say "drag-and-drop website platforms".
 - **Leaving policy:** the domain is always the client's (Rich never buys it). A client can keep running on Hosting; hand over to their next developer for a fixed $150 (code and hosting transferred, content saved into the site), fixed so it can't run up like an hourly rate; or take their content (posts and photos as files) for free. Hosting is paid yearly, with a full refund if cancelled within the first 3 months of a paid year; after that no refund, and the site stays up for the rest of the year.
@@ -43,6 +43,17 @@ Mark (the B2B sales friend) read v1 and now sees the business as intended: helpi
 4. **No more Client Portal technology.** Its value to the owner is keeping the site current without depending on Rich for every change; the v1 section already says this.
 
 Results and costs come before investing in marketing. Mark offered to pressure-test the go-to-market plan once the numbers are in. Proposal work runs alongside the deployment checklist and doesn't block it; it shapes the landing page, if and when it's built (Rich, 2026-10-26).
+
+## Feedback on v2 (Jett, 2026-11-16)
+
+Jett, the third sales reviewer, read v2; the changes were applied to the Value Proposition on 2026-11-17, each line approved by Rich:
+
+- **Mission:** concise and benefit-led, with the design given the same weight as the Portal.
+- **Who it's for:** moved up and merged into one description. The business types are named in the Value Proposition (dog groomers, tattoo studios and a fine artist today; service and appointment businesses as the niche to target next), because that is the strategy reviewers test. The Pitch stays broad, and its client stories are the examples.
+- **"Large businesses are outside my scope"** is cut from the doc: it stays an internal rule, not something said to a reader.
+- **Results:** each client as Challenge → Solution → Results, opening with "every one has come back for more work". The referral line (one client chose Rich after seeing another client's site) stays visible, since it proves the work is working.
+- **Cut from Results, kept for a deeper case study:** GB Grooming's earlier Squarespace site (5 to 20 hours for under $100), the PDF design hand-off, and the quote dropdowns by services, dog weights and breeds; the Pet Bodega's referral story and its designer's brand assets; Estudio Castelo's art fair.
+- **The Pitch:** the hero subline and a repeat-business line in Proof were changed to match; the landing page's copy for both is frontend issue #107.
 
 ## Client questionnaire
 

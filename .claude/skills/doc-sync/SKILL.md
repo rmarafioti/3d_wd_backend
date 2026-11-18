@@ -39,6 +39,7 @@ Check each in order. If one fails, stop and tell Rich which, and how to fix it. 
 - **Frontend:** `CLAUDE.md`, `AGENTS.md`, `README.md`, every file in `docs/` (`git -C ../3d_wd ls-tree --name-only origin/main docs/`).
 - **client-kit:** `README.md` and every file in `docs/cms/` (`git -C ../client-kit ls-tree --name-only origin/main docs/cms/`).
 - **Client repos:** not read. Their `docs/cms/` is `client-kit`'s, enforced by their CI, and their `docs/site.md` is site-specific.
+- **`frontend_scaffold`:** not read either. Its `docs/cms/` is synced like a client repo's, and its `CLAUDE.md` and `docs/site.md` are templates written from this session (`CLAUDE.md` → Documentation Sync).
 
 ## 5. Steps
 
