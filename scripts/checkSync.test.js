@@ -76,6 +76,20 @@ describe('findRestatedFacts', () => {
     );
   });
 
+  it("reports the crop ratio's 1% but not a frontend percentage", () => {
+    const markdown = [
+      'Text is sized from `html`, at 125%, and fades in at 40% of the screen.',
+      'Each mobileCrop must be within 1% of the first one.',
+    ].join('\n');
+
+    const found = findRestatedFacts(markdown);
+
+    assert.deepEqual(
+      found.map(({ line, label }) => ({ line, label })),
+      [{ line: 2, label: 'an upload or crop number' }],
+    );
+  });
+
   it('reports nothing for a doc that points to the contract', () => {
     const markdown = 'Limits are in `docs/api.md` → Validation rules.';
 

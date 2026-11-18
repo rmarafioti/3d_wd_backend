@@ -41,7 +41,7 @@ const RESTATED_FACTS = [
   { label: 'a field limit', pattern: /\bmax [0-9]/ },
   { label: 'an image count', pattern: /\b[0-9]+ to [0-9]+ images\b/ },
   { label: 'a file size', pattern: /\b[0-9]+ ?MB\b/ },
-  { label: 'an upload or crop number', pattern: /\b2500\b|\b0\.85\b|[0-9]%/ },
+  { label: 'an upload or crop number', pattern: /\b2500\b|\b0\.85\b|\bwithin 1%/ },
   { label: 'the 30-day retention', pattern: /\b30 days\b/ },
   { label: 'a backend timing', pattern: /\b(15 minutes|24 hours)\b/ },
   { label: 'a message or page count', pattern: /\b[0-9]+ (messages|events a page)\b/ },
