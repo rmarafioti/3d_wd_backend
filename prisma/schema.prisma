@@ -142,8 +142,9 @@ model Post {
   postDate    DateTime?  @map("post_date") @db.Date // optional date shown on the website
   header      String? // optional public headline
   subHeader   String?    @map("sub_header")
-  // Made from the header once, at create (lib/slug.js), never changed. The default only serves
-  // inserts by code older than the column, during the deploy that adds it: new code always sets it.
+  // Set once at create (lib/slug.js), never changed: the web address entered, else made from the
+  // header, else a code. The default only serves inserts by code older than the column, during the
+  // deploy that adds it: new code always sets it.
   slug        String     @default(dbgenerated("\"left\"(replace((gen_random_uuid())::text, '-'::text, ''::text), 8)"))
   status      PostStatus @default(published)
   publishAt   DateTime?  @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
@@ -365,8 +366,8 @@ model ThreadMessage {
 model AuditEvent {
   id         String   @id @default(uuid(7))
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
-  actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account, or a scheduled publish
-  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token, or a scheduled publish
+  actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account, a scheduled publish, or an inquiry
+  actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token, a scheduled publish, or an inquiry
   targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification', 'thread' or 'inquiry'
   targetId   String?  @map("target_id")
   metadata   Json?

@@ -3,6 +3,7 @@
 require('dotenv/config');
 const { initSentry, reportError, flushSentry, exitWithError } = require('../lib/sentry');
 const { missingEnvMessage } = require('../lib/config');
+const { describeError } = require('../lib/errorLog');
 
 // SECRET_ENCRYPTION_KEY decrypts each website's webhook secret for the revalidation call.
 const REQUIRED_ENV = ['DATABASE_URL', 'SECRET_ENCRYPTION_KEY'];
@@ -21,7 +22,7 @@ async function main() {
     const { posts, galleries } = await publishScheduled();
     console.log(`Scheduled publish: published ${posts} posts, ${galleries} galleries.`);
   } catch (err) {
-    console.error(err);
+    console.error(describeError(err));
     reportError(err);
     process.exitCode = 1;
   } finally {

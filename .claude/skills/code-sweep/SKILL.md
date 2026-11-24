@@ -100,21 +100,13 @@ For each file, against `CLAUDE.md` → Code Style:
 
 - File shape: header comment → requires (packages first, then local) → module setup → `UPPER_SNAKE` constants → private helpers → routes or main function → `module.exports`. Entry points require `dotenv/config` first.
 - Route shape: validate → existence / ownership check → Prisma call → `res.json` / `res.status(201).json` → `revalidate(...)` unawaited; a one-line `// METHOD /api/path — what it does.` comment above each route.
-- **`npm run check:rules`** (`scripts/checkRules.js`) proves the rules a search can: file headers of at most two lines, no em dash in a user-facing string, Node built-ins as `node:x`, the secret columns only in their files, no `$queryRawUnsafe`, and every `ServerError` message in `docs/endpoints.md`. Run it once for the whole repo; each line it prints is a finding. The checks below are the ones it can't make.
+- **`npm run check:rules`** (`scripts/checkRules.js`) proves the rules a search can: file headers of at most two lines, comment lines within the 100-character width (Prettier wraps code but never comments; the guard hook files are skipped, since a fix there is made in both repos together), no em dash in a user-facing string, Node built-ins as `node:x`, the secret columns only in their files, no `$queryRawUnsafe`, and every `ServerError` message in `docs/endpoints.md`. Run it once for the whole repo; each line it prints is a finding. The checks below are the ones it can't make.
 - Exports: a router file exports its `router`; a middleware or service its single function; `lib/` and `validation/` an object of named functions.
 - Functions: declarations for middleware, helpers and lib functions; arrows only inline.
 - Naming: `requireX`, `xSchema` / `xShape`, `assertX`, `toX` / `fromX`, `findX`, `input`, `tx`, booleans as questions, the docs' vocabulary.
 - Input only through `validate()` (no hand trimming, lowercasing or checks in a route; login's `safeParse` is the exception). Errors thrown as `ServerError`, never sent by hand.
 - Raw SQL only as a tagged `$queryRaw` with a comment saying why (`check:rules` refuses the unsafe forms): `grep -rn -E 'queryRaw|executeRaw' --include='*.js' --exclude-dir=node_modules .`
-- Comment lines within the 100-character width. Prettier wraps code but never comments, so `npm run format:check` doesn't catch them. Count characters, not bytes (`→` and `×` are one character):
-
-  ```
-  node -e "for (const f of process.argv.slice(1)) require('node:fs').readFileSync(f, 'utf8').split('\n').forEach((l, i) => { if (l.length > 100 && l.trim().startsWith('//')) console.log(f + ':' + (i + 1)); })" $(git ls-files '*.js' | grep -v migrations)
-  ```
-
-  A long comment in `.claude/hooks/` or `docs/process.md` is fixed in both repos together, since those files are identical to the frontend's.
-
-Finding: a file that breaks a written rule, or two files doing the same thing two ways where no rule decides it (a **decision**: the rule gets written first).
+  Finding: a file that breaks a written rule, or two files doing the same thing two ways where no rule decides it (a **decision**: the rule gets written first).
 
 ### Step 2: No dead code (Checklist 2)
 
@@ -202,7 +194,7 @@ npm run dev        # in the background; then:
 curl -s localhost:4000/api/health    # { "data": { "ok": true } }
 ```
 
-Stop the dev server afterwards. Also run `npm audit` (dev included) and list moderate or worse advisories; the monthly reminder covers them, so they are reported as **cleanup**, not blocking. Finding: each failure, as a **bug**.
+Stop the dev server afterwards. Moderate dev-only advisories from `npm audit` (dev included) aren't reported: the monthly dependency audit reminder covers them. Finding: each failure, as a **bug**, including a high or critical advisory in production dependencies.
 
 ## 6. Hard rules
 

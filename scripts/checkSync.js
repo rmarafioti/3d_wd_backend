@@ -26,8 +26,9 @@ const PAIRS = [
   { name: 'shared process', backend: 'docs/process.md', frontend: 'docs/process.md' },
 ];
 
-// The frontend's own docs, which point to the backend's facts rather than restating them. `skip` lists
-// the `## ` sections left out: Current progress is a record, and Features must match the backend's.
+// The frontend's own docs, which point to the backend's facts rather than restating them. `skip`
+// lists the `## ` sections left out: Current progress is a record, and Features must match the
+// backend's.
 const RESTATED_FACT_FILES = [
   { file: 'CLAUDE.md', skip: ['## Current progress', '## Features'] },
   { file: 'docs/flows.md' },
@@ -35,8 +36,9 @@ const RESTATED_FACT_FILES = [
   { file: 'docs/scaling.md' },
 ];
 
-// Backend facts a frontend doc should only point to. Each matches the unquoted part of a line, since
-// quoted text is UI copy the frontend shows. A pattern that catches a frontend fact is narrowed.
+// Backend facts a frontend doc should only point to. Each matches the unquoted part of a line,
+// since quoted text is UI copy the frontend shows. A pattern that catches a frontend fact is
+// narrowed.
 const RESTATED_FACTS = [
   { label: 'a field limit', pattern: /\bmax [0-9]/ },
   { label: 'an image count', pattern: /\b[0-9]+ to [0-9]+ images\b/ },

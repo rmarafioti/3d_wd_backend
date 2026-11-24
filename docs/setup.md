@@ -47,7 +47,7 @@ Table post {
   post_date  date     [null]       // optional date shown on the website so readers know how recent the post is
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
-  slug       string   [not null]   // its address on the client website, made from the header once (Post slugs)
+  slug       string   [not null]   // its address on the client website, set once: entered, else from the header, else a code (Post slugs)
   status     post_status [not null, default: 'published']  // draft or published; only published posts are public
   publish_at datetime [null]       // a draft's go-live date; the scheduled publish job publishes it and clears it
   published_at datetime [null]     // when it last went from draft to published; null while a draft
