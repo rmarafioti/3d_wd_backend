@@ -15,8 +15,8 @@ router.use(invalidApiKeyRateLimit, requireApiKey, publicApiRateLimit);
 const GALLERY_NOT_FOUND = 'Gallery not found.';
 
 // GET /api/public/posts — the website's published posts (never a deleted one), newest first, each
-// body in reading order; none while posts are turned off. postName is internal and is never
-// returned here; neither are image ids.
+// body in reading order; none while posts are turned off. A website finds a post by its slug in
+// this list. postName is internal and is never returned here; neither are image ids.
 router.get('/posts', async (req, res) => {
   const posts = await prisma.post.findMany({
     where: {
@@ -28,6 +28,7 @@ router.get('/posts', async (req, res) => {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     select: {
       id: true,
+      slug: true,
       header: true,
       subHeader: true,
       postDate: true,

@@ -312,6 +312,7 @@ describe('POST /api/siteOwner/posts', () => {
       'postName',
       'publishAt',
       'publishedAt',
+      'slug',
       'status',
       'subHeader',
       'updatedAt',
@@ -321,6 +322,7 @@ describe('POST /api/siteOwner/posts', () => {
     assert.equal(post.websiteId, website.id);
     assert.equal(post.websiteName, 'Stevie The Dog');
     assert.equal(post.postName, 'First Post');
+    assert.equal(post.slug, 'hello');
     assert.equal(post.header, 'Hello');
     assert.equal(post.subHeader, 'World');
     assert.equal(post.postDate, '2026-10-07');
@@ -335,6 +337,118 @@ describe('POST /api/siteOwner/posts', () => {
     ]);
     await assertNoSecrets(res.body);
     await revalidationCall();
+  });
+
+  it("makes the slug from the header, -2 on a clash with the website's posts, deleted included", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    await createPost(website, { slug: 'why-dbt-tests-matter', deletedAt: new Date() });
+    const { website: otherWebsite } = await createOwnerWithWebsite();
+    await createPost(otherWebsite, { slug: 'why-dbt-tests-matter-2' });
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { header: 'Why dbt Tests Matter!' }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.slug, 'why-dbt-tests-matter-2');
+  });
+
+  it('gives two posts created at once with one header different slugs', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const create = () =>
+      as(owner, 'post', '/api/siteOwner/posts').send(newPost(website, { header: 'Same header' }));
+
+    const responses = await Promise.all([create(), create()]);
+
+    assert.deepEqual(
+      responses.map((res) => res.status),
+      [201, 201],
+    );
+    assert.deepEqual(responses.map((res) => res.body.data.slug).sort(), [
+      'same-header',
+      'same-header-2',
+    ]);
+    await waitFor(() => assert.equal(fetchMock.mock.callCount(), 2));
+  });
+
+  it('gives a post with no header a generated 8-character code', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { header: '!!!' }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.match(res.body.data.slug, /^[a-z0-9]{8}$/);
+  });
+
+  it('saves an entered web address in slug form, in place of the header', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { header: 'A long header', slug: ' My First Post! ' }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.slug, 'my-first-post');
+  });
+
+  it('saves an entered web address on a post with no header', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { slug: 'photo-update' }),
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.header, null);
+    assert.equal(res.body.data.slug, 'photo-update');
+  });
+
+  it("returns 409 for an entered web address one of the website's posts has, deleted included", async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    await createPost(website, { slug: 'taken', deletedAt: new Date() });
+
+    const res = await as(owner, 'post', '/api/siteOwner/posts').send(
+      newPost(website, { slug: 'Taken' }),
+    );
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.body, {
+      error: { message: 'A post with this web address already exists.' },
+    });
+    assert.equal(await prisma.post.count(), 1);
+  });
+
+  it('gives one of two posts created at once with one entered web address a 409', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const create = () =>
+      as(owner, 'post', '/api/siteOwner/posts').send(newPost(website, { slug: 'same' }));
+
+    const responses = await Promise.all([create(), create()]);
+
+    assert.deepEqual(responses.map((res) => res.status).sort(), [201, 409]);
+    assert.equal(await prisma.post.count(), 1);
+    await revalidationCall();
+  });
+
+  it('returns 400 on slug for a web address over 60 characters or with no letter or digit', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const send = (slug) =>
+      as(owner, 'post', '/api/siteOwner/posts').send(newPost(website, { slug }));
+
+    const tooLong = await send('a'.repeat(61));
+    const symbols = await send('!!!');
+
+    assert.deepEqual(
+      [tooLong.status, tooLong.body.error.fields],
+      [400, { slug: 'Web address must be 60 characters or fewer.' }],
+    );
+    assert.deepEqual(
+      [symbols.status, symbols.body.error.fields],
+      [400, { slug: 'Web address needs at least one letter or digit.' }],
+    );
+    assert.equal(await prisma.post.count(), 0);
   });
 
   it('stores and returns blank optional fields as null', async () => {
@@ -493,6 +607,7 @@ describe('GET /api/siteOwner/posts/:id', () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Stevie The Dog' });
     const post = await createPost(website, {
       header: 'Hello',
+      slug: 'hello',
       body: [paragraph('Intro'), imageElement(image(website)), paragraph('Outro')],
     });
     const { postId, ...stored } = post.images[0];
@@ -506,6 +621,7 @@ describe('GET /api/siteOwner/posts/:id', () => {
         websiteId: website.id,
         websiteName: 'Stevie The Dog',
         postName: 'Post',
+        slug: 'hello',
         header: 'Hello',
         subHeader: null,
         postDate: null,
@@ -562,6 +678,20 @@ describe('PATCH /api/siteOwner/posts/:id', () => {
     await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(editPost());
 
     assert.deepEqual(await auditEvents(), [postEvent(owner, 'post.updated', post.id, website.id)]);
+  });
+
+  it('keeps the slug when the header changes, and ignores a slug in the body', async () => {
+    const { owner, website } = await createOwnerWithWebsite();
+    const post = await createPost(website, { header: 'Old header', slug: 'old-header' });
+
+    const res = await as(owner, 'patch', `/api/siteOwner/posts/${post.id}`).send(
+      editPost({ header: 'New header', slug: 'new-header' }),
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.slug, 'old-header');
+    const stored = await prisma.post.findUnique({ where: { id: post.id } });
+    assert.equal(stored.slug, 'old-header');
   });
 
   it('updates kept images, inserts new ones and deletes the missing ones', async () => {
@@ -1106,11 +1236,12 @@ describe('GET /api/siteOwner/posts/deleted', () => {
 });
 
 describe('POST /api/siteOwner/posts/:id/restore', () => {
-  it('clears deletedAt and returns the post with its body, images and status', async () => {
+  it('clears deletedAt and returns the post with its slug, body, images and status', async () => {
     const { owner, website } = await createOwnerWithWebsite({ websiteName: 'Alpha' });
     const photo = image(website);
     const post = await createDeletedPost(website, 5, {
       status: 'draft',
+      slug: 'hello',
       body: [paragraph('Hello'), imageElement(photo)],
     });
 
@@ -1118,6 +1249,7 @@ describe('POST /api/siteOwner/posts/:id/restore', () => {
 
     assert.equal(res.status, 200);
     assert.equal(res.body.data.id, post.id);
+    assert.equal(res.body.data.slug, 'hello');
     assert.equal(res.body.data.status, 'draft');
     assert.equal(res.body.data.websiteName, 'Alpha');
     assert.deepEqual(res.body.data.body, [

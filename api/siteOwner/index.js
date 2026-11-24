@@ -24,6 +24,8 @@ const { uploadSignRateLimit } = require('../../lib/rateLimit');
 const { toPage } = require('../../lib/paging');
 const { restorableUntil } = require('../../lib/retention');
 const { restorePost } = require('../../lib/restore');
+const { retryOnClash } = require('../../lib/retry');
+const { findFreePostSlug, assertSlugAvailable } = require('../../lib/slug');
 const { toStatusData } = require('../../lib/status');
 const revalidate = require('../../services/revalidate');
 const galleries = require('./galleries');
@@ -48,6 +50,7 @@ const POST_SELECT = {
   id: true,
   websiteId: true,
   postName: true,
+  slug: true,
   header: true,
   subHeader: true,
   postDate: true,
@@ -81,6 +84,7 @@ function toPost(post) {
     websiteId: post.websiteId,
     websiteName: post.website.websiteName,
     postName: post.postName,
+    slug: post.slug,
     header: post.header,
     subHeader: post.subHeader,
     postDate: toDateOnly(post.postDate),
@@ -195,28 +199,34 @@ router.post('/posts', async (req, res) => {
 
   assertImagesInFolder(bodyImages(input.body), website.mediaFolder);
 
-  // Post, then body: if any insert fails the whole create rolls back.
-  const post = await prisma.$transaction(async (tx) => {
-    const created = await tx.post.create({
-      data: {
+  // Post, then body: if any insert fails the whole create rolls back. A create that clashes with
+  // a concurrent one on the same slug is retried: then an entered web address is the 409, and one
+  // made from the header takes the next free slug.
+  const post = await retryOnClash(() =>
+    prisma.$transaction(async (tx) => {
+      if (input.slug) await assertSlugAvailable(tx, website.id, input.slug);
+      const created = await tx.post.create({
+        data: {
+          websiteId: website.id,
+          postName: input.postName,
+          slug: input.slug ?? (await findFreePostSlug(tx, website.id, input.header)),
+          header: input.header,
+          subHeader: input.subHeader,
+          postDate: fromDateOnly(input.postDate),
+          status: input.status,
+          publishAt: input.publishAt ?? null,
+          publishedAt: input.status === 'published' ? new Date() : null,
+        },
+        select: { id: true },
+      });
+      await writeBody(tx, created.id, input.body);
+      await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_CREATED, 'post', {
+        id: created.id,
         websiteId: website.id,
-        postName: input.postName,
-        header: input.header,
-        subHeader: input.subHeader,
-        postDate: fromDateOnly(input.postDate),
-        status: input.status,
-        publishAt: input.publishAt ?? null,
-        publishedAt: input.status === 'published' ? new Date() : null,
-      },
-      select: { id: true },
-    });
-    await writeBody(tx, created.id, input.body);
-    await recordContentEvent(tx, req, AUDIT_ACTIONS.POST_CREATED, 'post', {
-      id: created.id,
-      websiteId: website.id,
-    });
-    return tx.post.findUnique({ where: { id: created.id }, select: POST_SELECT });
-  });
+      });
+      return tx.post.findUnique({ where: { id: created.id }, select: POST_SELECT });
+    }),
+  );
 
   res.status(201).json({ data: toPost(post) });
   // After commit and after responding; never awaited, never throws (services/revalidate.js).

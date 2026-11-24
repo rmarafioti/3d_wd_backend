@@ -336,7 +336,7 @@ root
 │   ├── deleted.js            *Recently Deleted: one list across types, newest deletion first, paged; the bulk runner
 │   ├── dates.js              *postDate "YYYY-MM-DD" ↔ Date helpers
 │   ├── galleryImages.js      *gallery image crop columns ↔ Crop, cropped versions for the public API
-│   ├── galleryNames.js       *a gallery's unique name check and the Serializable clash retry
+│   ├── galleryNames.js       *a gallery's unique name check, kept under concurrent writes by Serializable transactions
 │   ├── jwt.js                *sign/verify session JWT, cookie options
 │   ├── mediaFolder.js        *website media_folder name from its URL, -2/-3 on a clash
 │   ├── normalizeUrl.js       *https, lowercase host, no trailing slash
@@ -348,9 +348,10 @@ root
 │   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages, the contact form
 │   ├── resend.js             *the one Resend call (the only reader of RESEND_API_KEY)
 │   ├── restore.js            *restoring a deleted post or gallery: its check, name rule and audit event
+│   ├── retry.js              *retrying a write that clashed with a concurrent one: a gallery name, a post slug
 │   ├── retention.js          *how long deleted content stays recoverable (30 days): the cutoff and restorableUntil
 │   ├── sentry.js             *Sentry error reporting, production only: init, the event scrub, report, flush, a cron job's failure exit
-│   ├── slug.js               *gallery slug: 8 random lowercase letters and digits, unique within the website
+│   ├── slug.js               *slugs: a gallery's 8 random letters and digits; a post's from its header, -2 on a clash
 │   ├── status.js             *a post's or gallery's draft / published change: publishedAt and the go-live date
 │   └── threads.js            *thread shapes, unread and deleted state per side, starting one, a reply under the 100-message cap, delete and restore
 ├── errors/                   *custom error classes + the single error handler (error envelope)
@@ -405,7 +406,7 @@ root
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-18)
+## Current progress (as of 2026-11-24)
 
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 17, issue #71 (placement apart from status) and #122 (the contact form) are live in both repos, the latest release `release-2026-11-16`.
@@ -426,18 +427,20 @@ root
   - **Issue #109 done** (frontend issue #99): the frontend's docs point to the contract instead of restating backend facts, and `npm run check:sync` fails on a restated one; every review logs one tracker row per finding, so a recurring one is caught and turned into a script.
   - **Issue #122 done** (frontend issue #101): the landing page's contact form posts to a public `POST /api/contact`, which saves an `inquiry` and emails the admin and a fixed confirmation to the sender. Reviews gain focused checks and a risky-file walkthrough last before commit, and the tracker rows come after the merge. Additive; one migration (`add_inquiry`). Released as `release-2026-11-16`; a test inquiry through `https://3dwebdev.com` delivered both emails.
   - **Issue #125 done** (`frontend_scaffold` #21 follows): `rmarafioti/frontend_scaffold` is the template every new client website starts from (`docs/deploy.md` → Onboarding, path A step 0). Its `CLAUDE.md` and `docs/site.md` template are written from this session (Documentation Sync), `client-kit` syncs `docs/cms/` into it, and #21 brings its code to match.
+  - **Issue #128 done** (frontend issue #110): readable post slugs in `Post` and `PublicPost`, with an optional Web address on create. Additive; one migration (`add_post_slug`, which backfills every post's slug from its header). Not released yet (Next 1).
   - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot.
   - **The master doc** is now the Value Proposition (v2: results first, the leaving policy, vendor prices; v1 deleted), the Pitch (client-facing copy for the landing page and brochure, with a copy editor), How It's Built and a Glossary; Build vs Buy and the Client Portal tabs are gone.
 - **Next:**
-  1. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
-  2. Good Boys moves to `client-kit` by `docs/deploy.md` → Onboarding a client website, path B, when its CMS wiring starts. Estudio's first `3dwd-sync` PR after 2026-11-11 should merge itself on green CI: check it then.
-  3. The client scaffold (#125): merge its three PRs in order. First Rich installs the `3dwd-sync` App on `frontend_scaffold` (path B step 1) and merges the `client-kit` PR, runs Sync and merges the scaffold's sync PR by hand; then the scaffold's docs PR; then this repo's. Then `frontend_scaffold` #21 in a session opened there, then its ruleset and `autoMerge: true` (path B steps 5 and 6). No client website is made from the template (path A step 0) until #21 is merged: until then it has the docs but not the code they describe. Estudio Castelo's contact form fix (`estudio_castelo` #8) is quick and can go any time. The CMS contact form ability (#126, `later`) will replace EmailJS on client websites.
-  4. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. The landing page is built with five Pitch sections and the contact form (#101, #122); the rest wait for the copy editor. Then the brochure, the lead tracker sheet (the founding-client offer, `docs/proposal-notes.md`), prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
-  5. The reminders: the code sweep and Documentation Sync open by activity (#110), and the code sweep doesn't count merges from `docs/` branches. The next backend sweep starts at `/code-sweep 9b0e55a`, with the tracker's new per-finding rows (Code Review → Running a review). The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
-  6. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website, path A.
-  7. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
-  8. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
-  9. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
+  1. Release #128: before `npm run release`, Rich runs the read-only slug preview `SELECT` (in #128's PR) in production's API Render Shell and checks no two posts on one website get the same slug, since `add_post_slug`'s unique index would fail the deploy. Then `client-kit` `docs/cms/posts.md` tells client websites to link posts by `slug`, on its own branch, and Sync. Rich's personal site uses slugs before its blog is announced.
+  2. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
+  3. Good Boys moves to `client-kit` by `docs/deploy.md` → Onboarding a client website, path B, when its CMS wiring starts. Estudio's first `3dwd-sync` PR after 2026-11-11 should merge itself on green CI: check it then.
+  4. The client scaffold (#125): merge its three PRs in order. First Rich installs the `3dwd-sync` App on `frontend_scaffold` (path B step 1) and merges the `client-kit` PR, runs Sync and merges the scaffold's sync PR by hand; then the scaffold's docs PR; then this repo's. Then `frontend_scaffold` #21 in a session opened there, then its ruleset and `autoMerge: true` (path B steps 5 and 6). No client website is made from the template (path A step 0) until #21 is merged: until then it has the docs but not the code they describe. Estudio Castelo's contact form fix (`estudio_castelo` #8) is quick and can go any time. The CMS contact form ability (#126, `later`) will replace EmailJS on client websites.
+  5. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. The landing page is built with five Pitch sections and the contact form (#101, #122); the rest wait for the copy editor. Then the brochure, the lead tracker sheet (the founding-client offer, `docs/proposal-notes.md`), prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
+  6. The reminders: the code sweep and Documentation Sync open by activity (#110), and the code sweep doesn't count merges from `docs/` branches. The next backend sweep starts at `/code-sweep 9b0e55a`, with the tracker's new per-finding rows (Code Review → Running a review). The dependency audit on 2026-12-01 (it will list the four moderate dev advisories), the restore drill on 2027-01-01.
+  7. Launch step 31 (Rich, `docs/launch-record.md`): onboard the two client websites still waiting, one at a time, by `docs/deploy.md` → Onboarding a client website, path A.
+  8. #98 is released and `/doc-sync` ran on 2026-11-06 (Rich): send a first site-wide update in production and check it reaches each site owner's Inbox.
+  9. #100 is released (`release-2026-11-09`), so a backend PR can now remove `GET /api/siteOwner/posts/deleted`, `DeletedPostSummary` and `POST /api/siteOwner/posts/:id/restore`, which the new frontend no longer calls.
+  10. Launch step 30: reassess staging once onboarding runs smoothly, by writing its replacement flow first (issue #77 item 8).
 - **Production database baseline** (2026-10-28):
   - the admin
   - Stevie The Dog's site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
@@ -447,15 +450,15 @@ root
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-15, after #122's test):
+- **Local database baseline** (test rows cleared on 2026-11-24, after #128's test):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
-  - "First Post!", with one paragraph element
-  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability, no galleries, updates or threads (#100's test update and thread deleted on 2026-11-09)
-  - no inquiries (#122's four test inquiries deleted on 2026-11-15)
+  - "First Post!", with one paragraph element (slug `welcome-home`, from its header, by #128's backfill)
+  - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability, no galleries, updates or threads (a leftover galleries ability, gallery and two automatic updates from 2026-11-10 deleted on 2026-11-24)
+  - no inquiries (the last test inquiry deleted on 2026-11-24)
   - the `audit_event` rows from local sign-ins and changes, kept: audit rows are not cleared after a test, locally or in production
 
-  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos and the Feature 13 and #93 test galleries' images. Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Two client websites are waiting to onboard.
+  Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos the Feature 13 and #93 test galleries' images, and the 2026-11-10 dev-check gallery's image (its rows deleted on 2026-11-24). Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Two client websites are waiting to onboard.
 
 - **Pending notes:**
   - **Backup `pg_dump` version:** solved by `Dockerfile.backup` (Node 24 on Debian trixie, `postgresql-client-17`). Locally, the Homebrew `postgresql@17` client is used for backups (README); the Homebrew Postgres 15 server on the Mac is separate and is left as it is.
@@ -466,11 +469,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-24** `feat/post-slugs` (issue #128; frontend issue #110): every post gets a `slug`, set once at create and never changed, in `Post` and `PublicPost`, so a client website can give a post a readable URL; the site owner may enter one as the create form's Web address, else it is made from the header (`-2` on a clash), else an 8-character code. The `add_post_slug` migration backfills every post from its header; the clash retry moves to `lib/retry.js`, and `package.json` → `overrides` pins `effect` 3.22.5 past Prisma's high advisory. 822 tests.
 - **2026-11-18** `docs/client-scaffold` (issue #125; `frontend_scaffold` #21): `frontend_scaffold` becomes the template every new client website starts from: its `CLAUDE.md` and `docs/site.md` template are written from this session, `client-kit` syncs `docs/cms/` into it, and onboarding path A starts by creating the repo from it. Also #122's release, Jett's sales review in `docs/proposal-notes.md`, and `npm run check:sync`'s percentage rule narrowed to the crop ratio's "within 1%", so a frontend percentage (a font size, a scroll point) is no longer flagged. 804 tests.
 - **2026-11-15** `feat/contact-form` (issue #122; frontend issue #101): a public `POST /api/contact` saves the landing page form's inquiry with an `inquiry.received` audit event, then emails the admin (Reply-To the sender) and the sender a fixed confirmation that can't be replied to, at most one per address a day, through the shared `lib/resend.js`; a honeypot field and 5 sends per hour per IP guard it. Reviews gain focused checks, the risky-file walkthrough last before commit and the tracker rows after the merge; the master doc's tabs and the founding-client offer are in the docs. One migration (`add_inquiry`). 803 tests.
 - **2026-11-14** `docs/doc-facts-once` (issue #109; frontend issue #99): `npm run check:sync` also lists backend facts the frontend's own docs restate (limits, timings, retention, cookie attributes), so they become pointers to `docs/api.md`; the contract gains the text field, post body and scheduled-publish audit facts the frontend relied on; every review also prints a row per finding for the Code Sweep Tracker's new Findings tab, and a recurring finding becomes a `check:rules` script before a written rule. The Proposal is renamed the Value Proposition in the docs, with its v2 decisions, the Pitch and the survey's time and return questions in `docs/proposal-notes.md`. 783 tests.
 - **2026-11-11** `chore/sweep-skips-docs` (follow-up to issue #110): the code sweep reminder no longer counts merges from `docs/` branches, read from each PR's branch in the same pull-request list, and logs how many it left out; the Documentation Sync still counts every merge. 778 tests.
-- **2026-11-11** `fix/reminder-pr-count` (follow-up to issue #110): the reminders counted 0 merged PRs because the workflow token had no pull-request access and search drops what it can't read; `reminders.yml` gains `pull-requests: read` and `due.sh` counts with the REST pull-request list, which fails the run instead. 778 tests.
 
 ## Features
 
@@ -493,6 +496,7 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 15. **Scheduled publish** (`feat/scheduled-publish`, issue #96): a draft post or gallery gets a go-live date, and a cron job every 15 minutes publishes it when it passes; `publishedAt` records when an item went live.
 16. **Notification inbox** (`feat/notification-inbox`, issue #98): the admin's site-wide updates and automatic ones when an ability or gallery goes live (one way), and message threads either side starts and both reply to, with unread counts.
 17. **Delete mail and one Recently Deleted** (`feat/delete-mail`, issue #100): either side deletes the updates and threads it ticks from its own mailbox (a reply brings a thread back), and one Recently Deleted per role for posts, galleries and mail, restored in bulk for 30 days.
+18. **Post slugs** (`feat/post-slugs`, issue #128): every post gets a readable `slug` made from its header once at create and never changed, in `Post` and `PublicPost`, so a client website can give a post a readable URL.
 
 ## Planned Later
 
