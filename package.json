@@ -54,5 +54,8 @@
   "allowScripts": {
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true
+  },
+  "overrides": {
+    "effect": "3.22.5"
   }
 }

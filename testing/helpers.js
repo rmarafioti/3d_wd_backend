@@ -1,6 +1,8 @@
 // Shared test helpers: the per-test reset, row builders, the session cookie and CSRF header, the
-// no-secrets assertion, the audit log reader and builder, and the Google and fetch mocks.
+// no-secrets assertion, the audit log reader and builder, a migration's backfill, and the mocks.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../prisma');
 const { SESSION_COOKIE, signSession } = require('../lib/jwt');
@@ -40,6 +42,15 @@ async function resetState() {
 // Run in each file's after hook, so the Prisma connection pool doesn't keep the process alive.
 async function disconnect() {
   await prisma.$disconnect();
+}
+
+// Runs the backfill of the migration named `name` (its folder without the timestamp), the SQL
+// between its "-- backfill:start" and "-- backfill:end" comments, on the test's own rows.
+async function runMigrationBackfill(name) {
+  const migrations = path.join(__dirname, '../prisma/migrations');
+  const folder = fs.readdirSync(migrations).find((entry) => entry.endsWith(`_${name}`));
+  const sql = fs.readFileSync(path.join(migrations, folder, 'migration.sql'), 'utf8');
+  await prisma.$executeRawUnsafe(sql.split('-- backfill:start')[1].split('-- backfill:end')[0]);
 }
 
 function createAdmin(overrides = {}) {
@@ -276,6 +287,7 @@ module.exports = {
   CSRF,
   resetState,
   disconnect,
+  runMigrationBackfill,
   createAdmin,
   createSiteOwner,
   createWebsite,

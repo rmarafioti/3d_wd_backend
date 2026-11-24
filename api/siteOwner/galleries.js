@@ -15,8 +15,9 @@ const {
   requestNoteSchema,
 } = require('../../validation/fields');
 const { ownedWebsiteWhere, assertOwnImages, assertImagesInFolder } = require('../../lib/ownership');
-const { assertNameAvailable, retryOnClash } = require('../../lib/galleryNames');
-const { findFreeSlug } = require('../../lib/slug');
+const { assertNameAvailable } = require('../../lib/galleryNames');
+const { retryOnClash } = require('../../lib/retry');
+const { findFreeGallerySlug } = require('../../lib/slug');
 const { CROP_SELECT, toCropColumns, toCrop } = require('../../lib/galleryImages');
 const { AUDIT_ACTIONS, recordContentEvent } = require('../../lib/audit');
 const { toStatusData } = require('../../lib/status');
@@ -127,7 +128,7 @@ function createGallery(req, website, input) {
         data: {
           websiteId: website.id,
           galleryName: input.galleryName,
-          slug: await findFreeSlug(tx, website.id),
+          slug: await findFreeGallerySlug(tx, website.id),
           title: input.title,
           copy: input.copy,
           status: input.status,

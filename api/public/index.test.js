@@ -35,10 +35,11 @@ function fetchPosts(apiKey) {
 }
 
 describe('GET /api/public/posts', () => {
-  it("returns the website's published, undeleted posts, newest first, as PublicPost without postName", async () => {
+  it("returns the website's published, undeleted posts, newest first, as PublicPost with its slug, without postName", async () => {
     const { website, apiKey } = await createWebsite();
     const older = await createPost(website, {
       header: 'Older',
+      slug: 'older',
       postDate: new Date('2026-10-01T00:00:00.000Z'),
       body: [
         imageElement(image(website)),
@@ -47,7 +48,7 @@ describe('GET /api/public/posts', () => {
         paragraph('Outro'),
       ],
     });
-    const newer = await createPost(website, { header: 'Newer' });
+    const newer = await createPost(website, { header: 'Newer', slug: 'newer' });
     await createPost(website, { header: 'Draft', status: 'draft' });
     await createPost(website, { header: 'Deleted', deletedAt: new Date() });
     const { website: otherWebsite } = await createWebsite();
@@ -60,6 +61,7 @@ describe('GET /api/public/posts', () => {
       data: [
         {
           id: newer.id,
+          slug: 'newer',
           header: 'Newer',
           subHeader: null,
           postDate: null,
@@ -69,6 +71,7 @@ describe('GET /api/public/posts', () => {
         },
         {
           id: older.id,
+          slug: 'older',
           header: 'Older',
           subHeader: null,
           postDate: '2026-10-01',

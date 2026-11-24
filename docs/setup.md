@@ -47,6 +47,7 @@ Table post {
   post_date  date     [null]       // optional date shown on the website so readers know how recent the post is
   header     string   [null]       // optional public headline
   sub_header string   [null]       // optional
+  slug       string   [not null]   // its address on the client website, made from the header once (Post slugs)
   status     post_status [not null, default: 'published']  // draft or published; only published posts are public
   publish_at datetime [null]       // a draft's go-live date; the scheduled publish job publishes it and clears it
   published_at datetime [null]     // when it last went from draft to published; null while a draft
@@ -55,6 +56,7 @@ Table post {
   updated_at datetime [not null]
 
   indexes {
+    (website_id, slug) [unique]    // a slug is unique within its website, deleted posts included
     website_id
     (website_id, deleted_at)       // Recently Deleted Posts
     (status, publish_at)           // Scheduled publish: drafts whose go-live date has passed
@@ -337,6 +339,7 @@ Ref: thread_message.author_id > account.id
 - `prisma migrate dev` does **not** regenerate the client in v7. Run `npx prisma generate` after every schema change. The `postinstall` script covers fresh installs.
 - Local Postgres (docker-compose) runs on host port **5433**, because a native Postgres already uses 5432.
 - npm 11 (Node 24) runs a dependency's install scripts only once they are approved. Prisma's two (`prisma`, `@prisma/engines`) are approved in `package.json` → `allowScripts`, pinned to their version, so a Prisma upgrade shows the warning again until `npm install-scripts approve prisma @prisma/engines` is run on that branch.
+- `package.json` → `overrides` pins `effect` at `3.22.5`: `@prisma/config` 7.10.1 pins `effect` `3.20.0`, which has a high advisory (GHSA-7589-6fvf-x4pw), and npm's own fix would downgrade Prisma to 6. On a Prisma upgrade, check `npm ls effect`: once Prisma's own pin is `3.22.1` or later, remove the override.
 
 ### Test database
 
@@ -406,12 +409,36 @@ Cloudinary builds the cropped version the first time the URL is requested and ca
 
 ### Gallery slugs
 
-A gallery's `slug` is how a client website asks for it (`GET /api/public/galleries/:slug`), shown to the site owner as the Gallery Code. It is generated once, when the gallery is created, and never changed, so renaming a gallery never breaks the website showing it (`lib/slug.js`):
+A gallery's `slug` is how a client website asks for it (`GET /api/public/galleries/:slug`), shown to the site owner as the Gallery Code. It is generated once, when the gallery is created, and never changed, so renaming a gallery never breaks the website showing it (`lib/slug.js` → `findFreeGallerySlug`):
 
 1. Draw 8 characters, each uniformly from `a`–`z` and `0`–`9` (`crypto.randomInt`), such as `k3x9p2qa`.
 2. If another gallery on the same website already has it, deleted ones included, draw again. Other websites' galleries don't count. A clash is about 1 in 2.8 trillion; the `(website_id, slug)` unique index is the backstop.
 
 It is never made from `galleryName`. Galleries created before this rule keep the name-based slugs they were given (`our-interior`, `our-interior-2`), so anything already wired to them keeps working.
+
+### Post slugs
+
+A post's `slug` is its readable address on the client website (`/blog/why-dbt-tests-matter`); the website finds the post by it in `GET /api/public/posts`. It is set once, when the post is created, and never changed, not even when the header is edited, so a shared link keeps working (`lib/slug.js`).
+
+The site owner may enter one on the create form (its Web address, which shows the header's address as its placeholder while blank and is then sent blank). It is put through steps 1 and 2 below (`toPostSlug`, from `validation/post.js`), at most 60 characters as typed, and must keep a letter or digit. If any post on the website has it, deleted ones included, the create is refused (`409`), never given `-2`, since the site owner chose it (`assertSlugAvailable`). Otherwise it is made from the header (`toPostSlug`, `findFreePostSlug`):
+
+1. Take the `header`, decompose it (Unicode NFD) and remove the accent marks (U+0300–U+036F), then lowercase it.
+2. Turn every run of characters that aren't `a`–`z` or `0`–`9` into one hyphen, and trim hyphens from both ends.
+3. Over 60 characters, cut back to the last hyphen within the first 61, so no word is cut in half; a single word over 60 is cut at 60.
+4. If nothing is left (no header, or one with no letter or digit), draw 8 random characters as a gallery's code is drawn (Gallery slugs).
+5. If another post on the same website already has the slug, deleted ones included, add `-2`, then `-3`, and so on. Other websites' posts don't count. The `(website_id, slug)` unique index stops two creates at the same moment taking one slug: the loser is retried (`lib/retry.js`) and takes the next.
+
+| Header                                  | `slug`                                          |
+| --------------------------------------- | ----------------------------------------------- |
+| `Why dbt Tests Matter!`                 | `why-dbt-tests-matter`                          |
+| `Café Ñandú`                            | `cafe-nandu`                                    |
+| `Why dbt Tests Matter!` (a second post) | `why-dbt-tests-matter-2`                        |
+| none, or `!!!`                          | 8 random letters and digits, such as `k3x9p2qa` |
+| any, with `My First Post` entered       | `my-first-post`                                 |
+
+A letter that doesn't decompose into a base letter and a mark (`ß`, `ø`, `æ`, `ł`) becomes a hyphen (`Straße` → `stra-e`).
+
+The `add_post_slug` migration gave every post that existed a slug by the same rule, written in SQL (its test checks the two agree): on each website, the earliest post took the slug and later ones `-2`, `-3`. The column's database default, 8 random hex characters, gave posts with no letter or digit in their header their code, and covers a post created by the previous code while that deploy rolled out. The app always sets the slug itself.
 
 ### Upload cleanup
 

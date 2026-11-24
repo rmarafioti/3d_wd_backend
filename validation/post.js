@@ -13,6 +13,7 @@ const {
   publishAt,
   refinePublishAt,
 } = require('./fields');
+const { toPostSlug } = require('../lib/slug');
 
 const paragraphText = formattedText('Paragraph', 10000);
 
@@ -51,19 +52,31 @@ const postFields = {
     .transform((value) => value ?? null),
 };
 
+// The web address the site owner may enter on create, put in slug form (lib/slug.js →
+// toPostSlug), so capitals and spaces become lowercase and hyphens, not a 400. Its length is
+// checked as typed, since slug form only ever shortens it. Blank is null: made from the header.
+const postSlug = optionalText('Web address', 60).transform((value, ctx) => {
+  if (value === null) return null;
+  const slug = toPostSlug(value);
+  if (slug) return slug;
+  ctx.addIssue({ code: 'custom', message: 'Web address needs at least one letter or digit.' });
+  return z.NEVER;
+});
+
 // A new post is published unless the request says otherwise.
 // A go-live date is only for a draft (validation/fields.js → refinePublishAt).
 const createPostSchema = z
   .object({
     websiteId,
     ...postFields,
+    slug: postSlug,
     status: status.default('published'),
     publishAt,
     body: bodyList(z.object(imageShape, { error: 'Image is required.' })),
   })
   .superRefine(refinePublishAt, { when: (payload) => payload.issues.length === 0 });
 
-// websiteId and status are not part of the edit form; zod strips them if sent.
+// websiteId, slug and status are not part of the edit form; zod strips them if sent.
 const updatePostSchema = z.object({
   ...postFields,
   publishAt,

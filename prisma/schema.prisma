@@ -142,6 +142,9 @@ model Post {
   postDate    DateTime?  @map("post_date") @db.Date // optional date shown on the website
   header      String? // optional public headline
   subHeader   String?    @map("sub_header")
+  // Made from the header once, at create (lib/slug.js), never changed. The default only serves
+  // inserts by code older than the column, during the deploy that adds it: new code always sets it.
+  slug        String     @default(dbgenerated("\"left\"(replace((gen_random_uuid())::text, '-'::text, ''::text), 8)"))
   status      PostStatus @default(published)
   publishAt   DateTime?  @map("publish_at") // a draft's go-live date; the scheduled publish job flips it
   publishedAt DateTime?  @map("published_at") // when it last went from draft to published; null while a draft
@@ -153,6 +156,7 @@ model Post {
   elements Element[]
   images   Image[]
 
+  @@unique([websiteId, slug]) // a slug is unique within its website, deleted posts included
   @@index([websiteId])
   @@index([websiteId, deletedAt]) // Recently deleted posts: filtered and sorted by deletedAt
   @@index([status, publishAt]) // the scheduled publish job: drafts whose publishAt has passed
