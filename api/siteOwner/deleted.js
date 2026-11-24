@@ -2,7 +2,6 @@
 // threads, moving mail into it, and restoring from it. Mounted by api/siteOwner/index.js.
 const express = require('express');
 const prisma = require('../../prisma');
-const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
 const { mailItemsSchema, allItemsSchema } = require('../../validation/deleted');
 const { pageSchema } = require('../../validation/fields');
@@ -15,6 +14,7 @@ const {
 } = require('../../lib/notifications');
 const {
   ownerMailboxWhere,
+  assertThreadMatching,
   restorableWhere: restorableThreadWhere,
   setThreadDeleted,
 } = require('../../lib/threads');
@@ -23,8 +23,6 @@ const { deletedSource, listDeleted, runPerItem } = require('../../lib/deleted');
 const revalidate = require('../../services/revalidate');
 
 const router = express.Router();
-
-const THREAD_NOT_FOUND = 'Thread not found.';
 
 const WEBSITE_NAME_SELECT = { select: { websiteName: true } };
 
@@ -99,13 +97,6 @@ function siteOwnerSources(accountId) {
       }),
     }),
   ];
-}
-
-// The account's thread matched by `where`, or a 404.
-async function assertThreadMatching(db, where, id) {
-  const thread = await db.thread.findFirst({ where: { ...where, id }, select: { id: true } });
-  if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
-  return thread;
 }
 
 // GET /api/siteOwner/deleted — the account's Recently Deleted, newest deletion first, a page at a

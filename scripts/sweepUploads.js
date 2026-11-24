@@ -3,6 +3,7 @@
 require('dotenv/config');
 const { initSentry, reportError, flushSentry, exitWithError } = require('../lib/sentry');
 const { missingEnvMessage } = require('../lib/config');
+const { describeError } = require('../lib/errorLog');
 
 const REQUIRED_ENV = [
   'DATABASE_URL',
@@ -25,7 +26,7 @@ async function main() {
     const { checked, deleted } = await sweepUploads();
     console.log(`Upload cleanup: checked ${checked}, deleted ${deleted}.`);
   } catch (err) {
-    console.error(err);
+    console.error(describeError(err));
     reportError(err);
     await flushSentry();
     process.exitCode = 1;

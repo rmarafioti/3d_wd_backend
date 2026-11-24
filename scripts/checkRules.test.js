@@ -4,6 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   checkHeader,
+  checkCommentWidth,
   checkEmDash,
   checkNodePrefix,
   checkSecretColumns,
@@ -60,6 +61,35 @@ describe('checkHeader', () => {
 
     assert.deepEqual(checkHeader('.claude/hooks/guard.js', text), []);
     assert.deepEqual(checkHeader('.claude/hooks/guard.test.js', text), []);
+  });
+});
+
+describe('checkCommentWidth', () => {
+  // A comment line of exactly `length` characters.
+  function commentOf(length, fill = 'x') {
+    return `// ${fill.repeat(length - 3)}`;
+  }
+
+  it('flags a comment line over 100 characters', () => {
+    const text = `const a = 1;\n${commentOf(101)}\n`;
+
+    assert.deepEqual(checkCommentWidth('lib/x.js', text), [
+      { file: 'lib/x.js', line: 2, rule: 'comment line over 100 characters' },
+    ]);
+  });
+
+  it('allows a comment line of 100 characters, and a long line of code', () => {
+    const text = `${commentOf(100)}\nconst a = '${'x'.repeat(120)}';\n`;
+
+    assert.deepEqual(checkCommentWidth('lib/x.js', text), []);
+  });
+
+  it('counts → as one character', () => {
+    assert.deepEqual(checkCommentWidth('lib/x.js', commentOf(100, '→')), []);
+  });
+
+  it("skips the guard hook files, which stay identical to the frontend's", () => {
+    assert.deepEqual(checkCommentWidth('.claude/hooks/guard.js', commentOf(120)), []);
   });
 });
 

@@ -1,5 +1,5 @@
-// Tests for the cross-repo checks in scripts/checkSync.js. Only the pure helpers are tested: nothing
-// here reads the frontend repo or fetches.
+// Tests for the cross-repo checks in scripts/checkSync.js: only the pure helpers, so nothing here
+// reads the frontend repo or fetches.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { apiContractSection, compareTexts, findRestatedFacts, stripQuotes } = require('./checkSync');

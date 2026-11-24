@@ -22,14 +22,18 @@ const SECRET_FILES = [
 // require('fs')), and the file stays identical to the frontend's, so the require rule skips it.
 const REQUIRE_RULE_SKIPS = ['.claude/hooks/guard.test.js'];
 
-// The guard hook files stay identical to the frontend's copies, so the header rule skips them.
-const HEADER_RULE_SKIPS = ['.claude/hooks/guard.js', '.claude/hooks/guard.test.js'];
+// The guard hook files stay identical to the frontend's copies, so the header and comment width
+// rules skip them: a fix there is made in both repos together.
+const FRONTEND_COPIES = ['.claude/hooks/guard.js', '.claude/hooks/guard.test.js'];
 
 // A file's header comment: at most this many lines on what the file is for.
 const MAX_HEADER_LINES = 2;
 
-// This checker and its test spell out every pattern they look for, so only the header rule reads
-// them.
+// Prettier's printWidth. Prettier wraps code but never a comment, so this rule checks them.
+const MAX_LINE_CHARACTERS = 100;
+
+// This checker and its test spell out every pattern they look for, so only the header and comment
+// width rules read them.
 const CHECKER_FILES = ['scripts/checkRules.js', 'scripts/checkRules.test.js'];
 
 const SECRET_COLUMN = /\b(apiKeyHash|webhookSecretEncrypted)\b/;
@@ -56,7 +60,7 @@ function codePart(line) {
 // The header is the run of comment lines at the top of a file (after a shebang), ended by a blank
 // line or code. YAML and shell files comment with #, JavaScript with //.
 function checkHeader(file, text) {
-  if (HEADER_RULE_SKIPS.includes(file)) return [];
+  if (FRONTEND_COPIES.includes(file)) return [];
   const marker = file.endsWith('.js') ? '//' : '#';
   const lines = text.split('\n');
   const start = lines[0].startsWith('#!') ? 1 : 0;
@@ -64,6 +68,16 @@ function checkHeader(file, text) {
   while (end < lines.length && lines[end].trim().startsWith(marker)) end += 1;
   if (end - start <= MAX_HEADER_LINES) return [];
   return [{ file, line: start + MAX_HEADER_LINES + 1, rule: 'header comment over two lines' }];
+}
+
+// A whole-line // comment over the width, counted in characters, not UTF-16 units (→ is one).
+function checkCommentWidth(file, text) {
+  if (FRONTEND_COPIES.includes(file)) return [];
+  return text
+    .split('\n')
+    .map((line, i) => ({ line, number: i + 1 }))
+    .filter(({ line }) => line.trim().startsWith('//') && [...line].length > MAX_LINE_CHARACTERS)
+    .map(({ number }) => ({ file, line: number, rule: 'comment line over 100 characters' }));
 }
 
 function checkEmDash(file, text) {
@@ -172,10 +186,13 @@ function checkServerErrorMessages(file, text, endpointsDoc) {
 
 function checkFile(file, text, endpointsDoc) {
   const header = checkHeader(file, text);
+  if (!file.endsWith('.js')) return header;
+  const width = checkCommentWidth(file, text);
   // The other rules read JavaScript only, and never this checker's own files.
-  if (!file.endsWith('.js') || CHECKER_FILES.includes(file)) return header;
+  if (CHECKER_FILES.includes(file)) return [...header, ...width];
   return [
     ...header,
+    ...width,
     ...checkEmDash(file, text),
     ...checkNodePrefix(file, text),
     ...checkSecretColumns(file, text),
@@ -208,6 +225,7 @@ if (require.main === module) main();
 
 module.exports = {
   checkHeader,
+  checkCommentWidth,
   checkEmDash,
   checkNodePrefix,
   checkSecretColumns,

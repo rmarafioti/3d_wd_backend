@@ -2,26 +2,24 @@
 // mailbox, moving mail into it, and restoring from it. Mounted by api/admin/index.js.
 const express = require('express');
 const prisma = require('../../prisma');
-const { ServerError } = require('../../errors');
 const { validate } = require('../../validation/validate');
 const { mailItemsSchema } = require('../../validation/deleted');
 const { pageSchema } = require('../../validation/fields');
 const {
   ADMIN_MAILBOX_WHERE,
   restorableUpdateWhere,
+  assertUpdateMatching,
   setAdminDeleted,
 } = require('../../lib/notifications');
 const {
   inMailboxWhere,
+  assertThreadMatching,
   restorableWhere: restorableThreadWhere,
   setThreadDeleted,
 } = require('../../lib/threads');
 const { deletedSource, listDeleted, runPerItem } = require('../../lib/deleted');
 
 const router = express.Router();
-
-const UPDATE_NOT_FOUND = 'Update not found.';
-const THREAD_NOT_FOUND = 'Thread not found.';
 
 // The admin's types: their sent updates and threads.
 function adminSources() {
@@ -55,20 +53,6 @@ function adminSources() {
       }),
     }),
   ];
-}
-
-// The update matched by `where`, or a 404.
-async function assertUpdateMatching(db, where, id) {
-  const update = await db.notification.findFirst({ where: { ...where, id }, select: { id: true } });
-  if (!update) throw new ServerError(404, UPDATE_NOT_FOUND);
-  return update;
-}
-
-// The thread matched by `where`, or a 404.
-async function assertThreadMatching(db, where, id) {
-  const thread = await db.thread.findFirst({ where: { ...where, id }, select: { id: true } });
-  if (!thread) throw new ServerError(404, THREAD_NOT_FOUND);
-  return thread;
 }
 
 // GET /api/admin/deleted — the admin's Recently Deleted, newest deletion first, a page at a time
