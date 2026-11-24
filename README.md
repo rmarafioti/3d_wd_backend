@@ -39,24 +39,29 @@ cp .env.example .env
 
 Set:
 
-| Variable                | Local value                         | Production value         |
-| ----------------------- | ----------------------------------- | ------------------------ |
-| `PORT`                  | `4000`                              | set by Render            |
-| `NODE_ENV`              | `development`                       | `production`             |
-| `DATABASE_URL`          | docker-compose Postgres, port 5433  | Render Postgres URL      |
-| `TEST_DATABASE_URL`     | `.../headless_cms_test`, port 5433  | not used                 |
-| `GOOGLE_CLIENT_ID`      | same as the frontend's              | same                     |
-| `JWT_SECRET`            | 32+ random characters               | same, never reused       |
-| `SECRET_ENCRYPTION_KEY` | 32 random bytes, base64 (see below) | its own key — back it up |
-| `CORS_ORIGIN`           | `http://localhost:3000`             | `https://3dwebdev.com`   |
-| `COOKIE_DOMAIN`         | leave empty                         | `.3dwebdev.com`          |
-| `SEED_ADMIN_EMAIL`      | the admin's Google email            | same                     |
-| `CLOUDINARY_CLOUD_NAME` | 3DWD's Cloudinary cloud name        | same                     |
-| `CLOUDINARY_API_KEY`    | Cloudinary → Settings → API Keys    | same                     |
-| `CLOUDINARY_API_SECRET` | same place — never log or share it  | same — back it up        |
-| `CLOUDINARY_FOLDER`     | `3dwd-dev`                          | `3dwd`                   |
-| `SENTRY_DSN`            | leave empty (Sentry off)            | the Sentry project's DSN |
-| `RESEND_API_KEY`        | leave empty (emails off)            | Resend's sending key     |
+| Variable                | Local value                                             | Production value         |
+| ----------------------- | ------------------------------------------------------- | ------------------------ |
+| `PORT`                  | `4000`                                                  | set by Render            |
+| `NODE_ENV`              | `development`                                           | `production`             |
+| `DATABASE_URL`          | docker-compose Postgres, port 5433                      | Render Postgres URL      |
+| `TEST_DATABASE_URL`     | `.../headless_cms_test`, port 5433                      | not used                 |
+| `GOOGLE_CLIENT_ID`      | same as the frontend's                                  | same                     |
+| `JWT_SECRET`            | 32+ random characters                                   | same, never reused       |
+| `SECRET_ENCRYPTION_KEY` | 32 random bytes, base64 (see below)                     | its own key — back it up |
+| `CORS_ORIGIN`           | `http://localhost:3000`                                 | `https://3dwebdev.com`   |
+| `COOKIE_DOMAIN`         | leave empty                                             | `.3dwebdev.com`          |
+| `SEED_ADMIN_EMAIL`      | the admin's Google email                                | same                     |
+| `CLOUDINARY_CLOUD_NAME` | 3DWD's Cloudinary cloud name                            | same                     |
+| `CLOUDINARY_API_KEY`    | Cloudinary → Settings → API Keys                        | same                     |
+| `CLOUDINARY_API_SECRET` | same place — never log or share it                      | same — back it up        |
+| `CLOUDINARY_FOLDER`     | `3dwd-dev`                                              | `3dwd`                   |
+| `SENTRY_DSN`            | leave empty (Sentry off)                                | the Sentry project's DSN |
+| `RESEND_API_KEY`        | leave empty (emails off)                                | Resend's sending key     |
+| `BACKUP_PUBLIC_KEY`     | leave empty; set only to test `npm run backup:database` | the backup cron job only |
+| `R2_ACCOUNT_ID`         | leave empty; set only to test `npm run backup:database` | the backup cron job only |
+| `R2_ACCESS_KEY_ID`      | leave empty; set only to test `npm run backup:database` | the backup cron job only |
+| `R2_SECRET_ACCESS_KEY`  | leave empty; set only to test `npm run backup:database` | the backup cron job only |
+| `R2_BUCKET`             | `3dwd-backups`                                          | the backup cron job only |
 
 Generate `SECRET_ENCRYPTION_KEY` (and a `JWT_SECRET`, which must be at least 32 characters) with:
 
