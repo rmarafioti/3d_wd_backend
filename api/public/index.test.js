@@ -1,4 +1,4 @@
-// Request tests for the public routes (api/public/index.js).
+// Request tests for the public routes (api/public/index.js): posts, galleries and the contact form.
 require('../../testing/setup');
 const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -6,9 +6,14 @@ const request = require('supertest');
 const app = require('../../app');
 const prisma = require('../../prisma');
 const {
+  CSRF,
   resetState,
   disconnect,
   createWebsite,
+  createOwnerWithWebsite,
+  auditEvents,
+  mockFetch,
+  waitFor,
   paragraph,
   imageSrc,
   imageElement,
@@ -317,5 +322,235 @@ describe('abilities on the public routes', () => {
     const res = await fetchPosts(apiKey);
 
     assert.equal(res.body.data.length, 1);
+  });
+});
+
+describe('POST /api/public/contact', () => {
+  const RECEIVED = { data: { received: true } };
+  const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+  // A JPG of `size` bytes, as the form sends it.
+  function photo(size = JPG.length) {
+    return { content: Buffer.concat([JPG, Buffer.alloc(size - JPG.length)]).toString('base64') };
+  }
+
+  function sendMessage(apiKey, body = { name: 'Sam', email: 'Sam@Example.com' }) {
+    return request(app)
+      .post('/api/public/contact')
+      .set(CSRF)
+      .set('Authorization', `Bearer ${apiKey}`)
+      .send(body);
+  }
+
+  function websiteInquiries() {
+    return prisma.websiteInquiry.findMany({
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        websiteId: true,
+        name: true,
+        email: true,
+        message: true,
+        extras: true,
+        imageCount: true,
+      },
+    });
+  }
+
+  it('saves the message with its extras and photo count, and records it with no actor', async () => {
+    const { website, apiKey } = await createWebsite();
+
+    const res = await sendMessage(apiKey, {
+      name: 'Sam',
+      email: 'Sam@Example.com',
+      message: 'Hello',
+      extras: [
+        { label: 'Phone', value: '555-0100' },
+        { label: 'Service', value: '' },
+      ],
+      images: [photo(), photo()],
+    });
+
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body, RECEIVED);
+    await assertNoSecrets(res.body);
+    const [inquiry] = await websiteInquiries();
+    assert.deepEqual(inquiry, {
+      id: inquiry.id,
+      websiteId: website.id,
+      name: 'Sam',
+      email: 'sam@example.com',
+      message: 'Hello',
+      extras: [{ label: 'Phone', value: '555-0100' }],
+      imageCount: 2,
+    });
+    assert.deepEqual(await auditEvents(), [
+      {
+        action: 'website_inquiry.received',
+        actorId: null,
+        actorEmail: null,
+        targetType: 'website_inquiry',
+        targetId: inquiry.id,
+        metadata: { websiteId: website.id, imageCount: 2 },
+      },
+    ]);
+  });
+
+  it('stores null extras when the form sent none or only blank ones', async () => {
+    const { apiKey } = await createWebsite();
+
+    await sendMessage(apiKey, {
+      name: 'Sam',
+      email: 'sam@example.com',
+      extras: [{ label: 'Q', value: ' ' }],
+    });
+
+    const [inquiry] = await websiteInquiries();
+    assert.equal(inquiry.extras, null);
+    assert.equal(inquiry.message, null);
+  });
+
+  it("emails the website's site owner with the photos attached, after answering", async (t) => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    t.after(() => delete process.env.RESEND_API_KEY);
+    const fetchMock = mockFetch(t.mock);
+    const { owner, apiKey } = await createOwnerWithWebsite();
+    const image = photo();
+
+    const res = await sendMessage(apiKey, {
+      name: 'Sam',
+      email: 'sam@example.com',
+      images: [image],
+    });
+
+    assert.equal(res.status, 201);
+    const body = await waitFor(() => {
+      assert.equal(fetchMock.mock.callCount(), 1);
+      return JSON.parse(fetchMock.mock.calls[0].arguments[1].body);
+    });
+    assert.deepEqual(body.to, [owner.email]);
+    assert.equal(body.reply_to, 'sam@example.com');
+    assert.deepEqual(body.attachments, [{ filename: 'photo-1.jpg', content: image.content }]);
+  });
+
+  it('still answers 201 and keeps the message when the email fails', async (t) => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    t.after(() => delete process.env.RESEND_API_KEY);
+    const errors = t.mock.method(console, 'error', () => {});
+    mockFetch(t.mock, new TypeError('fetch failed'));
+    const { apiKey } = await createOwnerWithWebsite();
+
+    const res = await sendMessage(apiKey);
+
+    assert.equal(res.status, 201);
+    await waitFor(() => assert.equal(errors.mock.callCount(), 1));
+    assert.equal((await websiteInquiries()).length, 1);
+  });
+
+  it('accepts a body over the 256 KB app limit: three photos of 1 MB', async () => {
+    const { apiKey } = await createWebsite();
+    const oneMb = 1024 * 1024;
+
+    const res = await sendMessage(apiKey, {
+      name: 'Sam',
+      email: 'sam@example.com',
+      images: [photo(oneMb), photo(oneMb), photo(oneMb)],
+    });
+
+    assert.equal(res.status, 201);
+  });
+
+  it('returns 413 for a body over 5 MB, and other routes keep their 256 KB limit', async () => {
+    const { apiKey } = await createWebsite();
+
+    const res = await sendMessage(apiKey, {
+      name: 'Sam',
+      email: 'sam@example.com',
+      message: 'a'.repeat(5 * 1024 * 1024),
+    });
+    const landing = await request(app)
+      .post('/api/contact')
+      .set(CSRF)
+      .send({ goal: 'a'.repeat(300 * 1024) });
+
+    assert.equal(res.status, 413);
+    assert.deepEqual(res.body, { error: { message: 'Request body is too large.' } });
+    assert.equal(landing.status, 413);
+  });
+
+  it('returns 400 with fields keyed by full path, and saves nothing', async () => {
+    const { apiKey } = await createWebsite();
+
+    const res = await sendMessage(apiKey, {
+      email: 'sam@example.com',
+      extras: [{ label: '', value: 'A' }],
+      images: [{ content: Buffer.from('GIF89a').toString('base64') }],
+    });
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, {
+      error: {
+        message: 'Please fix the highlighted fields.',
+        fields: {
+          name: 'Name is required.',
+          'extras.0.label': 'Label is required.',
+          'images.0.content': 'Each image must be a JPG, PNG or WebP.',
+        },
+      },
+    });
+    assert.equal((await websiteInquiries()).length, 0);
+  });
+
+  it('returns 401 for a missing key, an unknown key and an inactive website', async () => {
+    const { apiKey } = await createWebsite({ active: false });
+
+    const missing = await request(app)
+      .post('/api/public/contact')
+      .set(CSRF)
+      .send({ name: 'Sam', email: 'sam@example.com' });
+    const unknown = await sendMessage('not-a-key');
+    const inactive = await sendMessage(apiKey);
+
+    for (const res of [missing, unknown, inactive]) {
+      assert.equal(res.status, 401);
+      assert.deepEqual(res.body, INVALID_KEY);
+    }
+    assert.equal((await websiteInquiries()).length, 0);
+  });
+
+  it('returns 403 without the CSRF header', async () => {
+    const { apiKey } = await createWebsite();
+
+    const res = await request(app)
+      .post('/api/public/contact')
+      .set('Authorization', `Bearer ${apiKey}`)
+      .send({ name: 'Sam', email: 'sam@example.com' });
+
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.body, { error: { message: 'Request blocked.' } });
+  });
+
+  it("never counts toward the website's content limit, so form traffic can't block its posts", async () => {
+    const { apiKey } = await createWebsite();
+    for (let attempt = 0; attempt < 30; attempt += 1) await sendMessage(apiKey);
+
+    const res = await fetchPosts(apiKey);
+
+    assert.equal(res.status, 200);
+  });
+
+  it('returns 429 for the 21st message from one website within an hour, per website', async () => {
+    const { apiKey } = await createWebsite();
+    const { apiKey: otherKey } = await createWebsite();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      assert.equal((await sendMessage(apiKey)).status, 201);
+    }
+
+    const res = await sendMessage(apiKey);
+    const other = await sendMessage(otherKey);
+
+    assert.equal(res.status, 429);
+    assert.deepEqual(res.body, TOO_MANY_REQUESTS);
+    assert.equal(other.status, 201);
   });
 });

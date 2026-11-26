@@ -6,12 +6,13 @@ How the backend is hosted, how every deploy since launch runs, and how a client 
 
 ## Hosting and plans
 
-| Service       | Plan                                 | Holds                                                     | Move to a paid plan when                                          |
-| ------------- | ------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------- |
-| Render        | Hobby workspace, $0/mo, plus compute | The API, Postgres, the cron jobs (staging and production) | A second team member, or a Pro-only feature is needed ($25/mo)    |
-| Vercel        | Pro, $20/mo                          | The frontend and every client website                     | Already paid (below)                                              |
-| Cloudinary    | Free                                 | Site owners' images                                       | The free tier's 25 credits a month run out (`docs/scaling.md` §6) |
-| Cloudflare R2 | Free (10 GB)                         | Encrypted nightly database backups                        | Backups outgrow 10 GB                                             |
+| Service       | Plan                                 | Holds                                                     | Move to a paid plan when                                                                                                                        |
+| ------------- | ------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Render        | Hobby workspace, $0/mo, plus compute | The API, Postgres, the cron jobs (staging and production) | A second team member, or a Pro-only feature is needed ($25/mo)                                                                                  |
+| Vercel        | Pro, $20/mo                          | The frontend and every client website                     | Already paid (below)                                                                                                                            |
+| Cloudinary    | Free                                 | Site owners' images                                       | The free tier's 25 credits a month run out (`docs/scaling.md` §6)                                                                               |
+| Cloudflare R2 | Free (10 GB)                         | Encrypted nightly database backups                        | Backups outgrow 10 GB                                                                                                                           |
+| Resend        | Free (3,000 a month, 100 a day)      | Every email the API sends (Email)                         | Active existing clients (15 to 30 inquiries a month each) have moved their contact forms over: Pro, $20/mo for 50,000 a month with no daily cap |
 
 - **Vercel is Pro from launch.** Vercel's fair use rules allow Hobby for non-commercial personal use only, and "commercial" includes being paid to host a site. Client websites pay a hosting fee, so the frontend and every client website live in a Vercel Pro team.
 - **Render compute, per environment:** a Starter web service (`0.5c-512mb`, about $7/mo) and the smallest paid Postgres (`0.1c-256mb`, about $6/mo plus storage). Production adds three cron jobs, billed by the minute with a $1/mo minimum each; the scheduled publish job runs about 2,900 times a month, each run a few seconds, so check its bill against the minimum after its first month. Render prices staging at $13.30/mo: the web service $7, Postgres $6 and its 1 GB disk $0.30. Production is the same plus the three cron jobs, about $16.30/mo. About $29.60/mo while staging and production both run, and about $16.30/mo if staging is deleted. Staging is kept for now and reassessed once its cost can be justified (`CLAUDE.md` → Current progress → Next).
@@ -97,7 +98,7 @@ A production failure reaches Rich by email (`docs/security.md` → Controls in p
 
 ### Email
 
-The admin's request emails and the contact form's inquiry emails (`docs/endpoints.md` → Request Emails, Inquiry Emails) go out through Resend from `notifications@3dwebdev.com`, production only. `3dwebdev.com` receives no mail: Resend's records sit on `send`, `rsend` and `resend._domainkey`, so they don't touch the apex. One-time setup, Rich:
+The admin's request emails, the landing page's inquiry emails and client websites' contact messages (`docs/endpoints.md` → Request Emails, Inquiry Emails, Website Inquiry Emails) go out through Resend from `notifications@3dwebdev.com`, production only. `3dwebdev.com` receives no mail: Resend's records sit on `send`, `rsend` and `resend._domainkey`, so they don't touch the apex. One-time setup, Rich:
 
 1. A Resend account with 2FA, and its row in `docs/security.md` → Access.
 2. Resend → Domains → add `3dwebdev.com`. At Namecheap → Advanced DNS → Host Records (no Mail Settings change, no MX), add the records its Records tab shows exactly as given: a TXT at `resend._domainkey` (DKIM), and for SPF two CNAMEs, `send` → `send.forge.rmta.net` and `rsend` → `rsend.forge.rmta.net`. Hosts are entered without `.3dwebdev.com`. Then a DMARC TXT at `_dmarc`: `v=DMARC1; p=none;` to start, tightened to `p=quarantine` once a few weeks of mail pass. Turn on Enable Sending and wait until Resend shows the domain Verified (usually minutes, up to 72 hours).
@@ -157,6 +158,8 @@ Path A is a new client website. Path B gives a client repo the client guide, `cl
 ### Path A: a new client website
 
 Every new client website starts from `rmarafioti/frontend_scaffold`, the template that already holds the CMS wiring (`cmsFetch`, the revalidate route), the contact form, the accessibility menu, the CI and the test setup, with `FILL:` markers for what only the site can say.
+
+The contact form sends through the CMS (`docs/endpoints.md` → API Contract, A website's contact form) with the website's API key, so the site needs no email service of its own; which fields it asks and whether it takes photos are settled with the client and built in the client session. A client website still on EmailJS moves over on its own branch in its repo, then its EmailJS account is closed.
 
 0. **[Rich]** Create the client repo from the template: GitHub → `rmarafioti/frontend_scaffold` → Use this template → Create a new repository, owner `rmarafioti`, the site's name, Public like the other client repos → Create repository. The new repo has `CLAUDE.md`, `docs/site.md` and `docs/cms/`.
 1. **[Rich]** In the production admin dashboard, create the site owner account with a new website (or link a new website to an existing account). Enter the URL the website is actually served on, with no redirect (`https://www.steviethedog.com` for Stevie): revalidation calls that exact URL, and a redirect drops its Authorization header. Copy the API key and webhook secret from the one-time reveal straight into 1Password (3DWD Clients), with the Vercel project that serves the website.

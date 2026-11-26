@@ -9,7 +9,7 @@ The backend codebase of our Headless CMS project. The frontend is in a separate 
 - The Administrator sees a summary of all site owner accounts and their websites (with each website's galleries as counts and crop flags), creates new site owner accounts, and links websites to existing accounts.
 - The Site Owner views, creates, edits, deletes and sets to draft or published the posts and photo galleries for their own websites, adds Photo Galleries to a website, says where on their site each gallery and their posts should go (and changes it), and turns an ability on or off. The Administrator is emailed each request, sets an ability live once its code is wired, and sets each gallery (and posts) live once placed.
 - The Inbox: the Administrator sends site-wide updates (one way; setting an ability or a gallery live sends one too), and either side starts a message thread that both reply to.
-- The landing page's contact form saves each inquiry, then emails it to the Administrator and a fixed confirmation to the sender.
+- The landing page's contact form saves each inquiry, then emails it to the Administrator and a fixed confirmation to the sender. A client website's own contact form, wired at onboarding, sends through the backend with its API key: the message is saved and emailed to that website's site owners with up to 3 photos attached, which are never stored.
 - The backend also serves published posts and galleries to each site owner's live website via that website's API key, and triggers on-demand revalidation on that site by calling its webhook endpoint whenever a post or gallery changes. A draft given a go-live date is published by a cron job when that time passes.
 
 Production: this API runs on Render at `https://api.3dwebdev.com`, defined in `render.yaml`. The frontend runs on Vercel at `https://3dwebdev.com`. Both share the parent domain `3dwebdev.com`, which is why the session cookie is `SameSite=Lax` with `Domain=.3dwebdev.com`.
@@ -62,12 +62,12 @@ Use subagents for research/exploration/investigation for a plan and for completi
 
 ## Role Ownership Check Rule
 
-Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`, and the mail checks beside their shapes in `lib/notifications.js` and `lib/threads.js`. A failed check returns `404`, identical to "not found". The contact form (`POST /api/contact`) is the one write route with no account: it only creates an inquiry, owned by no one, and no route reads one back.
+Every read/write route derives the account from the session (`req.user`), never from client input, and verifies the requested resource belongs to it before proceeding. A website belongs to a site owner through an `account_website` row and must be active; a post or gallery belongs to them through its website and must not be deleted (`deletedAt` null), except that listing and restoring deleted posts read only posts deleted in the last 30 days, and an ability through its website and must not be removed (`removedAt` null). A site owner's update belongs to them through their own `notification_recipient` row and must not be withdrawn (`notification.deletedAt` null), and a thread through `thread.accountId`. Mail a viewer deleted from their own mailbox (`notification_recipient.deletedAt`, `notification.adminDeletedAt`, `thread.ownerDeletedAt` / `adminDeletedAt`) is not found on that viewer's routes, except Recently Deleted and its restore, which read only what they deleted in the last 30 days; the same goes for a gallery's restore. The shared checks are in `lib/ownership.js`, and the mail checks beside their shapes in `lib/notifications.js` and `lib/threads.js`. A failed check returns `404`, identical to "not found". The contact form (`POST /api/contact`) and a website's contact form (`POST /api/public/contact`) are the write routes with no account: the first creates an inquiry owned by no one; the second a `website_inquiry` tied to the website its API key names, never one from the body. No route reads either back.
 
 ## Anti-Patterns to Avoid
 
 **Never log the API key, webhook secret, session token, Cloudinary API secret, R2 secret or Resend key:**
-The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is used only in `lib/r2.js` (`lib/sentry.js` reads it only to redact it), and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is used only in `lib/resend.js` (`lib/config.js` checks its prefix and `lib/sentry.js` redacts it). A request email's failure is logged with the website id only, never an email address or the note, and an inquiry email's with the inquiry id only, never an address, a name or the message. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
+The plaintext key/secret must only ever appear in the single creation response body (`credentials`) — never logged, never returned by any other endpoint, never stored anywhere but as the hash / encrypted value. Never log request headers on the revalidation call or the public endpoint. `CLOUDINARY_API_SECRET` lives only in the environment: it is read where uploads are signed and where the cleanup runs, and is never logged or returned. `R2_SECRET_ACCESS_KEY` is used only in `lib/r2.js` (`lib/sentry.js` reads it only to redact it), and the database URL never goes into a backup error. The backup private key is never in the environment or the repo: it lives only in 1Password and is used only by `npm run backup:restore`. `RESEND_API_KEY` is used only in `lib/resend.js` (`lib/config.js` checks its prefix and `lib/sentry.js` redacts it). A request email's failure is logged with the website id only, never an email address or the note, and an inquiry email's (either kind) with the inquiry id only, never an address, a name, the message or a photo. Sentry events go through `lib/sentry.js`, whose scrub keeps only the request's method and path and redacts every secret's value and any database URL; never send Sentry headers, cookies, bodies or a secret any other way (`Sentry.setUser`, extra data, breadcrumbs).
 
 **Never log or report an error's message where it can carry user data:**
 A Prisma error's message can quote the query's values (an email address, post content), so an unexpected error is logged with `describeError` and reaches Sentry with its value replaced (`lib/errorLog.js`): its name, code and stack frames, which are enough to debug from.
@@ -82,7 +82,7 @@ The JWT appears only in the `Set-Cookie` header — never anywhere in a JSON bod
 Cookies silently fail to be accepted. The exact origin comes from `CORS_ORIGIN`.
 
 **Never let revalidation or an email affect the user's request:**
-Revalidation, the admin's request email and the inquiry emails run after the transaction commits, are not awaited before responding, and can never throw into the route. A client website or Resend being down must never stop a site owner saving a post or a request message, or an inquiry being saved.
+Revalidation, the admin's request email and the inquiry emails (the landing page's and a website's) run after the transaction commits, are not awaited before responding, and can never throw into the route. A client website or Resend being down must never stop a site owner saving a post or a request message, or an inquiry being saved. A website's contact photos live only in memory, from the request to its email.
 
 **Never put secrets or content in the audit log:**
 An `audit_event` row's `metadata` holds ids and short facts only: never a key, secret, token, Google credential, header or post content. A failed login's reason is logged but never returned; login always answers with the single 401.
@@ -105,7 +105,7 @@ An `audit_event` row's `metadata` holds ids and short facts only: never a key, s
 `lib/crypto.js` is reused by Create an Account, Link a Website, `requireApiKey` and the revalidation service. Never duplicated inline.
 
 **Multi-row writes:**
-Account + website + its posts ability + account_website, website + its posts ability + account_website, post + elements + images, gallery + gallery images, removing or restoring an ability with its galleries, an update + its recipients, a thread + its first message, an inquiry + its audit event, and a bulk delete with its audit events always happen inside a single `prisma.$transaction` (a bulk restore is one transaction per item, so one failure leaves the rest restored).
+Account + website + its posts ability + account_website, website + its posts ability + account_website, post + elements + images, gallery + gallery images, removing or restoring an ability with its galleries, an update + its recipients, a thread + its first message, an inquiry (either kind) + its audit event, and a bulk delete with its audit events always happen inside a single `prisma.$transaction` (a bulk restore is one transaction per item, so one failure leaves the rest restored).
 
 **Audit events in the change's transaction:**
 Every sign-in, sign-out and change writes its `audit_event` through `recordAuditEvent` (`lib/audit.js`), with the transaction client `tx`, inside the same `prisma.$transaction` as the change it records (`docs/endpoints.md` → Audit Log). A new route that changes data adds its action to `AUDIT_ACTIONS` and the table in `docs/endpoints.md`.
@@ -288,7 +288,7 @@ root
 │   │   ├── threads.js        *message threads with the admin: start, list, read, reply
 │   │   └── deleted.js        *Recently Deleted: list, bulk delete of mail, bulk restore of posts, galleries and mail
 │   ├── public/
-│   │   └── index.js          *GET /public/posts, GET /public/galleries/:slug (API key auth)
+│   │   └── index.js          *GET /public/posts, GET /public/galleries/:slug, POST /public/contact (API key auth)
 │   ├── contact/
 │   │   └── index.js          *POST /contact: the landing page's contact form (public, rate limited, honeypot)
 │   └── index.js              *mounts all routers + GET /health
@@ -296,6 +296,7 @@ root
 │   ├── revalidate.js         *fire-and-forget webhook call to a client website
 │   ├── requestEmail.js       *fire-and-forget email to the admin on a request message (Resend)
 │   ├── inquiryEmail.js       *fire-and-forget inquiry email to the admin and confirmation to the sender (Resend)
+│   ├── websiteInquiryEmail.js *fire-and-forget email of a website's contact message, photos attached, to its site owners (Resend)
 │   ├── sweepUploads.js       *upload cleanup: unused uploads over 24h old, deleted posts' and galleries' images after 30 days
 │   ├── publishScheduled.js   *scheduled publish: drafts whose go-live date has passed become published, then revalidated
 │   └── backupDatabase.js     *pg_dump, encrypted with the backup public key, uploaded to R2
@@ -323,7 +324,7 @@ root
 │   ├── notification.js       *the admin's update (title, body)
 │   ├── thread.js             *start a thread (either side), a reply
 │   ├── deleted.js            *Recently Deleted's bulk delete and restore items
-│   ├── contact.js            *the contact form and its honeypot check
+│   ├── contact.js            *the contact forms: the landing page's with its honeypot check, a website's with its photos
 │   └── validate.js           *validate() → 400 envelope, blankToUndefined
 ├── middleware/
 │   ├── requireAuth.js        *verifies the session cookie, loads req.user
@@ -349,8 +350,8 @@ root
 │   ├── paging.js             *cursor paging: a list's page and nextCursor from one row more than the page
 │   ├── postBody.js           *element rows → the post body list in API responses
 │   ├── r2.js                 *Cloudflare R2 upload (Signature V4, no AWS SDK) for backups
-│   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages, the contact form
-│   ├── resend.js             *the one Resend call (the only reader of RESEND_API_KEY)
+│   ├── rateLimit.js          *rate limiters: login, the public API, upload signing, thread messages, the contact forms
+│   ├── resend.js             *the one Resend call, with attachments (the only reader of RESEND_API_KEY)
 │   ├── restore.js            *restoring a deleted post or gallery: its check, name rule and audit event
 │   ├── retry.js              *retrying a write that clashed with a concurrent one: a gallery name, a post slug
 │   ├── retention.js          *how long deleted content stays recoverable (30 days): the cutoff and restorableUntil
@@ -410,7 +411,7 @@ root
 └── index.js                  *entry point: loads .env, checks config, starts app.js
 ```
 
-## Current progress (as of 2026-11-24)
+## Current progress (as of 2026-11-26)
 
 - **Now:**
   - **Live since 2026-10-28:** the API at `https://api.3dwebdev.com` (Render: the API, Postgres 17, the nightly encrypted backup to R2 and the daily upload sweep) and the frontend at `https://3dwebdev.com` (Vercel Pro). Stevie The Dog is the first client website. Features 1 to 18, issue #71 (placement apart from status) and #122 (the contact form) are live in both repos, the latest release `release-2026-11-24`.
@@ -433,10 +434,11 @@ root
   - **Issue #125 done** (`frontend_scaffold` #21, merged as its PR #24): `rmarafioti/frontend_scaffold` is the template every new client website starts from (`docs/deploy.md` → Onboarding, path A step 0). Its `CLAUDE.md` and `docs/site.md` template are written from this session (Documentation Sync), `client-kit` syncs `docs/cms/` into it, and #21 brought its code to match; its ruleset and `autoMerge` are set, so a client website can be made from it.
   - **Issue #128 done** (frontend issue #110): readable post slugs in `Post` and `PublicPost`, with an optional Web address on create. Additive; one migration (`add_post_slug`, which backfills every post's slug from its header). Released as `release-2026-11-24`; `client-kit` #8 tells client websites to link posts by `slug`.
   - **Issue #132 done:** the fixes from the code sweep `9b0e55a..d807f62` (reminder #129): errors are logged and reported without their message, and comment width is a `check:rules` rule. Behaviour-neutral but for the logs; no migration.
-  - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot. Rich's personal site (`rmarafioti/personal-website`, made from the template) is a `client-kit` sync client with auto-merge and the blog's pilot (Next 1).
+  - **Issue #126 done** (frontend issue #113, `frontend_scaffold` #28): a client website's own contact form sends through `POST /api/public/contact` with its API key, in place of EmailJS; the message is saved (`website_inquiry`) and emailed to its site owners with up to 3 photos attached, never stored. Not an ability: wired at onboarding. The scaffold sends through it; `client-kit`'s `contact.md` merges after the release. Additive; one migration (`add_website_inquiry`).
+  - **Clients:** Estudio Castelo and Good Boys Dog Grooming are onboarded in production; Stevie The Dog stays the pilot. Rich's personal site (`rmarafioti/personal-website`, made from the template) is onboarded in production by path A, its posts rendering from the CMS; it is a `client-kit` sync client with auto-merge and the blog's pilot, with a Buttondown newsletter signup (free plan, each new post sent by hand; `frontend_scaffold` #25). Its contact form still uses EmailJS (Next 1).
   - **The master doc** is now the Value Proposition (v2: results first, the leaving policy, vendor prices; v1 deleted), the Pitch (client-facing copy for the landing page and brochure, with a copy editor), How It's Built and a Glossary; Build vs Buy and the Client Portal tabs are gone.
 - **Next:**
-  1. `client-kit` #8 (posts link by `slug`) is merged: check that its Sync PRs merged themselves on green CI in each client repo and `frontend_scaffold`, the first proof of auto-merge for Estudio Castelo and the personal site. Then Rich's personal site, in order: onboard it by `docs/deploy.md` → Onboarding a client website, path A, and blog; pick the newsletter vendor; `frontend_scaffold` #25 (RSS feed); then the CMS contact form ability (#126, `later`), which will replace EmailJS on client websites. The blog isn't announced until it uses slugs.
+  1. Release #126 to production, then merge `client-kit`'s `feat/contact-ability` PR (`docs/cms/contact.md`), whose Sync reaches every client repo; never before the release, or the guide describes a route production doesn't have. Then the personal site moves its contact form off EmailJS on its own branch, porting `frontend_scaffold` #28 (a repo made from the template doesn't receive its code), and is tested in production; then its EmailJS vars and account go. Estudio Castelo and Good Boys follow one at a time, and Resend moves to Pro once they have (`docs/deploy.md` → Hosting and plans). The blog isn't announced until it uses slugs. #134 (`later`): the site owner's inquiry list and the admin's counts.
   2. Stevie's galleries: #71 is released, so its posts read live and placed, its galleries ability `added` and its gallery `requested`. Rich wires the gallery component into the site and sets Photo Galleries live, then places the gallery and sets it live.
   3. Good Boys moves to `client-kit` by `docs/deploy.md` → Onboarding a client website, path B, when its CMS wiring starts.
   4. Coding pauses for business work (`docs/proposal-notes.md`): time tracking runs in Toggl (first month's export around 2026-12-12); the Value Proposition v2 is done; the survey asks the time and return questions; the Pitch is with a copy editor. The landing page is built with five Pitch sections and the contact form (#101, #122); the rest wait for the copy editor. Then the brochure, the lead tracker sheet (the founding-client offer, `docs/proposal-notes.md`), prospect testing on Good Boys' owner and a designer, and a call with Mark. New code comes only from a bug, a client's request or a new client.
@@ -454,12 +456,12 @@ root
 
   Production data is real: nothing here is cleared after a test. Read it with SQL from the API's Render Shell (`psql -P pager=off "$DATABASE_URL" -c "…"`).
 
-- **Local database baseline** (test rows cleared on 2026-11-24, after #128's test):
+- **Local database baseline** (test rows cleared on 2026-11-26, after #126's test):
   - the admin
   - the test site owner `steviethedogchi@gmail.com`, linked to the active Stevie The Dog website (`media_folder` `steviethedog`)
   - "First Post!", with one paragraph element (slug `welcome-home`, from its header, by #128's backfill)
   - Stevie's posts ability (`live`, from the `backfill_website_ability` migration, and placed `live` by #71's `backfill_placement`); no galleries ability, no galleries, updates or threads (a leftover galleries ability, gallery and two automatic updates from 2026-11-10 deleted on 2026-11-24)
-  - no inquiries (the last test inquiry deleted on 2026-11-24)
+  - no inquiries (the last test inquiry deleted on 2026-11-24) and no website inquiries (#126's six test rows deleted on 2026-11-26)
   - the `audit_event` rows from local sign-ins and changes, kept: audit rows are not cleared after a test, locally or in production
 
   Cloudinary `3dwd-dev/steviethedog/` also holds the staging test's uploads, #71's two test gallery images, since staging shares `3dwd-dev`, and the Feature 10 test galleries' images, whose rows were deleted on 2026-10-31, so the next local sweep deletes them, as it does the six Feature 11 shrink-test photos the Feature 13 and #93 test galleries' images, and the 2026-11-10 dev-check gallery's image (its rows deleted on 2026-11-24). Staging data is throwaway: a local `npm run sweep:uploads` deletes them 24 hours after upload, because the local database doesn't reference them. Rich's own `stevie_the_dog` folder at the account's top level is outside both environment roots, so the app never touches it. Two client websites are waiting to onboard.
@@ -473,11 +475,11 @@ root
 
 One entry per merged piece of work, newest first, in one or two sentences: the PR holds the decisions and why. Only the last five stay here; when one drops out, move it to the top of `docs/history.md` → Progress. Add an entry on every branch, and update Now, Next, the baseline and Pending notes to match (Workflow Checklist → Step rhythm).
 
+- **2026-11-26** `feat/contact-ability` (issue #126; frontend issue #113, `frontend_scaffold` #28, `client-kit` `feat/contact-ability`): a client website's server sends its contact form to a public `POST /api/public/contact` with its API key, in place of EmailJS; the message is saved with a `website_inquiry.received` audit event and emailed to the website's active site owners, Reply-To the visitor, with up to 3 photos (checked by their bytes, at most 1 MB) attached and never stored. A fixed core (name, email) plus a message, up to 10 extras and photos fits every client's own form; 20 an hour per website, outside the content limit; the route reads up to 5 MB once the key passes. One migration (`add_website_inquiry`). 863 tests.
 - **2026-11-24** `fix/sweep-2026-11-24` (issue #132, from the code sweep `9b0e55a..d807f62`, reminder #129): unexpected errors are logged and sent to Sentry by name, code and stack only (`lib/errorLog.js`), never the message, which can quote a query's values; the Anti-Patterns gain the rule. The thread and update checks move into `lib/`, `check:rules` fails on a comment line over 100 characters, the sweep skips moderate dev advisories, and the next sweep starts at `d807f62`. 833 tests.
 - **2026-11-24** `docs/doc-sync` (Documentation Sync, reminder #124; frontend `docs/doc-sync`, `client-kit` `docs/escape-example`): the API Contract quotes the nine validation messages the code already throws, Revalidation lists restore, Feature 18 says a slug can be entered, README lists the backup env vars, and Current progress records #128's release, the scaffold's #21 and the personal site as a client. Docs only. 822 tests.
 - **2026-11-24** `feat/post-slugs` (issue #128; frontend issue #110): every post gets a `slug`, set once at create and never changed, in `Post` and `PublicPost`, so a client website can give a post a readable URL; the site owner may enter one as the create form's Web address, else it is made from the header (`-2` on a clash), else an 8-character code. The `add_post_slug` migration backfills every post from its header; the clash retry moves to `lib/retry.js`, and `package.json` → `overrides` pins `effect` 3.22.5 past Prisma's high advisory. 822 tests.
 - **2026-11-18** `docs/client-scaffold` (issue #125; `frontend_scaffold` #21): `frontend_scaffold` becomes the template every new client website starts from: its `CLAUDE.md` and `docs/site.md` template are written from this session, `client-kit` syncs `docs/cms/` into it, and onboarding path A starts by creating the repo from it. Also #122's release, Jett's sales review in `docs/proposal-notes.md`, and `npm run check:sync`'s percentage rule narrowed to the crop ratio's "within 1%", so a frontend percentage (a font size, a scroll point) is no longer flagged. 804 tests.
-- **2026-11-15** `feat/contact-form` (issue #122; frontend issue #101): a public `POST /api/contact` saves the landing page form's inquiry with an `inquiry.received` audit event, then emails the admin (Reply-To the sender) and the sender a fixed confirmation that can't be replied to, at most one per address a day, through the shared `lib/resend.js`; a honeypot field and 5 sends per hour per IP guard it. Reviews gain focused checks, the risky-file walkthrough last before commit and the tracker rows after the merge; the master doc's tabs and the founding-client offer are in the docs. One migration (`add_inquiry`). 803 tests.
 
 ## Features
 
@@ -501,6 +503,7 @@ New work after the MVP Build Order, one branch → plan → approval → build �
 16. **Notification inbox** (`feat/notification-inbox`, issue #98): the admin's site-wide updates and automatic ones when an ability or gallery goes live (one way), and message threads either side starts and both reply to, with unread counts.
 17. **Delete mail and one Recently Deleted** (`feat/delete-mail`, issue #100): either side deletes the updates and threads it ticks from its own mailbox (a reply brings a thread back), and one Recently Deleted per role for posts, galleries and mail, restored in bulk for 30 days.
 18. **Post slugs** (`feat/post-slugs`, issue #128): every post gets a readable `slug`, entered or made from its header once at create and never changed, in `Post` and `PublicPost`, so a client website can give a post a readable URL.
+19. **Website contact form** (`feat/contact-ability`, issue #126): a client website's own contact form sends through `POST /api/public/contact` with its API key, in place of EmailJS; the message is saved and emailed to its site owners with up to 3 photos attached, never stored.
 
 ## Planned Later
 
