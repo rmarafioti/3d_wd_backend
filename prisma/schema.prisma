@@ -116,6 +116,7 @@ model Website {
   posts           Post[]
   galleries       Gallery[]
   abilities       WebsiteAbility[]
+  inquiries       WebsiteInquiry[]
 
   @@map("website")
 }
@@ -368,7 +369,7 @@ model AuditEvent {
   action     String // one of the AUDIT_ACTIONS in lib/audit.js
   actorId    String?  @map("actor_id") // the signed-in account; null for a failed login with no account, a scheduled publish, or an inquiry
   actorEmail String?  @map("actor_email") // the actor's email, readable at a glance; null for an unverified token, a scheduled publish, or an inquiry
-  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification', 'thread' or 'inquiry'
+  targetType String?  @map("target_type") // 'account', 'website', 'post', 'gallery', 'ability', 'notification', 'thread', 'inquiry' or 'website_inquiry'
   targetId   String?  @map("target_id")
   metadata   Json?
   ip         String?
@@ -404,4 +405,22 @@ model Inquiry {
 
   @@index([email, createdAt]) // the one-confirmation-a-day check
   @@map("inquiry")
+}
+
+// A message sent through a client website's contact form (docs/endpoints.md → Website Inquiry
+// Emails). The sender isn't a user. Its photos are emailed, never stored: only their count is kept.
+model WebsiteInquiry {
+  id         String   @id @default(uuid(7))
+  websiteId  String   @map("website_id")
+  name       String
+  email      String // stored lowercase
+  message    String?  @db.Text
+  extras     Json? // the form's own extra fields, [{ label, value }], blank answers left out
+  imageCount Int      @default(0) @map("image_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id])
+
+  @@index([websiteId, createdAt]) // a website's inquiries, newest first
+  @@map("website_inquiry")
 }

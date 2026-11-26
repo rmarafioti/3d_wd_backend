@@ -221,9 +221,9 @@ Table thread_message {           // at most 100 per thread
 Table audit_event {
   id          string   [primary key, default: uuid v7]
   action      string   [not null]  // e.g. post.updated (docs/endpoints.md → Audit Log)
-  actor_id    string   [null]      // the signed-in account; null for a failed login with no account, a scheduled publish or an inquiry
-  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token, a scheduled publish or an inquiry
-  target_type string   [null]      // account, website, post, gallery, ability, notification, thread or inquiry
+  actor_id    string   [null]      // the signed-in account; null for a failed login with no account, a scheduled publish or either kind of inquiry
+  actor_email string   [null]      // the actor's email, readable at a glance; null for an unverified token, a scheduled publish or either kind of inquiry
+  target_type string   [null]      // account, website, post, gallery, ability, notification, thread, inquiry or website_inquiry
   target_id   string   [null]
   metadata    json     [null]      // never a key, secret, token, header or post content
   ip          string   [null]
@@ -249,6 +249,21 @@ Table inquiry {                       // a contact form inquiry from the landing
 
   indexes {
     (email, created_at)   // one confirmation per address a day (docs/endpoints.md → Inquiry Emails)
+  }
+}
+
+Table website_inquiry {               // a message from a client website's contact form; read with SQL
+  id          string   [primary key, default: uuid v7]
+  website_id  string   [not null]
+  name        string   [not null]
+  email       string   [not null]  // stored lowercase; the visitor, not an account
+  message     text     [null]
+  extras      jsonb    [null]      // the form's own questions, [{ label, value }], blank answers left out
+  image_count int      [not null, default: 0]  // photos are emailed, never stored
+  created_at  datetime [not null, default: now()]
+
+  indexes {
+    (website_id, created_at)   // a website's messages, newest first, for the counts and list planned later
   }
 }
 
@@ -315,6 +330,7 @@ Ref: notification_recipient.account_id > account.id
 Ref: thread.account_id > account.id
 Ref: thread_message.thread_id > thread.id
 Ref: thread_message.author_id > account.id
+Ref: website_inquiry.website_id > website.id
 // audit_event has no references on purpose: an event never blocks or depends on another row
 // inquiry has none either: its sender isn't an account
 ```

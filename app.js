@@ -10,6 +10,8 @@ const { errorHandler, ServerError } = require('./errors');
 
 const app = express();
 
+const WEBSITE_CONTACT_PATH = '/api/public/contact';
+
 // On Render, two proxies sit in front of the API: Cloudflare, then Render's load balancer. Each
 // appends to X-Forwarded-For, so req.ip (the rate limits' key and the audit log's ip) is the entry
 // two from the end. A count, never `true`: Render keeps whatever X-Forwarded-For a client sends,
@@ -28,7 +30,12 @@ app.use(
 );
 // Set explicitly instead of Express's 100kb default: a post at its limits (5 paragraphs of 10,000
 // characters, which can be multibyte, plus images and links) must always fit.
-app.use(express.json({ limit: '256kb' }));
+const parseJson = express.json({ limit: '256kb' });
+// A client website's contact form carries up to 3 photos, so its route parses its own body, up to
+// 5 MB, only once the API key is checked (api/public/index.js). Every other route keeps 256 KB.
+app.use((req, res, next) =>
+  req.method === 'POST' && req.path === WEBSITE_CONTACT_PATH ? next() : parseJson(req, res, next),
+);
 app.use(cookieParser());
 app.use(requireCsrfHeader);
 
