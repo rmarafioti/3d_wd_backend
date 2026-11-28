@@ -110,4 +110,4 @@ The backend is stateless today (the session is a signed JWT cookie, nothing is h
 - Every rule in `CLAUDE.md` (Role Ownership Check, Anti-Patterns, Code Style, Code Review, Unit Tests, Workflow Checklist) applies to new work unchanged.
 - New work after the MVP is tracked as numbered features in `CLAUDE.md`, each one its own branch → plan → approval → build → verify → PR, the same rhythm as the MVP Build Order (`docs/history.md`).
 - A feature that changes these rules updates this file in the same PR.
-- After a change to the contract, the schema or a flow, run the Documentation Sync audit (`CLAUDE.md`) once both repos have merged it.
+- A change to the contract, the schema or a flow passes `npm run check:sync` before its PR (`CLAUDE.md` → Workflow Checklist); the Documentation Sync catches the rest at its next reminder.

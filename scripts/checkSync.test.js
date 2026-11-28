@@ -2,7 +2,13 @@
 // reads the frontend repo or fetches.
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { apiContractSection, compareTexts, findRestatedFacts, stripQuotes } = require('./checkSync');
+const {
+  apiContractSection,
+  compareTexts,
+  findRestatedFacts,
+  pickFrontendRef,
+  stripQuotes,
+} = require('./checkSync');
 
 describe('apiContractSection', () => {
   it('takes the section from its heading up to the first --- line', () => {
@@ -94,5 +100,19 @@ describe('findRestatedFacts', () => {
     const markdown = 'Limits are in `docs/api.md` → Validation rules.';
 
     assert.deepEqual(findRestatedFacts(markdown), []);
+  });
+});
+
+describe('pickFrontendRef', () => {
+  it('reads the frontend main from main', () => {
+    assert.equal(pickFrontendRef('main', false), 'origin/main');
+  });
+
+  it("reads the frontend's branch of the same name when it has one", () => {
+    assert.equal(pickFrontendRef('feat/x', true), 'origin/feat/x');
+  });
+
+  it('reads the frontend main when it has no branch of that name', () => {
+    assert.equal(pickFrontendRef('feat/x', false), 'origin/main');
   });
 });

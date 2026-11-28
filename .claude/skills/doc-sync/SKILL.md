@@ -15,9 +15,9 @@ Three repos describe the same system: this backend (the source of truth), the fr
 Run it:
 
 - from the "Documentation Sync" reminder issue, which opens after merges in either repo (`docs/process.md` → Reminders);
-- after a change to the API contract, the schema or a flow, once it is merged in both repos, whatever the date;
-- before a production deploy;
 - whenever Rich asks.
+
+Between syncs `npm run check:sync` guards what must match, before every PR and in every release (`CLAUDE.md` → Documentation Sync).
 
 Not in the middle of other work, and not on a branch with changes not yet on `main` (the sync compares `main`s).
 

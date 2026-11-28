@@ -123,6 +123,7 @@ Restoring over production is never done by this script. If it is ever needed, it
 1. **Merge.** Each PR merges to `main` with CI green (branch protection). Both staging sites deploy by themselves: Render runs `npx prisma migrate deploy`, then the new backend takes traffic; Vercel builds the frontend's `main` at `staging.3dwebdev.com`.
 2. **Check staging,** in a separate browser profile (Environments).
 3. **Release:** `npm run release` in this repo (`npm run release -- --dry-run` shows what it would do). It releases each repo's `origin/main`, never the local working tree:
+   - runs `npm run check:sync` on both repos' `main` and stops if anything differs, before anything is pushed;
    - stops unless the backend's `main` commit is already live on staging;
    - lists any new migrations and asks before going on. Before a migration that drops or rewrites data, take a backup first: Trigger Run on `3dwd-backup-database`, and confirm the dump is in R2 (`docs/scaling.md` §8);
    - pushes the backend's `main` to `production`. CI runs on it, then Render deploys the API (migrations first) and rebuilds the three cron jobs from the same commit. It waits until Render reports the API live, up to 20 minutes;
