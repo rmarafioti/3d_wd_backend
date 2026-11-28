@@ -132,7 +132,7 @@ Cross-repo check:
 npm run check:sync         # diffs what must be identical in both repos (the API Contract, the guard hook and its tests, docs/process.md), and lists backend facts the frontend's own docs restate
 ```
 
-It reads the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR`, at its `origin/main`, and edits nothing. The Documentation Sync (`/doc-sync`, `CLAUDE.md` → Documentation Sync) runs it first.
+It reads the frontend repo (`3d_wd`) beside this one, or `FRONTEND_DIR`, and edits nothing: on a branch, the frontend's branch of the same name when one is on GitHub, else its `origin/main`. It passes before every PR, and `npm run release` runs it on both repos' `main`. The Documentation Sync (`/doc-sync`, `CLAUDE.md` → Documentation Sync) runs it first.
 
 ## Releasing
 

@@ -1,5 +1,5 @@
-// Entry point for `npm run check:sync`: diffs what must match in the backend and ../3d_wd (the API
-// Contract, the guard hook, docs/process.md), and finds backend facts the frontend's docs restate.
+// `npm run check:sync`, also run by the release: diffs what must match in the backend and ../3d_wd
+// (the API Contract, the guard hook, docs/process.md); finds backend facts the frontend restates.
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -121,16 +121,11 @@ function findRestatedFacts(markdown, skip = []) {
   return found;
 }
 
-function readBackendFile(file) {
-  const full = path.join(BACKEND_DIR, file);
-  return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : null;
-}
-
-// The frontend side is its origin/main, read with `git show` after a fetch, so its working tree
-// is never read or touched.
-function readFrontendFile(file) {
+// A file at a commit, read with `git show`, so no working tree is read or touched. Null when the
+// file isn't there.
+function showFile(dir, ref, file) {
   try {
-    return execFileSync('git', ['-C', FRONTEND_DIR, 'show', `origin/main:${file}`], {
+    return execFileSync('git', ['-C', dir, 'show', `${ref}:${file}`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -139,16 +134,50 @@ function readFrontendFile(file) {
   }
 }
 
-function checkSync() {
+// The backend side: this working tree when `ref` is null, else that commit.
+function readBackendFile(file, ref) {
+  if (ref) return showFile(BACKEND_DIR, ref, file);
+  const full = path.join(BACKEND_DIR, file);
+  return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : null;
+}
+
+// The frontend side to compare with: on a branch, the frontend's branch of the same name when it
+// has one, since two-repo work uses one name in both repos and its frontend half isn't on main
+// before the PRs merge; else its main.
+function pickFrontendRef(branch, hasFrontendBranch) {
+  return branch !== 'main' && hasFrontendBranch ? `origin/${branch}` : 'origin/main';
+}
+
+// Whether the frontend's GitHub has a branch of this name (`--exit-code` exits 2 when it hasn't).
+function hasFrontendBranch(branch) {
+  try {
+    git(FRONTEND_DIR, ['ls-remote', '--exit-code', '--quiet', '--heads', 'origin', branch]);
+    return true;
+  } catch (err) {
+    if (err.status !== 2) throw err;
+    return false;
+  }
+}
+
+// Fetches a remote-tracking ref (`origin/x`) from its remote, so it reads what GitHub has now.
+function fetchRef(dir, ref) {
+  git(dir, ['fetch', '--quiet', 'origin', ref.replace(/^origin\//, '')]);
+}
+
+// Compares the two repos and prints the report; true when everything matches. `backendRef` null
+// reads this working tree; `frontendRef` is always a commit of the frontend (`origin/...`).
+function checkSync({ backendRef = null, frontendRef = 'origin/main' } = {}) {
   if (!isFrontendRepo()) throw new Error(NOT_FRONTEND_REPO);
-  git(FRONTEND_DIR, ['fetch', '--quiet', 'origin', 'main']);
-  console.log(`Backend: this working tree. Frontend: ${FRONTEND_DIR} at origin/main.\n`);
+  if (backendRef) fetchRef(BACKEND_DIR, backendRef);
+  fetchRef(FRONTEND_DIR, frontendRef);
+  const backendSide = backendRef ? `at ${backendRef}` : 'this working tree';
+  console.log(`Backend: ${backendSide}. Frontend: ${FRONTEND_DIR} at ${frontendRef}.\n`);
 
   let isClean = true;
   for (const pair of PAIRS) {
     const cut = pair.cut ?? ((text) => text);
-    const backendFile = readBackendFile(pair.backend);
-    const frontendFile = readFrontendFile(pair.frontend);
+    const backendFile = readBackendFile(pair.backend, backendRef);
+    const frontendFile = showFile(FRONTEND_DIR, frontendRef, pair.frontend);
     const backendText = backendFile === null ? null : cut(backendFile);
     const frontendText = frontendFile === null ? null : cut(frontendFile);
     const result = compareTexts(pair.name, backendText, frontendText);
@@ -171,7 +200,7 @@ function checkSync() {
   }
 
   for (const { file, skip } of RESTATED_FACT_FILES) {
-    const markdown = readFrontendFile(file);
+    const markdown = showFile(FRONTEND_DIR, frontendRef, file);
     if (markdown === null) {
       isClean = false;
       console.log(`missing: frontend ${file}`);
@@ -192,11 +221,21 @@ function checkSync() {
 
 if (require.main === module) {
   try {
-    process.exit(checkSync() ? 0 : 1);
+    if (!isFrontendRepo()) throw new Error(NOT_FRONTEND_REPO);
+    const branch = git(BACKEND_DIR, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+    const frontendRef = pickFrontendRef(branch, branch !== 'main' && hasFrontendBranch(branch));
+    process.exit(checkSync({ frontendRef }) ? 0 : 1);
   } catch (err) {
     console.error(err.message);
     process.exit(1);
   }
 }
 
-module.exports = { apiContractSection, compareTexts, findRestatedFacts, stripQuotes };
+module.exports = {
+  apiContractSection,
+  checkSync,
+  compareTexts,
+  findRestatedFacts,
+  pickFrontendRef,
+  stripQuotes,
+};

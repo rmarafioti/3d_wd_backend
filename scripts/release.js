@@ -9,6 +9,7 @@ const {
   NOT_FRONTEND_REPO,
   isFrontendRepo,
 } = require('./frontendRepo');
+const { checkSync } = require('./checkSync');
 
 const BACKEND_REPO = 'rmarafioti/3d_wd_backend';
 const BACKEND_DIR = path.resolve(__dirname, '..');
@@ -330,6 +331,14 @@ async function release() {
   if (DRY_RUN) console.log('Dry run: nothing is pushed or tagged.\n');
   // checkFrontend first: it confirms FRONTEND_DIR is the frontend repo before its tags are read.
   const frontendCheck = checkFrontend();
+  // A release ships both mains, so the docs both repos must share are compared there.
+  console.log('\nShared docs (check:sync):');
+  if (!checkSync({ backendRef: 'origin/main', frontendRef: 'origin/main' })) {
+    throw new ReleaseStopped(
+      'The docs both repos must share differ on main (listed above). Fix them before releasing. Nothing was pushed.',
+    );
+  }
+  console.log('');
   const backendTags = readReleaseTags(BACKEND_DIR);
   const frontendTags = readReleaseTags(FRONTEND_DIR);
   const tag = nextReleaseTag(new Date(), [...backendTags, ...frontendTags]);
